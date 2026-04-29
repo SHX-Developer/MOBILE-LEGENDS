@@ -4,13 +4,35 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
+    <meta name="theme-color" content="#0b0d12" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>ML MOBA</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-      html, body, #root { height: 100%; margin: 0; background: #0b0d12; color: #fff; font-family: system-ui, sans-serif; }
-      * { box-sizing: border-box; }
+      html, body {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        background: #0b0d12;
+        color: #fff;
+        font-family: system-ui, sans-serif;
+        overflow: hidden;
+        overscroll-behavior: none;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+      }
+      body {
+        position: fixed;
+        top: 0;
+        left: 0;
+      }
+      #root { height: 100%; width: 100%; }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     </style>
   </head>
   <body>
