@@ -1,9 +1,45 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createGame, type Game } from '../game/index.js';
+
+interface Frame {
+  logicalW: number;
+  logicalH: number;
+  rotated: boolean;
+}
+
+const ASPECT_W = 16;
+const ASPECT_H = 9;
+
+function computeFrame(): Frame {
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const portrait = H > W;
+  if (portrait) {
+    // wrapper rotated 90° CW: its AABB visual size is logicalH × logicalW.
+    // fit inside (W, H) with logicalW/logicalH = ASPECT_W/ASPECT_H.
+    const logicalH = Math.min(W, (ASPECT_H / ASPECT_W) * H);
+    const logicalW = (ASPECT_W / ASPECT_H) * logicalH;
+    return { logicalW, logicalH, rotated: true };
+  }
+  const logicalW = Math.min(W, (ASPECT_W / ASPECT_H) * H);
+  const logicalH = (ASPECT_H / ASPECT_W) * logicalW;
+  return { logicalW, logicalH, rotated: false };
+}
 
 export function GameCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Game | null>(null);
+  const [frame, setFrame] = useState<Frame>(() => computeFrame());
+
+  useEffect(() => {
+    const update = () => setFrame(computeFrame());
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+    };
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -17,16 +53,33 @@ export function GameCanvas() {
   return (
     <div
       style={{
-        position: 'relative',
-        height: '100%',
-        overflow: 'hidden',
+        position: 'fixed',
+        inset: 0,
+        background: '#000',
+        display: 'grid',
+        placeItems: 'center',
         userSelect: 'none',
         touchAction: 'none',
+        overflow: 'hidden',
       }}
     >
-      <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
-      <Joystick onChange={(x, z) => gameRef.current?.setJoystickAxis(x, z)} />
-      <FireButton onFire={() => gameRef.current?.fire()} />
+      <div
+        style={{
+          position: 'relative',
+          width: frame.logicalW,
+          height: frame.logicalH,
+          transform: frame.rotated ? 'rotate(90deg)' : 'none',
+          transformOrigin: 'center center',
+          touchAction: 'none',
+        }}
+      >
+        <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+        <Joystick
+          rotated={frame.rotated}
+          onChange={(x, z) => gameRef.current?.setJoystickAxis(x, z)}
+        />
+        <FireButton onFire={() => gameRef.current?.fire()} />
+      </div>
     </div>
   );
 }
@@ -35,7 +88,13 @@ const JOY_BASE = 130;
 const JOY_KNOB = 60;
 const JOY_RADIUS = (JOY_BASE - JOY_KNOB) / 2;
 
-function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
+function Joystick({
+  rotated,
+  onChange,
+}: {
+  rotated: boolean;
+  onChange: (x: number, z: number) => void;
+}) {
   const baseRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
   const activePointer = useRef<number | null>(null);
@@ -56,15 +115,26 @@ function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
     const r = base.getBoundingClientRect();
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
-    let dx = clientX - cx;
-    let dy = clientY - cy;
-    const dist = Math.hypot(dx, dy);
-    if (dist > JOY_RADIUS) {
-      dx = (dx / dist) * JOY_RADIUS;
-      dy = (dy / dist) * JOY_RADIUS;
+    // viewport-space delta from joystick centre
+    const vDx = clientX - cx;
+    const vDy = clientY - cy;
+    // map viewport delta → logical (pre-rotation) delta
+    let lDx: number;
+    let lDy: number;
+    if (rotated) {
+      lDx = -vDy;
+      lDy = vDx;
+    } else {
+      lDx = vDx;
+      lDy = vDy;
     }
-    setKnob(dx, dy);
-    onChange(dx / JOY_RADIUS, dy / JOY_RADIUS);
+    const dist = Math.hypot(lDx, lDy);
+    if (dist > JOY_RADIUS) {
+      lDx = (lDx / dist) * JOY_RADIUS;
+      lDy = (lDy / dist) * JOY_RADIUS;
+    }
+    setKnob(lDx, lDy);
+    onChange(lDx / JOY_RADIUS, lDy / JOY_RADIUS);
   }
 
   function reset() {
@@ -97,8 +167,8 @@ function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
       }}
       style={{
         position: 'absolute',
-        left: 32,
-        bottom: 32,
+        left: 24,
+        bottom: 24,
         width: JOY_BASE,
         height: JOY_BASE,
         borderRadius: '50%',
@@ -135,8 +205,8 @@ function FireButton({ onFire }: { onFire: () => void }) {
       }}
       style={{
         position: 'absolute',
-        right: 36,
-        bottom: 56,
+        right: 28,
+        bottom: 40,
         width: 96,
         height: 96,
         borderRadius: '50%',
