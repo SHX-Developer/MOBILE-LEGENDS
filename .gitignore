@@ -8,3 +8,13 @@ build
 coverage
 .idea
 .vscode
+
+# docker build cache
+.docker-cache/
+
+# Claude Code local config
+.claude/
+
+# stray lockfiles from other package managers
+package-lock.json
+yarn.lock

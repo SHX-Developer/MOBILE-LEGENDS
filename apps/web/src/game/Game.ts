@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { HALF } from './constants.js';
+import { HALF, PLAYER_RADIUS } from './constants.js';
 import { buildMap } from './world/MapBuilder.js';
+import type { Colliders } from './world/Colliders.js';
 import { PlayerObject } from './entities/PlayerObject.js';
 import { ProjectileManager } from './entities/ProjectileManager.js';
 import { CameraRig } from './CameraRig.js';
@@ -13,6 +14,7 @@ export class Game {
   private input: InputController;
   private player: PlayerObject;
   private projectiles: ProjectileManager;
+  private colliders: Colliders;
   private clock = new THREE.Clock();
   private rafId = 0;
   private resizeObserver: ResizeObserver;
@@ -20,20 +22,19 @@ export class Game {
   constructor(private readonly container: HTMLElement) {
     const { clientWidth, clientHeight } = container;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(1);
     this.renderer.setSize(clientWidth, clientHeight);
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.enabled = false;
     container.appendChild(this.renderer.domElement);
 
     this.scene.background = new THREE.Color(0x0b0d12);
     this.scene.fog = new THREE.Fog(0x0b0d12, 80, 180);
 
     this.setupLights();
-    buildMap(this.scene);
+    this.colliders = buildMap(this.scene);
 
-    this.player = new PlayerObject(new THREE.Vector3(-HALF + 8, 0, -HALF + 8));
+    this.player = new PlayerObject(new THREE.Vector3(-HALF + 8, 0, HALF - 8));
     this.scene.add(this.player.group);
 
     this.projectiles = new ProjectileManager(this.scene);
@@ -51,6 +52,17 @@ export class Game {
 
   setJoystickAxis(x: number, z: number): void {
     this.input.setJoystick(x, z);
+  }
+
+  fire(): void {
+    const origin = this.player.position;
+    const dir = this.player.facing;
+    const target = new THREE.Vector3(
+      origin.x + dir.x * 100,
+      origin.y,
+      origin.z + dir.z * 100,
+    );
+    this.projectiles.spawn(origin, target, performance.now());
   }
 
   destroy(): void {
@@ -90,6 +102,7 @@ export class Game {
     const now = performance.now();
 
     this.player.update(this.input.getMovement(), delta);
+    this.colliders.resolve(this.player.position, PLAYER_RADIUS);
 
     const target = this.input.consumeAttackTarget();
     if (target) {
