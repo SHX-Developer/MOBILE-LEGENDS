@@ -28,8 +28,8 @@ export class Game {
     this.renderer.shadowMap.enabled = false;
     container.appendChild(this.renderer.domElement);
 
-    this.scene.background = new THREE.Color(0x0b0d12);
-    this.scene.fog = new THREE.Fog(0x0b0d12, 80, 180);
+    this.scene.background = new THREE.Color(0x223044);
+    this.scene.fog = new THREE.Fog(0x223044, 120, 220);
 
     this.setupLights();
     this.colliders = buildMap(this.scene);
@@ -74,10 +74,10 @@ export class Game {
   }
 
   private setupLights(): void {
-    const hemi = new THREE.HemisphereLight(0xb8d8ff, 0x3a4a2a, 0.6);
+    const hemi = new THREE.HemisphereLight(0xd4e6ff, 0x506a3a, 1.0);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xfff2cc, 1.1);
+    const sun = new THREE.DirectionalLight(0xfff2cc, 1.6);
     sun.position.set(40, 60, 30);
     sun.castShadow = true;
     sun.shadow.camera.left = -60;

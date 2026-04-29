@@ -6,7 +6,7 @@ import * as THREE from 'three';
  */
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
-  private offset = new THREE.Vector3(0, 28, 18);
+  private offset = new THREE.Vector3(0, 18, 12);
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 500);

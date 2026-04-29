@@ -39,7 +39,7 @@ function buildGround(scene: THREE.Scene, colliders: Colliders): void {
   scene.add(mesh);
 
   // outer stone wall border — long stone block on each side
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x6c5a47, roughness: 0.9 });
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x97826a, roughness: 0.9 });
   const wallH = 2.4;
   const wallT = 2.2;
   const sides: Array<[number, number, number, number]> = [
@@ -57,7 +57,7 @@ function buildGround(scene: THREE.Scene, colliders: Colliders): void {
   }
 
   // corner rock pillars
-  const pillarMat = new THREE.MeshStandardMaterial({ color: 0x4a3e30, roughness: 1 });
+  const pillarMat = new THREE.MeshStandardMaterial({ color: 0x6e5e4a, roughness: 1 });
   for (const [x, z] of [
     [-HALF, -HALF],
     [HALF, -HALF],
@@ -141,8 +141,8 @@ function buildRiver(scene: THREE.Scene): void {
  * little altar markers for the 4 jungle camps in each jungle quadrant.
  */
 function buildJungleObstacles(scene: THREE.Scene, colliders: Colliders): void {
-  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x665a4e, roughness: 0.95 });
-  const rockMat = new THREE.MeshStandardMaterial({ color: 0x4a4036, roughness: 1 });
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x8e7e6b, roughness: 0.95 });
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x6e6055, roughness: 1 });
   const altarMat = new THREE.MeshStandardMaterial({
     color: 0x8a7a5a,
     roughness: 0.7,
