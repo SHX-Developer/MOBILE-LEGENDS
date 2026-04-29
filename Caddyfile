@@ -8,9 +8,8 @@
 
     @api path /api/*
     handle @api {
-        uri strip_prefix /api
         reverse_proxy server:3000 {
-            health_uri /healthz
+            health_uri /api/healthz
             health_interval 15s
             health_timeout 3s
         }

@@ -90,3 +90,73 @@ docker compose -f compose.prod.yml build --no-cache
 - `pnpm-lock.yaml`  (currently untracked)
 
 Delete `package-lock.json` if it sneaked in — this project uses pnpm only.
+
+---
+
+## Deploying via Dokploy
+
+Use `compose.dokploy.yml` (Caddy removed — Dokploy's built-in Traefik handles
+TLS and routing). Domains are attached through the Dokploy UI.
+
+### 1. Create the service
+
+Dokploy → your project → **Create Service → Compose**.
+
+- **Source**: Git → connect GitHub → repo `SHX-Developer/MOBILE-LEGENDS`
+- **Branch**: `main`
+- **Compose Path**: `compose.dokploy.yml`
+
+### 2. Environment variables
+
+In the Compose service's **Environment** tab paste:
+
+```
+DOMAIN=play.example.com
+POSTGRES_PASSWORD=<strong password>
+POSTGRES_USER=postgres
+POSTGRES_DB=ml_moba
+TELEGRAM_BOT_TOKEN=<token from BotFather>
+```
+
+`DOMAIN` is the public domain you'll attach in step 4.
+
+### 3. Deploy once
+
+Click **Deploy**. Watch logs — first build takes ~3–5 min. The stack comes
+up but isn't reachable yet because no domain is attached.
+
+### 4. Attach domains
+
+In the Compose service's **Domains** tab click **Add Domain** twice:
+
+| # | Host             | Path  | Service  | Container Port | HTTPS |
+|---|------------------|-------|----------|---------------:|:-----:|
+| 1 | `<DOMAIN>`       | `/`   | `web`    | `80`           | ✓     |
+| 2 | `<DOMAIN>`       | `/api`| `server` | `3000`         | ✓     |
+
+Pick **Let's Encrypt** as certificate type for both. DNS A-record for the
+domain must already point to the Dokploy host.
+
+> The server already serves everything under `/api` (NestJS global prefix),
+> so do NOT enable any strip-prefix middleware. Dokploy passes the path
+> through as-is.
+
+### 5. Verify
+
+```sh
+curl -I https://<DOMAIN>/
+curl    https://<DOMAIN>/api/healthz
+```
+
+The second call should return `{"ok":true,"uptime":...}`.
+
+### 6. Test on phone
+
+- @BotFather → set the bot's WebApp URL to `https://<DOMAIN>/`.
+- Open the bot in Telegram → tap the WebApp button.
+
+### Redeploys
+
+Push to `main` → in Dokploy click **Deploy** (or enable **Auto Deploy** in
+the General tab to redeploy on every push). BuildKit cache + the layered
+pnpm install keep rebuilds in the seconds range when only source changed.

@@ -28,7 +28,7 @@ retry() {
 
 echo "→ smoke test against $URL"
 fail=0
-retry "api"     "$URL/api/healthz"   || fail=1
+retry "api"     "$URL/api/healthz"    || fail=1
 retry "web"     "$URL/healthz"        || fail=1
 retry "spa"     "$URL/"               || fail=1
 
