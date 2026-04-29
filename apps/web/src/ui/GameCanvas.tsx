@@ -73,7 +73,7 @@ export function GameCanvas() {
           top,
           width: frame.logicalW,
           height: frame.logicalH,
-          transform: 'rotate(90deg)',
+          transform: 'rotate(-90deg)',
           transformOrigin: 'center center',
           touchAction: 'none',
         }}
@@ -114,9 +114,9 @@ function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
     // viewport-space delta from joystick centre
     const vDx = clientX - cx;
     const vDy = clientY - cy;
-    // wrapper rotated 90° CW → invert with: local = (-vDy, vDx)
-    let lDx = -vDy;
-    let lDy = vDx;
+    // wrapper rotated 90° CCW → invert with: local = (vDy, -vDx)
+    let lDx = vDy;
+    let lDy = -vDx;
     const dist = Math.hypot(lDx, lDy);
     if (dist > JOY_RADIUS) {
       lDx = (lDx / dist) * JOY_RADIUS;
