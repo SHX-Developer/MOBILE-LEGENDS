@@ -73,7 +73,7 @@ export function GameCanvas() {
           top,
           width: frame.logicalW,
           height: frame.logicalH,
-          transform: 'rotate(-90deg)',
+          transform: 'rotate(90deg)',
           transformOrigin: 'center center',
           touchAction: 'none',
         }}
