@@ -1,25 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { createGame, type Game } from '../game/index.js';
 
-const ASPECT_W = 16;
-const ASPECT_H = 9;
+const ASPECT = 16 / 9;
 
 interface Frame {
-  w: number;
-  h: number;
+  logicalW: number;
+  logicalH: number;
+  vpW: number;
+  vpH: number;
 }
 
+/**
+ * Game is always rendered as a 16:9 frame rotated 90° CW. The frame's
+ * logical width/height are picked so the rotated AABB fills as much of
+ * the viewport as possible while keeping aspect.
+ */
 function computeFrame(): Frame {
-  const W = window.innerWidth;
-  const H = window.innerHeight;
-  // largest 16:9 rectangle that fits inside the viewport
-  let w = Math.min(W, (ASPECT_W / ASPECT_H) * H);
-  let h = (ASPECT_H / ASPECT_W) * w;
-  if (h > H) {
-    h = H;
-    w = (ASPECT_W / ASPECT_H) * h;
-  }
-  return { w, h };
+  const vpW = window.innerWidth;
+  const vpH = window.innerHeight;
+  // After rotate(90deg): visual_w = logicalH, visual_h = logicalW.
+  // Aspect: logicalW / logicalH = ASPECT.
+  // Fit:    logicalH ≤ vpW AND ASPECT*logicalH ≤ vpH.
+  const logicalH = Math.min(vpW, vpH / ASPECT);
+  const logicalW = ASPECT * logicalH;
+  return { logicalW, logicalH, vpW, vpH };
 }
 
 export function GameCanvas() {
@@ -46,24 +50,31 @@ export function GameCanvas() {
     };
   }, []);
 
+  // Centre the pre-rotation frame at the viewport centre. After rotation
+  // around its own centre the visual AABB is still centred in the viewport.
+  const left = (frame.vpW - frame.logicalW) / 2;
+  const top = (frame.vpH - frame.logicalH) / 2;
+
   return (
     <div
       style={{
         position: 'fixed',
         inset: 0,
         background: '#000',
-        display: 'grid',
-        placeItems: 'center',
+        overflow: 'hidden',
         userSelect: 'none',
         touchAction: 'none',
-        overflow: 'hidden',
       }}
     >
       <div
         style={{
-          position: 'relative',
-          width: frame.w,
-          height: frame.h,
+          position: 'absolute',
+          left,
+          top,
+          width: frame.logicalW,
+          height: frame.logicalH,
+          transform: 'rotate(90deg)',
+          transformOrigin: 'center center',
           touchAction: 'none',
         }}
       >
@@ -100,15 +111,19 @@ function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
     const r = base.getBoundingClientRect();
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
-    let dx = clientX - cx;
-    let dy = clientY - cy;
-    const dist = Math.hypot(dx, dy);
+    // viewport-space delta from joystick centre
+    const vDx = clientX - cx;
+    const vDy = clientY - cy;
+    // wrapper rotated 90° CW → invert with: local = (-vDy, vDx)
+    let lDx = -vDy;
+    let lDy = vDx;
+    const dist = Math.hypot(lDx, lDy);
     if (dist > JOY_RADIUS) {
-      dx = (dx / dist) * JOY_RADIUS;
-      dy = (dy / dist) * JOY_RADIUS;
+      lDx = (lDx / dist) * JOY_RADIUS;
+      lDy = (lDy / dist) * JOY_RADIUS;
     }
-    setKnob(dx, dy);
-    onChange(dx / JOY_RADIUS, dy / JOY_RADIUS);
+    setKnob(lDx, lDy);
+    onChange(lDx / JOY_RADIUS, lDy / JOY_RADIUS);
   }
 
   function reset() {
