@@ -1,0 +1,30 @@
+name: ml-moba
+
+# Web-only deploy for Dokploy. No server, no Postgres — the game is fully
+# client-side right now. Switch to compose.dokploy.yml when you wire up
+# Telegram auth / persistence.
+#
+# Domain setup in Dokploy:
+#   • Host: <DOMAIN>   Path: /   Service: web   Port: 80   HTTPS: Let's Encrypt
+
+services:
+  web:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: /api
+    expose:
+      - "80"
+    networks:
+      - dokploy-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  dokploy-network:
+    external: true
