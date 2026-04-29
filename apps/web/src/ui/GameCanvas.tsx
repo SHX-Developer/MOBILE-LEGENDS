@@ -1,29 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { createGame, type Game } from '../game/index.js';
 
-interface Frame {
-  logicalW: number;
-  logicalH: number;
-  rotated: boolean;
-}
-
 const ASPECT_W = 16;
 const ASPECT_H = 9;
+
+interface Frame {
+  w: number;
+  h: number;
+}
 
 function computeFrame(): Frame {
   const W = window.innerWidth;
   const H = window.innerHeight;
-  const portrait = H > W;
-  if (portrait) {
-    // wrapper rotated 90° CW: its AABB visual size is logicalH × logicalW.
-    // fit inside (W, H) with logicalW/logicalH = ASPECT_W/ASPECT_H.
-    const logicalH = Math.min(W, (ASPECT_H / ASPECT_W) * H);
-    const logicalW = (ASPECT_W / ASPECT_H) * logicalH;
-    return { logicalW, logicalH, rotated: true };
+  // largest 16:9 rectangle that fits inside the viewport
+  let w = Math.min(W, (ASPECT_W / ASPECT_H) * H);
+  let h = (ASPECT_H / ASPECT_W) * w;
+  if (h > H) {
+    h = H;
+    w = (ASPECT_W / ASPECT_H) * h;
   }
-  const logicalW = Math.min(W, (ASPECT_W / ASPECT_H) * H);
-  const logicalH = (ASPECT_H / ASPECT_W) * logicalW;
-  return { logicalW, logicalH, rotated: false };
+  return { w, h };
 }
 
 export function GameCanvas() {
@@ -66,18 +62,13 @@ export function GameCanvas() {
       <div
         style={{
           position: 'relative',
-          width: frame.logicalW,
-          height: frame.logicalH,
-          transform: frame.rotated ? 'rotate(90deg)' : 'none',
-          transformOrigin: 'center center',
+          width: frame.w,
+          height: frame.h,
           touchAction: 'none',
         }}
       >
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-        <Joystick
-          rotated={frame.rotated}
-          onChange={(x, z) => gameRef.current?.setJoystickAxis(x, z)}
-        />
+        <Joystick onChange={(x, z) => gameRef.current?.setJoystickAxis(x, z)} />
         <FireButton onFire={() => gameRef.current?.fire()} />
       </div>
     </div>
@@ -88,13 +79,7 @@ const JOY_BASE = 130;
 const JOY_KNOB = 60;
 const JOY_RADIUS = (JOY_BASE - JOY_KNOB) / 2;
 
-function Joystick({
-  rotated,
-  onChange,
-}: {
-  rotated: boolean;
-  onChange: (x: number, z: number) => void;
-}) {
+function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
   const baseRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
   const activePointer = useRef<number | null>(null);
@@ -115,26 +100,15 @@ function Joystick({
     const r = base.getBoundingClientRect();
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
-    // viewport-space delta from joystick centre
-    const vDx = clientX - cx;
-    const vDy = clientY - cy;
-    // map viewport delta → logical (pre-rotation) delta
-    let lDx: number;
-    let lDy: number;
-    if (rotated) {
-      lDx = -vDy;
-      lDy = vDx;
-    } else {
-      lDx = vDx;
-      lDy = vDy;
-    }
-    const dist = Math.hypot(lDx, lDy);
+    let dx = clientX - cx;
+    let dy = clientY - cy;
+    const dist = Math.hypot(dx, dy);
     if (dist > JOY_RADIUS) {
-      lDx = (lDx / dist) * JOY_RADIUS;
-      lDy = (lDy / dist) * JOY_RADIUS;
+      dx = (dx / dist) * JOY_RADIUS;
+      dy = (dy / dist) * JOY_RADIUS;
     }
-    setKnob(lDx, lDy);
-    onChange(lDx / JOY_RADIUS, lDy / JOY_RADIUS);
+    setKnob(dx, dy);
+    onChange(dx / JOY_RADIUS, dy / JOY_RADIUS);
   }
 
   function reset() {
