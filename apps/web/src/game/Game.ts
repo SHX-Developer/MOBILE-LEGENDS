@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { MatchCombatEvent, MatchPlayerSnapshot } from '@ml/shared';
+import type { MatchCombatEvent, MatchPlayerSnapshot, MatchSnapshot } from '@ml/shared';
 import {
   PLAYER_ATTACK_COOLDOWN_MS,
   PLAYER_ATTACK_RANGE,
@@ -455,7 +455,11 @@ export class Game {
     skillReq: { id: SkillId; dirX: number; dirZ: number } | null,
   ): void {
     this.applyOnlineTeamColorsOnce();
-    if (wantsAttack) this.online.attack();
+    // Drive cooldown UI on the client; the server enforces too.
+    if (wantsAttack && now - this.lastAttackAt >= PLAYER_ATTACK_COOLDOWN_MS) {
+      this.online.attack();
+      this.lastAttackAt = now;
+    }
     if (skillReq) {
       let dx = skillReq.dirX;
       let dz = skillReq.dirZ;
@@ -463,7 +467,18 @@ export class Game {
         dx = this.player.facing.x;
         dz = this.player.facing.z;
       }
-      this.online.skill(skillReq.id, dx, dz);
+      const ready =
+        skillReq.id === 'q'
+          ? now - this.lastQAt >= SKILL_Q_COOLDOWN_MS
+          : skillReq.id === 'e'
+            ? now - this.lastEAt >= SKILL_E_COOLDOWN_MS
+            : now - this.lastCAt >= SKILL_C_COOLDOWN_MS;
+      if (ready) {
+        this.online.skill(skillReq.id, dx, dz);
+        if (skillReq.id === 'q') this.lastQAt = now;
+        else if (skillReq.id === 'e') this.lastEAt = now;
+        else this.lastCAt = now;
+      }
     }
 
     // Online is currently a 1v1 hero deathmatch — server only simulates the
@@ -512,10 +527,13 @@ export class Game {
     this.minions.length = 0;
   }
 
+  private lastAppliedSnapshot: MatchSnapshot | null = null;
   private applyOnlineSnapshot(): void {
     const snapshot = this.online.getSnapshot();
     const playerId = this.online.getPlayerId();
     if (!snapshot || !playerId) return;
+    if (snapshot === this.lastAppliedSnapshot) return;
+    this.lastAppliedSnapshot = snapshot;
     const own = snapshot.players.find((p) => p.id === playerId);
     const enemy = snapshot.players.find((p) => p.id !== playerId);
     if (own) {
@@ -537,12 +555,19 @@ export class Game {
     for (const event of events) {
       const target = this.onlineUnitFor(event.targetId);
       const owner = this.onlineUnitFor(event.attackerId) ?? undefined;
-      this.spawnOnlineCombatFx(event, owner, now);
-      if (event.hit && event.damage > 0 && target) {
-        this.floatingText.spawnDamage(target.position, event.damage, target.team, owner?.team);
-      }
-      if (event.hit && event.attackerId === ownId) Haptics.hitEnemy();
-      if (event.hit && event.targetId === ownId) Haptics.takeDamage();
+      const isHit = event.hit;
+      const damage = event.damage;
+      const attackerIsMe = event.attackerId === ownId;
+      const targetIsMe = event.targetId === ownId;
+      // Defer the damage number / haptic until the visual projectile lands,
+      // so the impact reads as the bullet arriving rather than the click.
+      this.spawnOnlineCombatFx(event, owner, target, now, () => {
+        if (isHit && damage > 0 && target) {
+          this.floatingText.spawnDamage(target.position, damage, target.team, owner?.team);
+        }
+        if (isHit && attackerIsMe) Haptics.hitEnemy();
+        if (isHit && targetIsMe) Haptics.takeDamage();
+      });
     }
   }
 
@@ -554,10 +579,16 @@ export class Game {
     return null;
   }
 
-  private spawnOnlineCombatFx(event: MatchCombatEvent, owner: Unit | null | undefined, now: number): void {
+  private spawnOnlineCombatFx(
+    event: MatchCombatEvent,
+    owner: Unit | null | undefined,
+    targetUnit: Unit | null,
+    now: number,
+    onArrive: () => void,
+  ): void {
     const origin = new THREE.Vector3(event.startX, 0, event.startZ);
-    const target = new THREE.Vector3(event.endX, 0, event.endZ);
-    const maxDistance = Math.max(1, origin.distanceTo(target));
+    const aimPoint = new THREE.Vector3(event.endX, 0, event.endZ);
+    const maxDistance = Math.max(1, origin.distanceTo(aimPoint));
     const kind =
       event.kind === 'attack'
         ? 'basic'
@@ -566,12 +597,17 @@ export class Game {
           : event.skillId === 'e'
             ? 'slow'
             : 'control';
-    this.projectiles.spawn(origin, target, now, {
+    // For hits, lock onto the target unit so the projectile lands precisely
+    // on it even if it moves between server tick and client render.
+    const trackTarget = event.hit && targetUnit?.alive ? targetUnit : undefined;
+    this.projectiles.spawn(origin, aimPoint, now, {
       team: owner?.team ?? 'blue',
       damage: 0,
       kind,
       maxDistance,
       visualOnly: true,
+      target: trackTarget,
+      onArrive,
     });
   }
 

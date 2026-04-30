@@ -29,6 +29,11 @@ export interface ProjectileSpec {
   fromPlayer?: boolean;
   /** Online mode uses server combat events; these projectiles are display-only. */
   visualOnly?: boolean;
+  /** For visualOnly projectiles, fires when the bullet visually reaches its
+   *  endpoint (target if set, otherwise after travelling maxDistance). Used to
+   *  defer the floating damage number / haptic until the shot actually
+   *  "lands", since the server already applied the real damage. */
+  onArrive?: () => void;
 }
 
 interface Projectile {
@@ -45,6 +50,8 @@ interface Projectile {
   speed: number;
   fromPlayer: boolean;
   visualOnly: boolean;
+  onArrive?: () => void;
+  arrived: boolean;
 }
 
 interface Variant {
@@ -113,6 +120,8 @@ export class ProjectileManager {
       speed,
       fromPlayer: spec.fromPlayer === true,
       visualOnly: spec.visualOnly === true,
+      onArrive: spec.onArrive,
+      arrived: false,
     });
   }
 
@@ -131,7 +140,11 @@ export class ProjectileManager {
         const hitDist = p.target.radius + PROJECTILE_RADIUS;
         const step = p.speed * deltaSec;
         if (dist <= hitDist + step) {
-          this.hitUnit(p, p.target, now);
+          if (p.visualOnly) {
+            this.fireOnArrive(p);
+          } else {
+            this.hitUnit(p, p.target, now);
+          }
           this.removeAt(i);
           continue;
         }
@@ -156,9 +169,16 @@ export class ProjectileManager {
 
       const exceededRange = p.maxDistance !== undefined && p.distanceTravelled >= p.maxDistance;
       if (exceededRange || now - p.spawnedAt > PROJECTILE_LIFETIME_MS) {
+        if (p.visualOnly) this.fireOnArrive(p);
         this.removeAt(i);
       }
     }
+  }
+
+  private fireOnArrive(p: Projectile): void {
+    if (p.arrived) return;
+    p.arrived = true;
+    p.onArrive?.();
   }
 
   private hitUnit(p: Projectile, unit: Unit, now: number): void {

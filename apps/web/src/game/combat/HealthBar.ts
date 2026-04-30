@@ -87,8 +87,16 @@ export class HealthBar {
     this.fg.scale.x = Math.max(ratio, 0.0001);
   }
 
+  private lastLevel = -1;
+  private lastProgress = -1;
   setLevel(level: number, progress = 0): void {
     if (!this.levelCtx || !this.levelCanvas || !this.levelTexture) return;
+    // The level badge is a 256×256 canvas with arc/text strokes — redrawing
+    // it every frame and re-uploading to the GPU was the dominant cost in
+    // online play. Skip when neither value changed meaningfully.
+    if (level === this.lastLevel && Math.abs(progress - this.lastProgress) < 0.01) return;
+    this.lastLevel = level;
+    this.lastProgress = progress;
     const ctx = this.levelCtx;
     ctx.clearRect(0, 0, this.levelCanvas.width, this.levelCanvas.height);
 
