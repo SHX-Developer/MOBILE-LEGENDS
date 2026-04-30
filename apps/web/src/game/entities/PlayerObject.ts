@@ -50,10 +50,11 @@ export class PlayerObject implements Unit {
   private leftArm?: THREE.Object3D;
   private rightArm?: THREE.Object3D;
   private bowGroup?: THREE.Object3D;
+  private deathStartedAt = 0;
 
   constructor(spawn: THREE.Vector3) {
     this.spawn = spawn.clone();
-    this.buildLayla();
+    this.buildMia();
     this.group.position.copy(spawn);
     this.healthBar.group.position.set(0, 3, 0);
     this.group.add(this.healthBar.group);
@@ -121,7 +122,10 @@ export class PlayerObject implements Unit {
   }
 
   update(input: { x: number; z: number }, deltaSec: number, now: number): void {
-    if (!this.alive) return;
+    if (!this.alive) {
+      this.tickDeath(now);
+      return;
+    }
     if (this.stunnedUntil > now) {
       this.velocity.set(0, 0, 0);
       this.animateGait(0, deltaSec, now);
@@ -237,7 +241,24 @@ export class PlayerObject implements Unit {
 
   private die(): void {
     this.alive = false;
-    this.group.visible = false;
+    this.deathStartedAt = performance.now();
+    // Body falls but stays visible — respawn() resets the pose.
+  }
+
+  /** Animate the corpse: slump backward over ~700ms and stay flat on the ground. */
+  private tickDeath(now: number): void {
+    if (!this.deathStartedAt) {
+      this.group.rotation.x = -Math.PI / 2;
+      this.group.position.y = 0;
+      return;
+    }
+    const t = Math.min(1, (now - this.deathStartedAt) / 700);
+    // Ease-in fall.
+    const eased = t * t;
+    this.group.rotation.x = -Math.PI / 2 * eased;
+    this.group.position.y = -0.4 * eased;
+    // Hide healthbar after the body has dropped.
+    this.healthBar.group.visible = t < 0.85;
   }
 
   respawn(): void {
@@ -245,8 +266,12 @@ export class PlayerObject implements Unit {
     this.alive = true;
     this.slowUntil = 0;
     this.stunnedUntil = 0;
+    this.deathStartedAt = 0;
     this.group.position.copy(this.spawn);
+    this.group.position.y = 0;
+    this.group.rotation.x = 0;
     this.group.visible = true;
+    this.healthBar.group.visible = true;
     this.velocity.set(0, 0, 0);
     this.healthBar.setRatio(1);
   }
@@ -286,135 +311,246 @@ export class PlayerObject implements Unit {
     this.healthBar.setLevel(this.level, progress);
   }
 
-  private buildLayla(): void {
-    const skin = new THREE.MeshStandardMaterial({ color: 0xf3c8a4, roughness: 0.7 });
-    const cloak = new THREE.MeshStandardMaterial({ color: 0x1f4c8a, roughness: 0.6 });
-    const cloakLight = new THREE.MeshStandardMaterial({ color: 0x3d7bc4, roughness: 0.6 });
+  /**
+   * Mia-inspired archer build. The mesh is a stack of primitives, but the
+   * proportions are deliberate: short narrow torso, slim limbs, fitted top
+   * and short skirt, long ponytail, ornate recurve bow held at the side.
+   *
+   * Materials live in field properties (cloakMat / cloakLightMat) so setTeam()
+   * can recolour the outfit at runtime for the red side.
+   */
+  private buildMia(): void {
+    // Palette — soft pale skin + dark navy outfit + silver-blonde hair.
+    const skin = new THREE.MeshStandardMaterial({ color: 0xfadcc1, roughness: 0.65 });
+    const cloak = new THREE.MeshStandardMaterial({ color: 0x1f4c8a, roughness: 0.55 });
+    const cloakLight = new THREE.MeshStandardMaterial({ color: 0x3d7bc4, roughness: 0.55 });
     this.cloakMat = cloak;
     this.cloakLightMat = cloakLight;
+    const tights = new THREE.MeshStandardMaterial({ color: 0x141927, roughness: 0.55 });
     const trim = new THREE.MeshStandardMaterial({
-      color: 0xf2cf5a,
-      roughness: 0.4,
-      metalness: 0.4,
+      color: 0xf2cf5a, roughness: 0.35, metalness: 0.5,
     });
-    const hair = new THREE.MeshStandardMaterial({ color: 0xf6e3a8, roughness: 0.7 });
+    const hair = new THREE.MeshStandardMaterial({ color: 0xeef2f7, roughness: 0.55 });
+    const hairAccent = new THREE.MeshStandardMaterial({ color: 0xc7d4e6, roughness: 0.6 });
+    const bootMat = new THREE.MeshStandardMaterial({ color: 0x281b14, roughness: 0.7 });
     const bowMat = new THREE.MeshStandardMaterial({
-      color: 0x2a2a36,
-      roughness: 0.4,
-      metalness: 0.7,
+      color: 0x2a2a36, roughness: 0.35, metalness: 0.7,
     });
     const bowAccent = new THREE.MeshStandardMaterial({
-      color: 0xd6a93a,
-      roughness: 0.4,
-      metalness: 0.6,
+      color: 0xe6b450, roughness: 0.35, metalness: 0.65,
     });
     const stringMat = new THREE.MeshStandardMaterial({ color: 0xf4ead5, roughness: 0.5 });
 
-    // Pivoted legs — rotation happens at the hip, not the centre.
-    const legGeom = new THREE.CylinderGeometry(0.18, 0.18, 0.9, 12);
-    legGeom.translate(0, -0.45, 0);
-    const leftLegPivot = new THREE.Group();
-    leftLegPivot.position.set(-0.2, 0.9, 0);
-    const leftLegMesh = new THREE.Mesh(legGeom, cloak);
-    leftLegMesh.castShadow = true;
-    leftLegPivot.add(leftLegMesh);
-    this.group.add(leftLegPivot);
-    this.leftLeg = leftLegPivot;
-    const rightLegPivot = new THREE.Group();
-    rightLegPivot.position.set(0.2, 0.9, 0);
-    const rightLegMesh = new THREE.Mesh(legGeom, cloak);
-    rightLegMesh.castShadow = true;
-    rightLegPivot.add(rightLegMesh);
-    this.group.add(rightLegPivot);
-    this.rightLeg = rightLegPivot;
+    // Body root — the parent of everything except the healthbar. Death animation
+    // tilts the WHOLE Player group, so building under a body root keeps the
+    // pivot for the camera and FX consistent.
+    const body = new THREE.Group();
+    this.group.add(body);
 
-    const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.65, 0.7, 16), cloak);
-    skirt.position.y = 1.05;
-    skirt.castShadow = true;
-    this.group.add(skirt);
-
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.55, 6, 12), cloakLight);
-    torso.position.y = 1.55;
-    torso.castShadow = true;
-    this.group.add(torso);
-
-    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.06, 8, 24), trim);
-    belt.rotation.x = Math.PI / 2;
-    belt.position.y = 1.32;
-    this.group.add(belt);
-
-    // Pivoted arms — rotation at the shoulder.
-    const armGeom = new THREE.CylinderGeometry(0.12, 0.12, 0.7, 10);
-    armGeom.translate(0, -0.35, 0);
-    const leftArmPivot = new THREE.Group();
-    leftArmPivot.position.set(-0.5, 1.85, 0);
-    const leftArmMesh = new THREE.Mesh(armGeom, cloakLight);
-    leftArmMesh.castShadow = true;
-    leftArmPivot.add(leftArmMesh);
-    this.group.add(leftArmPivot);
-    this.leftArm = leftArmPivot;
-    const rightArmPivot = new THREE.Group();
-    rightArmPivot.position.set(0.45, 1.75, 0);
-    const rightArmMesh = new THREE.Mesh(armGeom, cloakLight);
-    rightArmMesh.castShadow = true;
-    rightArmPivot.add(rightArmMesh);
-    this.group.add(rightArmPivot);
-    this.rightArm = rightArmPivot;
-
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 14), skin);
-    head.position.y = 2.15;
-    head.castShadow = true;
-    this.group.add(head);
-
-    const hairCap = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 14), hair);
-    hairCap.position.y = 2.22;
-    hairCap.scale.set(1, 0.85, 1);
-    hairCap.castShadow = true;
-    this.group.add(hairCap);
-
-    const tailGeom = new THREE.CylinderGeometry(0.1, 0.05, 0.8, 8);
-    for (const x of [-0.3, 0.3]) {
-      const tail = new THREE.Mesh(tailGeom, hair);
-      tail.position.set(x, 1.85, -0.05);
-      tail.castShadow = true;
-      this.group.add(tail);
+    // Slim legs (tights), hip pivots so the gait swing reads.
+    const thighGeom = new THREE.CylinderGeometry(0.13, 0.12, 0.65, 10);
+    thighGeom.translate(0, -0.32, 0);
+    const calfGeom = new THREE.CylinderGeometry(0.11, 0.09, 0.55, 10);
+    calfGeom.translate(0, -0.28, 0);
+    for (const side of [-1, 1] as const) {
+      const hip = new THREE.Group();
+      hip.position.set(0.16 * side, 0.95, 0);
+      const thigh = new THREE.Mesh(thighGeom, tights);
+      thigh.castShadow = true;
+      hip.add(thigh);
+      const calf = new THREE.Mesh(calfGeom, tights);
+      calf.position.y = -0.62;
+      calf.castShadow = true;
+      hip.add(calf);
+      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.34), bootMat);
+      boot.position.set(0, -1.12, 0.05);
+      boot.castShadow = true;
+      hip.add(boot);
+      body.add(hip);
+      if (side < 0) this.leftLeg = hip;
+      else this.rightLeg = hip;
     }
 
-    const ribbon = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.1, 0.15), cloak);
-    ribbon.position.y = 2.5;
-    this.group.add(ribbon);
+    // Skirt — short tiered piece sitting on the hips.
+    const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.46, 0.34, 18), cloak);
+    skirt.position.y = 1.05;
+    skirt.castShadow = true;
+    body.add(skirt);
+    const skirtTrim = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.025, 8, 24), trim);
+    skirtTrim.rotation.x = Math.PI / 2;
+    skirtTrim.position.y = 0.92;
+    body.add(skirtTrim);
 
-    const bow = buildBow(bowMat, bowAccent, stringMat);
-    bow.position.set(0.45, 1.42, 0.42);
-    bow.rotation.z = -Math.PI / 18;
-    this.group.add(bow);
+    // Belt — gold ring at waist.
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.05, 8, 22), trim);
+    belt.rotation.x = Math.PI / 2;
+    belt.position.y = 1.28;
+    body.add(belt);
+
+    // Slim torso (narrow at waist, slightly wider at chest).
+    const torso = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.32, 0.42, 6, 12),
+      cloakLight,
+    );
+    torso.position.y = 1.58;
+    torso.castShadow = true;
+    body.add(torso);
+
+    // Decorative chest strap (cross-belt) — narrow gold band.
+    const strap = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.025, 6, 18), trim);
+    strap.rotation.set(Math.PI / 2, 0, Math.PI / 5);
+    strap.position.set(0, 1.7, 0.02);
+    body.add(strap);
+
+    // Arms — slim, pivot at shoulder. Right hand will hold the bow.
+    const upperArmGeom = new THREE.CylinderGeometry(0.085, 0.075, 0.45, 10);
+    upperArmGeom.translate(0, -0.22, 0);
+    const forearmGeom = new THREE.CylinderGeometry(0.075, 0.065, 0.42, 10);
+    forearmGeom.translate(0, -0.21, 0);
+    for (const side of [-1, 1] as const) {
+      const shoulder = new THREE.Group();
+      shoulder.position.set(0.36 * side, 1.78, 0);
+      const upper = new THREE.Mesh(upperArmGeom, skin);
+      upper.castShadow = true;
+      shoulder.add(upper);
+      const forearm = new THREE.Mesh(forearmGeom, skin);
+      forearm.position.y = -0.42;
+      forearm.castShadow = true;
+      shoulder.add(forearm);
+      const glove = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), tights);
+      glove.position.y = -0.78;
+      shoulder.add(glove);
+      body.add(shoulder);
+      if (side < 0) this.leftArm = shoulder;
+      else this.rightArm = shoulder;
+    }
+
+    // Head + face hint.
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 16), skin);
+    head.position.y = 2.12;
+    head.castShadow = true;
+    body.add(head);
+    // Simple eye dots — a tiny touch but reads as a face from far away.
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x202434 });
+    for (const ex of [-0.08, 0.08]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.024, 6, 6), eyeMat);
+      eye.position.set(ex, 2.13, 0.24);
+      body.add(eye);
+    }
+
+    // Hood/skull cap on top of head.
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.29, 16, 16), hair);
+    cap.position.y = 2.16;
+    cap.scale.set(1, 0.9, 1);
+    cap.castShadow = true;
+    body.add(cap);
+
+    // Side bangs — two small wedges in front of the ears.
+    const bangGeom = new THREE.ConeGeometry(0.09, 0.32, 6);
+    for (const side of [-1, 1]) {
+      const bang = new THREE.Mesh(bangGeom, hair);
+      bang.position.set(0.18 * side, 2.0, 0.12);
+      bang.rotation.z = side * 0.3;
+      body.add(bang);
+    }
+
+    // Long flowing ponytail behind the head — chain of cones from cap to waist.
+    const tailRoot = new THREE.Group();
+    tailRoot.position.set(0, 2.05, -0.18);
+    tailRoot.rotation.x = 0.35;
+    const tailLayers = [
+      { y: 0, r: 0.16, h: 0.42, mat: hair },
+      { y: -0.32, r: 0.13, h: 0.45, mat: hair },
+      { y: -0.66, r: 0.10, h: 0.45, mat: hair },
+      { y: -0.95, r: 0.07, h: 0.4, mat: hairAccent },
+    ];
+    for (const layer of tailLayers) {
+      const seg = new THREE.Mesh(
+        new THREE.ConeGeometry(layer.r, layer.h, 8),
+        layer.mat,
+      );
+      seg.position.y = layer.y;
+      seg.rotation.x = Math.PI;
+      seg.castShadow = true;
+      tailRoot.add(seg);
+    }
+    body.add(tailRoot);
+
+    // Bow — bigger and more recurve than the previous one.
+    const bow = buildRecurveBow(bowMat, bowAccent, stringMat);
+    bow.position.set(0.5, 1.5, 0.34);
+    bow.rotation.z = -Math.PI / 14;
+    body.add(bow);
     this.bowGroup = bow;
   }
 }
 
-function buildBow(
+/**
+ * Recurve bow — two opposed arcs (split torus halves) form the elegant
+ * Mia-style silhouette, with a gold grip in the middle and a notched arrow
+ * already on the string.
+ */
+function buildRecurveBow(
   bowMat: THREE.Material,
   arrowMat: THREE.Material,
   stringMat: THREE.Material,
 ): THREE.Group {
   const bow = new THREE.Group();
-  const arc = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.035, 8, 28), bowMat);
-  arc.scale.set(0.55, 1.25, 1);
-  arc.castShadow = true;
-  bow.add(arc);
 
-  const string = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.14, 6), stringMat);
+  // Upper limb — half-torus that arcs up.
+  const upperLimb = new THREE.Mesh(
+    new THREE.TorusGeometry(0.4, 0.04, 6, 18, Math.PI),
+    bowMat,
+  );
+  upperLimb.rotation.z = Math.PI / 2;
+  upperLimb.position.y = 0.1;
+  upperLimb.scale.set(0.8, 1, 1);
+  upperLimb.castShadow = true;
+  bow.add(upperLimb);
+  // Lower limb — mirror.
+  const lowerLimb = new THREE.Mesh(
+    new THREE.TorusGeometry(0.4, 0.04, 6, 18, Math.PI),
+    bowMat,
+  );
+  lowerLimb.rotation.z = -Math.PI / 2;
+  lowerLimb.position.y = -0.1;
+  lowerLimb.scale.set(0.8, 1, 1);
+  lowerLimb.castShadow = true;
+  bow.add(lowerLimb);
+
+  // Centre grip — gold.
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.22, 8), arrowMat);
+  bow.add(grip);
+
+  // Bowstring — taut between the limb tips.
+  const string = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.012, 0.012, 1.0, 6),
+    stringMat,
+  );
   string.position.z = -0.08;
   bow.add(string);
 
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.85, 6), arrowMat);
+  // Arrow — already nocked, pointing forward.
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.022, 0.022, 0.9, 6),
+    arrowMat,
+  );
   shaft.rotation.x = Math.PI / 2;
-  shaft.position.z = 0.28;
+  shaft.position.z = 0.32;
   bow.add(shaft);
-
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.18, 8), arrowMat);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.18, 8), arrowMat);
   tip.rotation.x = Math.PI / 2;
-  tip.position.z = 0.78;
+  tip.position.z = 0.85;
   bow.add(tip);
+  // Fletching — three small wedges at the back of the shaft.
+  const fletchMat = new THREE.MeshStandardMaterial({ color: 0xc44a4a, roughness: 0.7 });
+  for (let i = 0; i < 3; i++) {
+    const fl = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.18), fletchMat);
+    const a = (i / 3) * Math.PI * 2;
+    fl.position.set(Math.cos(a) * 0.045, Math.sin(a) * 0.045, -0.08);
+    fl.rotation.z = a;
+    bow.add(fl);
+  }
+
   return bow;
 }

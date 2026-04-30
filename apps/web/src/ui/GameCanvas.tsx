@@ -132,10 +132,10 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
             E top-left diagonal, C straight left — like a fan. */}
         <SkillButton
           id="q"
-          label="Q"
+          label=""
           subtitle="POWER"
           accent="#ff7a3d"
-          right={48}
+          right={28}
           bottom={170}
           size={86}
           totalMs={6000}
@@ -143,7 +143,7 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
         />
         <SkillButton
           id="e"
-          label="E"
+          label=""
           subtitle="SLOW"
           accent="#4ec9ff"
           right={148}
@@ -154,7 +154,7 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
         />
         <SkillButton
           id="c"
-          label="C"
+          label=""
           subtitle="STUN"
           accent="#b56cff"
           right={188}
@@ -834,8 +834,14 @@ const SkillButton = memo(function SkillButton({
             pointerEvents: 'none',
           }}
         >
-          <div>{onCooldown ? seconds : label}</div>
-          <div style={{ fontSize: 9, opacity: 0.8, marginTop: 2 }}>{subtitle}</div>
+          {onCooldown ? (
+            <div style={{ fontSize: 22, fontWeight: 900 }}>{seconds}</div>
+          ) : (
+            <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 1.5 }}>{subtitle}</div>
+          )}
+          {label && !onCooldown && (
+            <div style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>{label}</div>
+          )}
         </div>
       </button>
     </>

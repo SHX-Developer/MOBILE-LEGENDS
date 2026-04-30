@@ -65,6 +65,7 @@ export class BotObject implements Unit {
   private lastEAt = -Infinity;
   private lastCAt = -Infinity;
   private recallStartedAt = 0;
+  private deathStartedAt = 0;
   private armorMat!: THREE.MeshStandardMaterial;
   private armorDarkMat!: THREE.MeshStandardMaterial;
 
@@ -114,6 +115,14 @@ export class BotObject implements Unit {
     colliders: Colliders,
   ): void {
     if (!this.alive) {
+      // Lay the corpse down with an ease-in fall, like the player.
+      if (this.deathStartedAt) {
+        const t = Math.min(1, (now - this.deathStartedAt) / 700);
+        const eased = t * t;
+        this.group.rotation.x = -Math.PI / 2 * eased;
+        this.group.position.y = -0.4 * eased;
+        this.healthBar.group.visible = t < 0.85;
+      }
       if (now >= this.respawnAt) this.respawn();
       return;
     }
@@ -274,8 +283,8 @@ export class BotObject implements Unit {
 
   private die(): void {
     this.alive = false;
-    this.group.visible = false;
-    this.respawnAt = performance.now() + this.respawnDelayMs;
+    this.deathStartedAt = performance.now();
+    this.respawnAt = this.deathStartedAt + this.respawnDelayMs;
   }
 
   private respawn(): void {
@@ -283,8 +292,12 @@ export class BotObject implements Unit {
     this.alive = true;
     this.slowUntil = 0;
     this.stunnedUntil = 0;
+    this.deathStartedAt = 0;
     this.group.position.copy(this.spawn);
+    this.group.position.y = 0;
+    this.group.rotation.x = 0;
     this.group.visible = true;
+    this.healthBar.group.visible = true;
     this.healthBar.setRatio(1);
   }
 

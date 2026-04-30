@@ -108,17 +108,17 @@ export const HEAL_COOLDOWN_MS = 22000;
 export const RECALL_CHANNEL_MS = 5000;
 export const RECALL_COOLDOWN_MS = 30000;
 
-// Bot
-export const BOT_MAX_HP = 500;
+// Bot — tuned slightly weaker than the player so 1v1 feels fair.
+export const BOT_MAX_HP = 420;
 export const BOT_RADIUS = 1;
-export const BOT_SPEED_3D = 5.2;
-export const BOT_DAMAGE = 50;
-export const BOT_ATTACK_RANGE = 12;
-export const BOT_ATTACK_COOLDOWN_MS = 520;
-export const BOT_VISION_RANGE = 32;
+export const BOT_SPEED_3D = 4.6;
+export const BOT_DAMAGE = 32;
+export const BOT_ATTACK_RANGE = 11;
+export const BOT_ATTACK_COOLDOWN_MS = 720;
+export const BOT_VISION_RANGE = 28;
 export const BOT_RESPAWN_MS = 6000;
-export const BOT_RETREAT_HP_FRACTION = 0.2;
-export const BOT_REGEN_PER_SEC = 60;
+export const BOT_RETREAT_HP_FRACTION = 0.25;
+export const BOT_REGEN_PER_SEC = 50;
 export const HERO_KILL_XP_REWARD = 130;
 
 // Colours
