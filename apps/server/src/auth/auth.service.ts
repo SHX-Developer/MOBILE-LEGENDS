@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash, createHmac } from 'crypto';
+import { createHmac } from 'crypto';
 import { UserService } from '../user/user.service';
 import type { TelegramAuthResponse } from '@ml/shared';
 
@@ -49,12 +49,12 @@ export class AuthService {
 
     const data: string[] = [];
     params.forEach((v, k) => {
-      if (k !== 'hash') data.push(`${k}=${v}`);
+      if (k !== 'hash' && k !== 'signature') data.push(`${k}=${v}`);
     });
     data.sort();
     const dataCheckString = data.join('\n');
 
-    const secretKey = createHash('sha256').update(botToken).digest();
+    const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
     const computed = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
     if (computed !== hash) {
