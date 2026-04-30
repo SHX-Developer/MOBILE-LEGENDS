@@ -15,7 +15,6 @@ import {
   RESPAWN_MATCH_MINUTE_PENALTY_MS,
   RESPAWN_MAX_MS,
   MINION_WAVE_INTERVAL_MS,
-  MINION_WAVE_SIZE,
   SKILL_E_COOLDOWN_MS,
   SKILL_E_RANGE,
   SKILL_E_SLOW_DURATION_MS,
@@ -36,7 +35,7 @@ import type { Tower } from './world/Towers.js';
 import type { Base } from './world/Bases.js';
 import { PlayerObject } from './entities/PlayerObject.js';
 import { BotObject } from './entities/BotObject.js';
-import { MinionObject } from './entities/MinionObject.js';
+import { MinionObject, MINION_CONFIGS, type MinionVariant } from './entities/MinionObject.js';
 import { ProjectileManager } from './entities/ProjectileManager.js';
 import { CameraRig } from './CameraRig.js';
 import { InputController } from './InputController.js';
@@ -399,6 +398,7 @@ export class Game {
     for (const b of this.bases) b.update(now, this.registry, this.projectiles);
 
     this.projectiles.update(delta, now, this.registry);
+    this.projectiles.updateFx(delta, now);
     if (!this.player.alive && this.playerWasAlive) {
       this.respawnAt = now + this.getRespawnDelayMs(this.player.level, now);
     }
@@ -438,6 +438,8 @@ export class Game {
     );
     if (!target) return;
     this.player.faceTarget(target.position);
+    this.player.triggerAttackPose(now);
+    this.projectiles.spawnMuzzleFlash(this.player.position, this.player.facing);
     this.projectiles.spawn(this.player.position, target.position, now, {
       team: this.player.team,
       damage: this.player.attackDamage,
@@ -458,6 +460,7 @@ export class Game {
     // Drive cooldown UI on the client; the server enforces too.
     if (wantsAttack && now - this.lastAttackAt >= PLAYER_ATTACK_COOLDOWN_MS) {
       this.online.attack();
+      this.player.triggerAttackPose(now);
       this.lastAttackAt = now;
     }
     if (skillReq) {
@@ -491,6 +494,7 @@ export class Game {
     this.applyOnlineSnapshot();
     this.renderOnlineCombatEvents(this.online.drainCombatEvents(), now);
     this.projectiles.update(delta, now, this.registry);
+    this.projectiles.updateFx(delta, now);
     this.floatingText.update(now);
     this.spinCrystals(delta);
 
@@ -683,12 +687,18 @@ export class Game {
     this.lastMinionWaveAt = now;
     const blueSpawn = new THREE.Vector3(SPAWN_BLUE_X - 2.2, 0, SPAWN_BLUE_Z + 2.2);
     const redSpawn = new THREE.Vector3(SPAWN_RED_X + 2.2, 0, SPAWN_RED_Z - 2.2);
-    for (let i = 0; i < MINION_WAVE_SIZE; i++) {
-      const blue = new MinionObject(this.scene, 'blue', blueSpawn, i);
-      const red = new MinionObject(this.scene, 'red', redSpawn, i);
-      this.minions.push(blue, red);
-      this.registry.add(blue);
-      this.registry.add(red);
+    const variants: MinionVariant[] = ['melee', 'melee', 'ranged', 'tank'];
+    for (let i = 0; i < variants.length; i++) {
+      const config = MINION_CONFIGS[variants[i]];
+      this.minions.push(
+        ...[
+          new MinionObject(this.scene, 'blue', blueSpawn, i, config),
+          new MinionObject(this.scene, 'red', redSpawn, i, config),
+        ].map((m) => {
+          this.registry.add(m);
+          return m;
+        }),
+      );
     }
   }
 

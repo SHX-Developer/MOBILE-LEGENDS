@@ -1,12 +1,6 @@
 import * as THREE from 'three';
 import {
-  MINION_ATTACK_COOLDOWN_MS,
-  MINION_ATTACK_RANGE,
-  MINION_DAMAGE,
-  MINION_MAX_HP,
   MINION_RADIUS,
-  MINION_SPEED_3D,
-  MINION_XP_REWARD,
 } from '../constants.js';
 import type { Unit, Team } from '../combat/Unit.js';
 import type { UnitRegistry } from '../combat/UnitRegistry.js';
@@ -14,33 +8,103 @@ import type { Colliders } from '../world/Colliders.js';
 import { HealthBar } from '../combat/HealthBar.js';
 import type { ProjectileManager } from './ProjectileManager.js';
 
+export type MinionVariant = 'melee' | 'ranged' | 'tank';
+
+export interface MinionConfig {
+  variant: MinionVariant;
+  maxHp: number;
+  damage: number;
+  attackRange: number;
+  attackCooldownMs: number;
+  speed: number;
+  radius: number;
+  scale: number;
+  /** XP awarded to the killing hero, scaled with HP. */
+  xpReward: number;
+  /** Ranged minions launch a projectile; melee/tank deal instant damage in melee range. */
+  rangedProjectile: boolean;
+}
+
+export const MINION_CONFIGS: Record<MinionVariant, MinionConfig> = {
+  melee: {
+    variant: 'melee',
+    maxHp: 220,
+    damage: 26,
+    attackRange: 2.4,
+    attackCooldownMs: 900,
+    speed: 3.4,
+    radius: 0.75,
+    scale: 1.0,
+    xpReward: 52,
+    rangedProjectile: false,
+  },
+  ranged: {
+    variant: 'ranged',
+    maxHp: 110,
+    damage: 14,
+    attackRange: 11.5,
+    attackCooldownMs: 1100,
+    speed: 3.6,
+    radius: 0.55,
+    scale: 0.85,
+    xpReward: 32,
+    rangedProjectile: true,
+  },
+  tank: {
+    variant: 'tank',
+    maxHp: 520,
+    damage: 38,
+    attackRange: 2.6,
+    attackCooldownMs: 1300,
+    speed: 2.6,
+    radius: 0.95,
+    scale: 1.3,
+    xpReward: 118,
+    rangedProjectile: false,
+  },
+};
+
 export class MinionObject implements Unit {
   readonly kind = 'minion';
   readonly group = new THREE.Group();
-  readonly radius = MINION_RADIUS;
-  readonly maxHp = MINION_MAX_HP;
-  readonly xpReward = MINION_XP_REWARD;
-  hp = MINION_MAX_HP;
+  radius = MINION_RADIUS;
+  maxHp: number;
+  xpReward: number;
+  hp: number;
   alive = true;
   slowUntil = 0;
   stunnedUntil = 0;
   deadAt = 0;
 
+  readonly variant: MinionVariant;
+  private readonly config: MinionConfig;
   private readonly healthBar: HealthBar;
   private lastAttackAt = -Infinity;
   private avoidSide: 1 | -1 = 1;
   private lastProgress = 0;
+  private gaitPhase = 0;
+  private leftLeg?: THREE.Object3D;
+  private rightLeg?: THREE.Object3D;
+  private leftArm?: THREE.Object3D;
+  private rightArm?: THREE.Object3D;
 
   constructor(
     private readonly scene: THREE.Scene,
     readonly team: Team,
     spawn: THREE.Vector3,
     index: number,
+    config: MinionConfig,
   ) {
+    this.config = config;
+    this.variant = config.variant;
+    this.maxHp = config.maxHp;
+    this.hp = config.maxHp;
+    this.xpReward = config.xpReward;
+    this.radius = config.radius;
     this.group.position.copy(spawn);
     this.group.position.x += (index - 1) * 1.4;
     this.healthBar = new HealthBar(1.45, 0.16, team === 'blue' ? 0x64d8ff : 0xff7171);
-    this.healthBar.group.position.set(0, 1.9, 0);
+    this.healthBar.group.position.set(0, 1.9 * config.scale + 0.4, 0);
     this.group.add(this.healthBar.group);
     this.buildVisual(team === 'blue' ? 0x4f9dff : 0xff5f5f);
     scene.add(this.group);
@@ -61,7 +125,7 @@ export class MinionObject implements Unit {
     if (!this.alive) return;
     if (this.stunnedUntil > now) return;
 
-    const target = registry.findNearestEnemy(this.team, this.position, MINION_ATTACK_RANGE, [
+    const target = registry.findNearestEnemy(this.team, this.position, this.config.attackRange, [
       'minion',
       'hero',
       'structure',
@@ -69,26 +133,34 @@ export class MinionObject implements Unit {
 
     if (target) {
       this.face(target.position);
-      if (now - this.lastAttackAt >= MINION_ATTACK_COOLDOWN_MS) {
-        projectiles.spawn(this.position, target.position, now, {
-          team: this.team,
-          damage: MINION_DAMAGE,
-          target,
-          owner: this,
-        });
+      if (now - this.lastAttackAt >= this.config.attackCooldownMs) {
+        if (this.config.rangedProjectile) {
+          projectiles.spawn(this.position, target.position, now, {
+            team: this.team,
+            damage: this.config.damage,
+            target,
+            owner: this,
+          });
+        } else {
+          // Melee swing — instant hit, no projectile travel.
+          target.takeDamage(this.config.damage);
+        }
         this.lastAttackAt = now;
       }
+      this.animateGait(0, deltaSec);
       return;
     }
 
     if (objective?.alive) {
       this.moveToward(objective.position, deltaSec, colliders);
+      this.animateGait(this.config.speed, deltaSec);
+    } else {
+      this.animateGait(0, deltaSec);
     }
   }
 
   billboardHealthBar(camera: THREE.Camera): void {
     if (!this.alive) return;
-    this.healthBar.group.position.set(0, 1.9, 0);
     this.healthBar.billboard(camera);
   }
 
@@ -109,6 +181,25 @@ export class MinionObject implements Unit {
     this.group.visible = false;
   }
 
+  private animateGait(speed: number, deltaSec: number): void {
+    if (speed > 0.1) {
+      this.gaitPhase += deltaSec * (4 + speed * 0.6);
+      const swing = Math.sin(this.gaitPhase) * 0.55;
+      if (this.leftLeg) this.leftLeg.rotation.x = swing;
+      if (this.rightLeg) this.rightLeg.rotation.x = -swing;
+      if (this.leftArm) this.leftArm.rotation.x = -swing * 0.6;
+      if (this.rightArm) this.rightArm.rotation.x = swing * 0.6;
+    } else {
+      // Ease back to neutral pose.
+      const k = Math.min(1, deltaSec * 8);
+      const lerp = (a: number, b: number) => a + (b - a) * k;
+      if (this.leftLeg) this.leftLeg.rotation.x = lerp(this.leftLeg.rotation.x, 0);
+      if (this.rightLeg) this.rightLeg.rotation.x = lerp(this.rightLeg.rotation.x, 0);
+      if (this.leftArm) this.leftArm.rotation.x = lerp(this.leftArm.rotation.x, 0);
+      if (this.rightArm) this.rightArm.rotation.x = lerp(this.rightArm.rotation.x, 0);
+    }
+  }
+
   private moveToward(target: THREE.Vector3, deltaSec: number, colliders: Colliders): void {
     const dx = target.x - this.position.x;
     const dz = target.z - this.position.z;
@@ -116,7 +207,7 @@ export class MinionObject implements Unit {
     if (dist < 0.05) return;
     const nx = dx / dist;
     const nz = dz / dist;
-    const step = MINION_SPEED_3D * deltaSec;
+    const step = this.config.speed * deltaSec;
     const dir = this.pickMoveDirection(nx, nz, target, step, colliders);
     this.position.x += dir.x * step;
     this.position.z += dir.z * step;
@@ -171,6 +262,10 @@ export class MinionObject implements Unit {
   }
 
   private buildVisual(color: number): void {
+    const root = new THREE.Group();
+    root.scale.setScalar(this.config.scale);
+    this.group.add(root);
+
     const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x303442, roughness: 0.75 });
     const glowMat = new THREE.MeshStandardMaterial({
@@ -180,24 +275,80 @@ export class MinionObject implements Unit {
       roughness: 0.4,
     });
 
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.36, 0.55, 5, 10), bodyMat);
-    body.position.y = 0.9;
-    body.castShadow = true;
-    this.group.add(body);
+    // Body — bulkier for tank, slimmer for ranged.
+    const torsoR = this.variant === 'tank' ? 0.46 : this.variant === 'ranged' ? 0.28 : 0.36;
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(torsoR, 0.5, 5, 10), bodyMat);
+    torso.position.y = 0.95;
+    torso.castShadow = true;
+    root.add(torso);
 
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 12), bodyMat);
-    head.position.y = 1.42;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 12, 12), bodyMat);
+    head.position.y = 1.45;
     head.castShadow = true;
-    this.group.add(head);
+    root.add(head);
 
-    const cannon = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.8), darkMat);
-    cannon.position.set(0, 1.02, 0.48);
-    cannon.castShadow = true;
-    this.group.add(cannon);
+    // Legs — separate pivots for the gait swing.
+    const legGeom = new THREE.CylinderGeometry(0.1, 0.1, 0.55, 8);
+    legGeom.translate(0, -0.275, 0);
+    const legMat = bodyMat;
+    const leftLegPivot = new THREE.Group();
+    leftLegPivot.position.set(-0.15, 0.55, 0);
+    const leftLegMesh = new THREE.Mesh(legGeom, legMat);
+    leftLegMesh.castShadow = true;
+    leftLegPivot.add(leftLegMesh);
+    root.add(leftLegPivot);
+    this.leftLeg = leftLegPivot;
 
-    const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), glowMat);
-    muzzle.position.set(0, 1.02, 0.9);
-    this.group.add(muzzle);
+    const rightLegPivot = new THREE.Group();
+    rightLegPivot.position.set(0.15, 0.55, 0);
+    const rightLegMesh = new THREE.Mesh(legGeom, legMat);
+    rightLegMesh.castShadow = true;
+    rightLegPivot.add(rightLegMesh);
+    root.add(rightLegPivot);
+    this.rightLeg = rightLegPivot;
+
+    // Arms.
+    const armGeom = new THREE.CylinderGeometry(0.08, 0.08, 0.5, 8);
+    armGeom.translate(0, -0.25, 0);
+    const leftArmPivot = new THREE.Group();
+    leftArmPivot.position.set(-(torsoR + 0.08), 1.18, 0);
+    const leftArmMesh = new THREE.Mesh(armGeom, legMat);
+    leftArmMesh.castShadow = true;
+    leftArmPivot.add(leftArmMesh);
+    root.add(leftArmPivot);
+    this.leftArm = leftArmPivot;
+
+    const rightArmPivot = new THREE.Group();
+    rightArmPivot.position.set(torsoR + 0.08, 1.18, 0);
+    const rightArmMesh = new THREE.Mesh(armGeom, legMat);
+    rightArmMesh.castShadow = true;
+    rightArmPivot.add(rightArmMesh);
+    root.add(rightArmPivot);
+    this.rightArm = rightArmPivot;
+
+    // Per-variant accessory.
+    if (this.variant === 'ranged') {
+      const bow = new THREE.Mesh(
+        new THREE.TorusGeometry(0.32, 0.04, 6, 12, Math.PI),
+        darkMat,
+      );
+      bow.rotation.z = Math.PI / 2;
+      bow.position.set(0.32, 1.2, 0.3);
+      root.add(bow);
+    } else if (this.variant === 'melee') {
+      const sword = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.08), glowMat);
+      sword.position.set(0.32, 1.35, 0.4);
+      sword.rotation.x = -Math.PI / 4;
+      root.add(sword);
+    } else {
+      // Tank: shield + heavy spike.
+      const shield = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.08), darkMat);
+      shield.position.set(-0.42, 1.1, 0.3);
+      root.add(shield);
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.4, 8), glowMat);
+      spike.position.set(0, 1.85, 0);
+      root.add(spike);
+    }
   }
 }
 

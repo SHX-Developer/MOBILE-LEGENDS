@@ -42,6 +42,14 @@ export class PlayerObject implements Unit {
   private readonly rangeRing: THREE.Mesh;
   private cloakMat!: THREE.MeshStandardMaterial;
   private cloakLightMat!: THREE.MeshStandardMaterial;
+  /** While now < attackLockUntil the hero stops moving (stand-still on shoot). */
+  attackLockUntil = 0;
+  private gaitPhase = 0;
+  private leftLeg?: THREE.Object3D;
+  private rightLeg?: THREE.Object3D;
+  private leftArm?: THREE.Object3D;
+  private rightArm?: THREE.Object3D;
+  private bowGroup?: THREE.Object3D;
 
   constructor(spawn: THREE.Vector3) {
     this.spawn = spawn.clone();
@@ -116,21 +124,69 @@ export class PlayerObject implements Unit {
     if (!this.alive) return;
     if (this.stunnedUntil > now) {
       this.velocity.set(0, 0, 0);
+      this.animateGait(0, deltaSec, now);
       return;
     }
+    // Lock movement during the attack windup so the shot reads as committed.
+    const attacking = now < this.attackLockUntil;
     const speed = this.slowUntil > now ? PLAYER_SPEED_3D * 0.5 : PLAYER_SPEED_3D;
     const len = Math.hypot(input.x, input.z);
-    if (len > 0) {
+    let targetVx = 0;
+    let targetVz = 0;
+    if (!attacking && len > 0) {
       const nx = input.x / len;
       const nz = input.z / len;
-      this.velocity.set(nx * speed, 0, nz * speed);
+      targetVx = nx * speed;
+      targetVz = nz * speed;
       this.group.rotation.y = Math.atan2(nx, nz);
       this.facing.set(nx, 0, nz);
-    } else {
-      this.velocity.set(0, 0, 0);
     }
+    // Smooth velocity ramp — accel ~24 u/s² gives a snappy but non-jittery feel.
+    const accel = attacking ? 40 : 22;
+    const k = Math.min(1, deltaSec * accel * 0.25);
+    this.velocity.x += (targetVx - this.velocity.x) * k;
+    this.velocity.z += (targetVz - this.velocity.z) * k;
     this.group.position.x += this.velocity.x * deltaSec;
     this.group.position.z += this.velocity.z * deltaSec;
+    const moveSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    this.animateGait(moveSpeed, deltaSec, now);
+  }
+
+  /** Triggered by Game when the player fires. Locks movement for a moment and
+   *  yanks the bow into a draw pose for that window. */
+  triggerAttackPose(now: number): void {
+    this.attackLockUntil = now + 220;
+  }
+
+  private animateGait(speed: number, deltaSec: number, now: number): void {
+    const drawing = now < this.attackLockUntil;
+    if (drawing) {
+      // Hold limbs nearly still, pull the bow back slightly.
+      const k = Math.min(1, deltaSec * 14);
+      const lerp = (a: number, b: number) => a + (b - a) * k;
+      if (this.leftLeg) this.leftLeg.rotation.x = lerp(this.leftLeg.rotation.x, 0);
+      if (this.rightLeg) this.rightLeg.rotation.x = lerp(this.rightLeg.rotation.x, 0);
+      if (this.leftArm) this.leftArm.rotation.x = lerp(this.leftArm.rotation.x, -0.55);
+      if (this.rightArm) this.rightArm.rotation.x = lerp(this.rightArm.rotation.x, -0.95);
+      if (this.bowGroup) this.bowGroup.scale.x = lerp(this.bowGroup.scale.x, 1.1);
+      return;
+    }
+    if (this.bowGroup) this.bowGroup.scale.x = 1;
+    if (speed > 0.3) {
+      this.gaitPhase += deltaSec * (5 + speed * 0.4);
+      const swing = Math.sin(this.gaitPhase) * 0.7;
+      if (this.leftLeg) this.leftLeg.rotation.x = swing;
+      if (this.rightLeg) this.rightLeg.rotation.x = -swing;
+      if (this.leftArm) this.leftArm.rotation.x = -swing * 0.6;
+      if (this.rightArm) this.rightArm.rotation.x = swing * 0.6;
+    } else {
+      const k = Math.min(1, deltaSec * 8);
+      const lerp = (a: number, b: number) => a + (b - a) * k;
+      if (this.leftLeg) this.leftLeg.rotation.x = lerp(this.leftLeg.rotation.x, 0);
+      if (this.rightLeg) this.rightLeg.rotation.x = lerp(this.rightLeg.rotation.x, 0);
+      if (this.leftArm) this.leftArm.rotation.x = lerp(this.leftArm.rotation.x, 0);
+      if (this.rightArm) this.rightArm.rotation.x = lerp(this.rightArm.rotation.x, 0);
+    }
   }
 
   faceTarget(target: THREE.Vector3): void {
@@ -254,13 +310,23 @@ export class PlayerObject implements Unit {
     });
     const stringMat = new THREE.MeshStandardMaterial({ color: 0xf4ead5, roughness: 0.5 });
 
+    // Pivoted legs — rotation happens at the hip, not the centre.
     const legGeom = new THREE.CylinderGeometry(0.18, 0.18, 0.9, 12);
-    for (const x of [-0.2, 0.2]) {
-      const leg = new THREE.Mesh(legGeom, cloak);
-      leg.position.set(x, 0.45, 0);
-      leg.castShadow = true;
-      this.group.add(leg);
-    }
+    legGeom.translate(0, -0.45, 0);
+    const leftLegPivot = new THREE.Group();
+    leftLegPivot.position.set(-0.2, 0.9, 0);
+    const leftLegMesh = new THREE.Mesh(legGeom, cloak);
+    leftLegMesh.castShadow = true;
+    leftLegPivot.add(leftLegMesh);
+    this.group.add(leftLegPivot);
+    this.leftLeg = leftLegPivot;
+    const rightLegPivot = new THREE.Group();
+    rightLegPivot.position.set(0.2, 0.9, 0);
+    const rightLegMesh = new THREE.Mesh(legGeom, cloak);
+    rightLegMesh.castShadow = true;
+    rightLegPivot.add(rightLegMesh);
+    this.group.add(rightLegPivot);
+    this.rightLeg = rightLegPivot;
 
     const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.65, 0.7, 16), cloak);
     skirt.position.y = 1.05;
@@ -277,18 +343,23 @@ export class PlayerObject implements Unit {
     belt.position.y = 1.32;
     this.group.add(belt);
 
+    // Pivoted arms — rotation at the shoulder.
     const armGeom = new THREE.CylinderGeometry(0.12, 0.12, 0.7, 10);
-    const leftArm = new THREE.Mesh(armGeom, cloakLight);
-    leftArm.position.set(-0.5, 1.55, 0);
-    leftArm.rotation.z = Math.PI / 12;
-    leftArm.castShadow = true;
-    this.group.add(leftArm);
-
-    const rightArm = new THREE.Mesh(armGeom, cloakLight);
-    rightArm.position.set(0.45, 1.4, 0.25);
-    rightArm.rotation.x = -Math.PI / 3;
-    rightArm.castShadow = true;
-    this.group.add(rightArm);
+    armGeom.translate(0, -0.35, 0);
+    const leftArmPivot = new THREE.Group();
+    leftArmPivot.position.set(-0.5, 1.85, 0);
+    const leftArmMesh = new THREE.Mesh(armGeom, cloakLight);
+    leftArmMesh.castShadow = true;
+    leftArmPivot.add(leftArmMesh);
+    this.group.add(leftArmPivot);
+    this.leftArm = leftArmPivot;
+    const rightArmPivot = new THREE.Group();
+    rightArmPivot.position.set(0.45, 1.75, 0);
+    const rightArmMesh = new THREE.Mesh(armGeom, cloakLight);
+    rightArmMesh.castShadow = true;
+    rightArmPivot.add(rightArmMesh);
+    this.group.add(rightArmPivot);
+    this.rightArm = rightArmPivot;
 
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 14), skin);
     head.position.y = 2.15;
@@ -317,6 +388,7 @@ export class PlayerObject implements Unit {
     bow.position.set(0.45, 1.42, 0.42);
     bow.rotation.z = -Math.PI / 18;
     this.group.add(bow);
+    this.bowGroup = bow;
   }
 }
 

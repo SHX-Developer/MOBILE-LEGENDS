@@ -490,17 +490,23 @@ const SkillButton = memo(function SkillButton({
 }: SkillProps) {
   // Each skill button polls its own cooldown — keeps re-renders local.
   const [cooldown, setCooldown] = useState(0);
+  const [readyPulse, setReadyPulse] = useState(0);
   useEffect(() => {
+    let prevCd = 0;
     const tick = () => {
       const g = getGame();
       if (!g) return;
       const cd =
         id === 'q' ? g.getQCooldownLeft() : id === 'e' ? g.getECooldownLeft() : g.getCCooldownLeft();
+      // Pulse the button briefly the moment cooldown finishes.
+      if (prevCd > 0 && cd === 0) setReadyPulse(Date.now());
+      prevCd = cd;
       setCooldown((prev) => (Math.abs(prev - cd) > 30 || cd === 0 ? cd : prev));
     };
     const handle = window.setInterval(tick, 100);
     return () => window.clearInterval(handle);
   }, [id, getGame]);
+  const pulsing = readyPulse > 0 && Date.now() - readyPulse < 420;
 
   const onCooldown = cooldown > 0;
   const seconds = onCooldown ? Math.ceil(cooldown / 1000) : 0;
@@ -605,13 +611,17 @@ const SkillButton = memo(function SkillButton({
           fontSize: 22,
           letterSpacing: 1,
           cursor: onCooldown ? 'default' : 'pointer',
-          boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
           touchAction: 'none',
           opacity: onCooldown ? 0.55 : 1,
           display: 'grid',
           placeItems: 'center',
           overflow: 'hidden',
           contain: 'layout paint',
+          transform: pulsing ? 'scale(1.12)' : 'scale(1)',
+          transition: 'transform 180ms ease-out, box-shadow 180ms ease-out',
+          boxShadow: pulsing
+            ? `0 0 0 4px ${accent}99, 0 0 26px ${accent}aa`
+            : '0 6px 18px rgba(0,0,0,0.45)',
         }}
       >
         {onCooldown && (

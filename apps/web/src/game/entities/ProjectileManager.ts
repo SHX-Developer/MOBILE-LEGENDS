@@ -65,6 +65,7 @@ export class ProjectileManager {
 
   private projectiles: Projectile[] = [];
   private readonly variants: Record<ProjectileKind, Variant>;
+  private fx: FxBurst[] = [];
 
   constructor(private readonly scene: THREE.Scene) {
     this.variants = {
@@ -178,6 +179,7 @@ export class ProjectileManager {
   private fireOnArrive(p: Projectile): void {
     if (p.arrived) return;
     p.arrived = true;
+    this.spawnHitBurst(p.mesh.position, p.team);
     p.onArrive?.();
   }
 
@@ -198,12 +200,111 @@ export class ProjectileManager {
       p.owner.grantXp?.(unit.xpReward);
     }
     if (p.fromPlayer) this.onPlayerHit?.();
+    this.spawnHitBurst(unit.position, p.team);
   }
 
   private removeAt(index: number): void {
     this.scene.remove(this.projectiles[index].mesh);
     this.projectiles.splice(index, 1);
   }
+
+  /** Brief flash + scatter at the impact point. Pure FX, no damage. */
+  spawnHitBurst(at: THREE.Vector3, team: Team): void {
+    const color = team === 'blue' ? 0x9fd8ff : 0xffb37a;
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.1, 0.55, 18),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.95,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(at.x, 1.0, at.z);
+    this.scene.add(ring);
+    this.fx.push({ mesh: ring, spawnedAt: performance.now(), kind: 'ring', durationMs: 260 });
+
+    for (let i = 0; i < 6; i++) {
+      const speck = new THREE.Mesh(
+        new THREE.SphereGeometry(0.13, 6, 6),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 1,
+          depthWrite: false,
+        }),
+      );
+      speck.position.set(at.x, 1.2, at.z);
+      const a = (Math.PI * 2 * i) / 6 + Math.random() * 0.4;
+      const v = new THREE.Vector3(Math.cos(a) * 5, 2 + Math.random() * 2, Math.sin(a) * 5);
+      this.scene.add(speck);
+      this.fx.push({
+        mesh: speck,
+        spawnedAt: performance.now(),
+        kind: 'speck',
+        durationMs: 380,
+        velocity: v,
+      });
+    }
+  }
+
+  /** Quick flash at the muzzle when a hero fires. */
+  spawnMuzzleFlash(at: THREE.Vector3, facing: THREE.Vector3): void {
+    const flash = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28, 8, 8),
+      new THREE.MeshBasicMaterial({
+        color: 0xffe28a,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+      }),
+    );
+    flash.position.set(at.x + facing.x * 0.7, 1.45, at.z + facing.z * 0.7);
+    this.scene.add(flash);
+    this.fx.push({ mesh: flash, spawnedAt: performance.now(), kind: 'flash', durationMs: 140 });
+  }
+
+  /** Drives the FX layer; cheap per-frame loop over short-lived sprites. */
+  updateFx(deltaSec: number, now: number): void {
+    for (let i = this.fx.length - 1; i >= 0; i--) {
+      const f = this.fx[i];
+      const t = (now - f.spawnedAt) / f.durationMs;
+      if (t >= 1) {
+        this.scene.remove(f.mesh);
+        const m = f.mesh as THREE.Mesh;
+        (m.material as THREE.Material).dispose();
+        m.geometry.dispose();
+        this.fx.splice(i, 1);
+        continue;
+      }
+      const mat = (f.mesh as THREE.Mesh).material as THREE.MeshBasicMaterial;
+      if (f.kind === 'ring') {
+        const s = 1 + t * 2.4;
+        f.mesh.scale.set(s, s, s);
+        mat.opacity = (1 - t) * 0.9;
+      } else if (f.kind === 'speck' && f.velocity) {
+        f.mesh.position.x += f.velocity.x * deltaSec;
+        f.mesh.position.y += f.velocity.y * deltaSec;
+        f.mesh.position.z += f.velocity.z * deltaSec;
+        f.velocity.y -= 9 * deltaSec;
+        mat.opacity = 1 - t;
+      } else {
+        const s = 1 + t * 1.5;
+        f.mesh.scale.set(s, s, s);
+        mat.opacity = (1 - t) * 1.0;
+      }
+    }
+  }
+}
+
+interface FxBurst {
+  mesh: THREE.Object3D;
+  spawnedAt: number;
+  kind: 'ring' | 'speck' | 'flash';
+  durationMs: number;
+  velocity?: THREE.Vector3;
 }
 
 function createArrowProjectile(): THREE.Object3D {
