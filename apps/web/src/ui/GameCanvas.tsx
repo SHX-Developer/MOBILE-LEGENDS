@@ -10,17 +10,11 @@ interface Frame {
   vpH: number;
 }
 
-/**
- * Game is always rendered as a 16:9 frame rotated 90° CW. The frame's
- * logical width/height are picked so the rotated AABB fills as much of
- * the viewport as possible while keeping aspect.
- */
+type Team = 'blue' | 'red';
+
 function computeFrame(): Frame {
   const vpW = window.innerWidth;
   const vpH = window.innerHeight;
-  // After rotate(90deg): visual_w = logicalH, visual_h = logicalW.
-  // Aspect: logicalW / logicalH = ASPECT.
-  // Fit:    logicalH ≤ vpW AND ASPECT*logicalH ≤ vpH.
   const logicalH = Math.min(vpW, vpH / ASPECT);
   const logicalW = ASPECT * logicalH;
   return { logicalW, logicalH, vpW, vpH };
@@ -30,6 +24,9 @@ export function GameCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Game | null>(null);
   const [frame, setFrame] = useState<Frame>(() => computeFrame());
+  const [gameKey, setGameKey] = useState(0);
+  const [matchEnd, setMatchEnd] = useState<Team | null>(null);
+  const [cooldowns, setCooldowns] = useState({ q: 0, e: 0 });
 
   useEffect(() => {
     const update = () => setFrame(computeFrame());
@@ -43,15 +40,30 @@ export function GameCanvas() {
 
   useEffect(() => {
     if (!containerRef.current) return;
-    gameRef.current = createGame(containerRef.current);
+    const game = createGame(containerRef.current);
+    game.onMatchEnd = (winner) => setMatchEnd(winner);
+    gameRef.current = game;
     return () => {
-      gameRef.current?.destroy();
+      game.destroy();
       gameRef.current = null;
     };
+  }, [gameKey]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const g = gameRef.current;
+      if (!g) return;
+      setCooldowns({ q: g.getQCooldownLeft(), e: g.getECooldownLeft() });
+    }, 100);
+    return () => clearInterval(id);
   }, []);
 
-  // Centre the pre-rotation frame at the viewport centre. After rotation
-  // around its own centre the visual AABB is still centred in the viewport.
+  function restart() {
+    setMatchEnd(null);
+    setCooldowns({ q: 0, e: 0 });
+    setGameKey((k) => k + 1);
+  }
+
   const left = (frame.vpW - frame.logicalW) / 2;
   const top = (frame.vpH - frame.logicalH) / 2;
 
@@ -81,7 +93,31 @@ export function GameCanvas() {
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
         <Joystick onChange={(x, z) => gameRef.current?.setJoystickAxis(x, z)} />
         <FireButton onFire={() => gameRef.current?.fire()} />
+        <SkillButton
+          label="Q"
+          subtitle="POWER"
+          accent="#ff7a3d"
+          right={36}
+          bottom={150}
+          size={72}
+          cooldownLeftMs={cooldowns.q}
+          totalMs={6000}
+          onUse={() => gameRef.current?.useQ()}
+        />
+        <SkillButton
+          label="E"
+          subtitle="SLOW"
+          accent="#4ec9ff"
+          right={130}
+          bottom={92}
+          size={72}
+          cooldownLeftMs={cooldowns.e}
+          totalMs={8000}
+          onUse={() => gameRef.current?.useE()}
+        />
       </div>
+
+      {matchEnd && <MatchEndOverlay winner={matchEnd} onRestart={restart} />}
     </div>
   );
 }
@@ -111,10 +147,8 @@ function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
     const r = base.getBoundingClientRect();
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
-    // viewport-space delta from joystick centre
     const vDx = clientX - cx;
     const vDy = clientY - cy;
-    // wrapper rotated 90° CCW → invert with: local = (vDy, -vDx)
     let lDx = vDy;
     let lDy = -vDx;
     const dist = Math.hypot(lDx, lDy);
@@ -213,5 +247,156 @@ function FireButton({ onFire }: { onFire: () => void }) {
     >
       FIRE
     </button>
+  );
+}
+
+interface SkillProps {
+  label: string;
+  subtitle: string;
+  accent: string;
+  right: number;
+  bottom: number;
+  size: number;
+  cooldownLeftMs: number;
+  totalMs: number;
+  onUse: () => void;
+}
+
+function SkillButton({
+  label,
+  subtitle,
+  accent,
+  right,
+  bottom,
+  size,
+  cooldownLeftMs,
+  totalMs,
+  onUse,
+}: SkillProps) {
+  const onCooldown = cooldownLeftMs > 0;
+  const seconds = onCooldown ? Math.ceil(cooldownLeftMs / 1000) : 0;
+  const fillPct = onCooldown
+    ? Math.min(100, ((totalMs - cooldownLeftMs) / totalMs) * 100)
+    : 100;
+
+  return (
+    <button
+      onPointerDown={(e) => {
+        e.preventDefault();
+        if (!onCooldown) onUse();
+      }}
+      style={{
+        position: 'absolute',
+        right,
+        bottom,
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        border: `2px solid ${accent}`,
+        background: onCooldown
+          ? 'rgba(20, 24, 36, 0.7)'
+          : `radial-gradient(circle at 35% 30%, ${accent} 0%, #1a1825 75%)`,
+        color: '#fff',
+        fontWeight: 800,
+        fontSize: 22,
+        letterSpacing: 1,
+        cursor: onCooldown ? 'default' : 'pointer',
+        boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
+        touchAction: 'none',
+        opacity: onCooldown ? 0.55 : 1,
+        display: 'grid',
+        placeItems: 'center',
+        overflow: 'hidden',
+      }}
+    >
+      {onCooldown && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: `conic-gradient(${accent}66 ${fillPct}%, transparent ${fillPct}%)`,
+            borderRadius: '50%',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+      <div
+        style={{
+          position: 'relative',
+          display: 'grid',
+          placeItems: 'center',
+          lineHeight: 1,
+        }}
+      >
+        <div>{onCooldown ? seconds : label}</div>
+        <div style={{ fontSize: 9, opacity: 0.8, marginTop: 2 }}>{subtitle}</div>
+      </div>
+    </button>
+  );
+}
+
+function MatchEndOverlay({
+  winner,
+  onRestart,
+}: {
+  winner: Team;
+  onRestart: () => void;
+}) {
+  const isVictory = winner === 'blue';
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'grid',
+        placeItems: 'center',
+        background: 'rgba(0, 0, 0, 0.65)',
+        backdropFilter: 'blur(6px)',
+        zIndex: 20,
+      }}
+    >
+      <div
+        style={{
+          display: 'grid',
+          placeItems: 'center',
+          gap: 24,
+          padding: '32px 56px',
+          borderRadius: 20,
+          background: 'rgba(20, 22, 36, 0.88)',
+          border: `2px solid ${isVictory ? '#7be38e' : '#e36b6b'}`,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 56,
+            fontWeight: 900,
+            letterSpacing: 4,
+            color: isVictory ? '#7be38e' : '#e36b6b',
+            textShadow: '0 4px 18px rgba(0,0,0,0.6)',
+          }}
+        >
+          {isVictory ? 'VICTORY' : 'DEFEAT'}
+        </div>
+        <button
+          onClick={onRestart}
+          style={{
+            fontSize: 18,
+            fontWeight: 700,
+            letterSpacing: 2,
+            padding: '12px 36px',
+            borderRadius: 999,
+            border: '2px solid #ffce5c',
+            background:
+              'radial-gradient(circle at 35% 30%, #ffce5c 0%, #e48a1a 60%, #a14b00 100%)',
+            color: '#1a1208',
+            cursor: 'pointer',
+            boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
+          }}
+        >
+          PLAY AGAIN
+        </button>
+      </div>
+    </div>
   );
 }

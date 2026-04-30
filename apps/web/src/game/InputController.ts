@@ -5,7 +5,10 @@ export class InputController {
   private joystick = { x: 0, z: 0 };
   private raycaster = new THREE.Raycaster();
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-  private pendingTarget: THREE.Vector3 | null = null;
+  private pendingAttack = false;
+  private pendingQ = false;
+  private pendingE = false;
+  private lastClickTarget: THREE.Vector3 | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -40,15 +43,38 @@ export class InputController {
     return { x: clamp(x, -1, 1), z: clamp(z, -1, 1) };
   }
 
-  /** Returns and clears any pending click target on the ground plane. */
-  consumeAttackTarget(): THREE.Vector3 | null {
-    const t = this.pendingTarget;
-    this.pendingTarget = null;
-    return t;
+  /** External callers (e.g. mobile FIRE button) use these to request actions. */
+  requestAttack(): void { this.pendingAttack = true; }
+  requestQ(): void { this.pendingQ = true; }
+  requestE(): void { this.pendingE = true; }
+
+  consumeAttackRequest(): boolean {
+    const r = this.pendingAttack;
+    this.pendingAttack = false;
+    return r;
+  }
+
+  consumeQRequest(): boolean {
+    const r = this.pendingQ;
+    this.pendingQ = false;
+    return r;
+  }
+
+  consumeERequest(): boolean {
+    const r = this.pendingE;
+    this.pendingE = false;
+    return r;
+  }
+
+  getLastClickTarget(): THREE.Vector3 | null {
+    return this.lastClickTarget;
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    this.keys.add(e.key.toLowerCase());
+    const key = e.key.toLowerCase();
+    this.keys.add(key);
+    if (key === 'q') this.pendingQ = true;
+    else if (key === 'e') this.pendingE = true;
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
@@ -64,8 +90,9 @@ export class InputController {
     this.raycaster.setFromCamera(ndc, this.camera);
     const hit = new THREE.Vector3();
     if (this.raycaster.ray.intersectPlane(this.groundPlane, hit)) {
-      this.pendingTarget = hit;
+      this.lastClickTarget = hit;
     }
+    this.pendingAttack = true;
   };
 }
 

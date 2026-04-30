@@ -20,12 +20,26 @@ export class Colliders {
   readonly circles: CircleCollider[] = [];
   readonly rects: RectCollider[] = [];
 
-  addCircle(x: number, z: number, r: number): void {
-    this.circles.push({ x, z, r });
+  addCircle(x: number, z: number, r: number): CircleCollider {
+    const c: CircleCollider = { x, z, r };
+    this.circles.push(c);
+    return c;
   }
 
-  addRect(x: number, z: number, halfW: number, halfZ: number): void {
-    this.rects.push({ x, z, halfW, halfZ });
+  addRect(x: number, z: number, halfW: number, halfZ: number): RectCollider {
+    const r: RectCollider = { x, z, halfW, halfZ };
+    this.rects.push(r);
+    return r;
+  }
+
+  removeCircle(c: CircleCollider): void {
+    const i = this.circles.indexOf(c);
+    if (i >= 0) this.circles.splice(i, 1);
+  }
+
+  removeRect(r: RectCollider): void {
+    const i = this.rects.indexOf(r);
+    if (i >= 0) this.rects.splice(i, 1);
   }
 
   resolve(pos: { x: number; z: number }, radius: number): void {
