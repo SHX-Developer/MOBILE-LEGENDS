@@ -20,9 +20,11 @@ import { HealthBar } from '../combat/HealthBar.js';
 import type { ProjectileManager } from '../entities/ProjectileManager.js';
 
 export class Tower implements Unit {
+  readonly kind = 'structure';
   readonly team: Team;
   readonly radius = TOWER_RADIUS * 1.6;
   readonly maxHp = TOWER_MAX_HP;
+  readonly xpReward = 0;
   hp = TOWER_MAX_HP;
   alive = true;
   slowUntil = 0;
@@ -91,12 +93,17 @@ export class Tower implements Unit {
   update(now: number, registry: UnitRegistry, projectiles: ProjectileManager): void {
     if (!this.alive) return;
     if (now - this.lastAttackAt < TOWER_ATTACK_COOLDOWN_MS) return;
-    const target = registry.findNearestEnemy(this.team, this.position, TOWER_ATTACK_RANGE);
+    const target = registry.findNearestEnemy(this.team, this.position, TOWER_ATTACK_RANGE, [
+      'minion',
+      'hero',
+      'structure',
+    ]);
     if (!target) return;
     projectiles.spawn(this.position, target.position, now, {
       team: this.team,
       damage: TOWER_DAMAGE,
       target,
+      owner: this,
     });
     this.lastAttackAt = now;
   }

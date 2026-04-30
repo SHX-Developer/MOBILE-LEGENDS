@@ -1,5 +1,19 @@
 import * as THREE from 'three';
-import { PLAYER_ATTACK_RANGE, PLAYER_MAX_HP, PLAYER_RADIUS, PLAYER_SPEED_3D } from '../constants.js';
+import {
+  HERO_BASE_XP_TO_LEVEL,
+  HERO_DAMAGE_PER_LEVEL,
+  HERO_HP_PER_LEVEL,
+  HERO_KILL_XP_REWARD,
+  HERO_MAX_LEVEL,
+  HERO_XP_LEVEL_GROWTH,
+  PLAYER_ATTACK_DAMAGE,
+  PLAYER_ATTACK_RANGE,
+  PLAYER_MAX_HP,
+  PLAYER_RADIUS,
+  PLAYER_SPEED_3D,
+  SKILL_E_DAMAGE,
+  SKILL_Q_DAMAGE,
+} from '../constants.js';
 import type { Unit, Team } from '../combat/Unit.js';
 import { HealthBar } from '../combat/HealthBar.js';
 
@@ -8,18 +22,21 @@ import { HealthBar } from '../combat/HealthBar.js';
  * which matches the rotation formula in update(): atan2(input.x, input.z).
  */
 export class PlayerObject implements Unit {
+  readonly kind = 'hero';
   readonly group = new THREE.Group();
   readonly facing = new THREE.Vector3(0, 0, 1);
   readonly team: Team = 'blue';
   readonly radius = PLAYER_RADIUS;
-  readonly maxHp = PLAYER_MAX_HP;
+  readonly xpReward = HERO_KILL_XP_REWARD;
   hp = PLAYER_MAX_HP;
   alive = true;
   slowUntil = 0;
+  level = 1;
+  xp = 0;
 
   private velocity = new THREE.Vector3();
   private readonly spawn: THREE.Vector3;
-  private readonly healthBar = new HealthBar(2.4, 0.22, 0x44ff66);
+  private readonly healthBar = new HealthBar(2.4, 0.22, 0x44ff66, true);
   private readonly rangeRing: THREE.Mesh;
 
   constructor(spawn: THREE.Vector3) {
@@ -28,6 +45,7 @@ export class PlayerObject implements Unit {
     this.group.position.copy(spawn);
     this.healthBar.group.position.set(0, 3, 0);
     this.group.add(this.healthBar.group);
+    this.healthBar.setLevel(this.level);
 
     this.rangeRing = new THREE.Mesh(
       new THREE.RingGeometry(PLAYER_ATTACK_RANGE - 0.35, PLAYER_ATTACK_RANGE, 64),
@@ -58,6 +76,22 @@ export class PlayerObject implements Unit {
 
   get position(): THREE.Vector3 {
     return this.group.position;
+  }
+
+  get maxHp(): number {
+    return PLAYER_MAX_HP + (this.level - 1) * HERO_HP_PER_LEVEL;
+  }
+
+  get attackDamage(): number {
+    return PLAYER_ATTACK_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL;
+  }
+
+  get skillQDamage(): number {
+    return SKILL_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.5;
+  }
+
+  get skillEDamage(): number {
+    return SKILL_E_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6);
   }
 
   update(input: { x: number; z: number }, deltaSec: number, now: number): void {
@@ -102,6 +136,21 @@ export class PlayerObject implements Unit {
     if (this.hp <= 0) this.die();
   }
 
+  grantXp(amount: number): void {
+    if (this.level >= HERO_MAX_LEVEL || amount <= 0) return;
+    this.xp += amount;
+    while (this.level < HERO_MAX_LEVEL && this.xp >= this.xpToNext()) {
+      this.xp -= this.xpToNext();
+      const oldMaxHp = this.maxHp;
+      this.level += 1;
+      const hpGain = this.maxHp - oldMaxHp;
+      this.hp = Math.min(this.maxHp, this.hp + hpGain);
+      this.healthBar.setRatio(this.hp / this.maxHp);
+      this.healthBar.setLevel(this.level);
+    }
+    if (this.level >= HERO_MAX_LEVEL) this.xp = 0;
+  }
+
   private die(): void {
     this.alive = false;
     this.group.visible = false;
@@ -115,6 +164,10 @@ export class PlayerObject implements Unit {
     this.group.visible = true;
     this.velocity.set(0, 0, 0);
     this.healthBar.setRatio(1);
+  }
+
+  private xpToNext(): number {
+    return Math.round(HERO_BASE_XP_TO_LEVEL * HERO_XP_LEVEL_GROWTH ** (this.level - 1));
   }
 
   private buildLayla(): void {

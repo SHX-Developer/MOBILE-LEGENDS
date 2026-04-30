@@ -20,9 +20,11 @@ import type { ProjectileManager } from '../entities/ProjectileManager.js';
 import { HealthBar } from '../combat/HealthBar.js';
 
 export class Base implements Unit {
+  readonly kind = 'structure';
   readonly team: Team;
   readonly radius = BASE_HIT_RADIUS;
   readonly maxHp = BASE_MAX_HP;
+  readonly xpReward = 0;
   hp = BASE_MAX_HP;
   alive = true;
   slowUntil = 0;
@@ -98,13 +100,18 @@ export class Base implements Unit {
   update(now: number, registry: UnitRegistry, projectiles: ProjectileManager): void {
     if (!this.alive) return;
     if (now - this.lastAttackAt < BASE_ATTACK_COOLDOWN_MS) return;
-    const target = registry.findNearestEnemy(this.team, this.position, BASE_ATTACK_RANGE);
+    const target = registry.findNearestEnemy(this.team, this.position, BASE_ATTACK_RANGE, [
+      'minion',
+      'hero',
+      'structure',
+    ]);
     if (!target) return;
     projectiles.spawn(this.position, target.position, now, {
       team: this.team,
       damage: BASE_DAMAGE,
       kind: 'heavy',
       target,
+      owner: this,
     });
     this.lastAttackAt = now;
   }

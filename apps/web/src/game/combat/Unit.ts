@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 export type Team = 'blue' | 'red';
+export type UnitKind = 'hero' | 'minion' | 'structure';
 
 /**
  * Anything that can take damage and be targeted by auto-aim. Position is
@@ -10,12 +11,15 @@ export type Team = 'blue' | 'red';
  * `now < slowUntil`. Stationary units (towers, bases) ignore it.
  */
 export interface Unit {
+  readonly kind: UnitKind;
   readonly team: Team;
   readonly position: THREE.Vector3;
   readonly radius: number;
   readonly maxHp: number;
+  readonly xpReward: number;
   hp: number;
   alive: boolean;
   slowUntil: number;
   takeDamage(amount: number): void;
+  grantXp?(amount: number): void;
 }

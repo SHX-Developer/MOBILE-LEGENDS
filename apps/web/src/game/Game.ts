@@ -1,17 +1,16 @@
 import * as THREE from 'three';
 import {
   PLAYER_ATTACK_COOLDOWN_MS,
-  PLAYER_ATTACK_DAMAGE,
   PLAYER_ATTACK_RANGE,
   PLAYER_RADIUS,
   PLAYER_RESPAWN_MS,
+  MINION_WAVE_INTERVAL_MS,
+  MINION_WAVE_SIZE,
   SKILL_E_COOLDOWN_MS,
-  SKILL_E_DAMAGE,
   SKILL_E_RANGE,
   SKILL_E_SLOW_DURATION_MS,
   SKILL_E_SLOW_FACTOR,
   SKILL_Q_COOLDOWN_MS,
-  SKILL_Q_DAMAGE,
   SKILL_Q_RANGE,
   SPAWN_BLUE_X,
   SPAWN_BLUE_Z,
@@ -24,11 +23,13 @@ import type { Tower } from './world/Towers.js';
 import type { Base } from './world/Bases.js';
 import { PlayerObject } from './entities/PlayerObject.js';
 import { BotObject } from './entities/BotObject.js';
+import { MinionObject } from './entities/MinionObject.js';
 import { ProjectileManager } from './entities/ProjectileManager.js';
 import { CameraRig } from './CameraRig.js';
 import { InputController } from './InputController.js';
 import { UnitRegistry } from './combat/UnitRegistry.js';
-import type { Team } from './combat/Unit.js';
+import { FloatingTextManager } from './combat/FloatingTextManager.js';
+import type { Team, Unit } from './combat/Unit.js';
 import { Haptics } from './haptics.js';
 
 export type SkillId = 'q' | 'e';
@@ -50,7 +51,9 @@ export class Game {
   private input: InputController;
   private player: PlayerObject;
   private bot: BotObject;
+  private minions: MinionObject[] = [];
   private projectiles: ProjectileManager;
+  private floatingText: FloatingTextManager;
   private colliders: Colliders;
   private towers: Tower[];
   private bases: Base[];
@@ -66,6 +69,7 @@ export class Game {
   private playerWasAlive = true;
   private gameOver = false;
   private lastPlayerHp = 0;
+  private lastMinionWaveAt = -Infinity;
 
   private aimIndicator: THREE.Mesh;
   private aim: Record<SkillId, AimState> = {
@@ -113,6 +117,10 @@ export class Game {
 
     this.projectiles = new ProjectileManager(this.scene);
     this.projectiles.onPlayerHit = () => Haptics.hitEnemy();
+    this.floatingText = new FloatingTextManager(this.scene);
+    this.projectiles.onDamage = (target, amount, owner) => {
+      this.floatingText.spawnDamage(target.position, amount, target.team, owner?.team);
+    };
     this.lastPlayerHp = this.player.hp;
 
     this.aimIndicator = this.buildAimIndicator();
@@ -126,6 +134,7 @@ export class Game {
     this.resizeObserver = new ResizeObserver(() => this.handleResize());
     this.resizeObserver.observe(container);
 
+    this.spawnMinionWave(performance.now());
     this.loop();
   }
 
@@ -208,6 +217,8 @@ export class Game {
     cancelAnimationFrame(this.rafId);
     this.resizeObserver.disconnect();
     this.input.dispose();
+    this.floatingText.dispose();
+    for (const m of this.minions) m.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
@@ -287,6 +298,10 @@ export class Game {
     const wantsAttack = this.input.consumeAttackRequest();
     const skillReq = this.input.consumeSkillRequest();
 
+    if (now - this.lastMinionWaveAt >= MINION_WAVE_INTERVAL_MS) {
+      this.spawnMinionWave(now);
+    }
+
     if (this.player.alive) {
       this.player.update(this.input.getMovement(), delta, now);
       this.colliders.resolve(this.player.position, PLAYER_RADIUS);
@@ -311,11 +326,14 @@ export class Game {
     this.playerWasAlive = this.player.alive;
 
     this.bot.update(delta, now, this.registry, this.projectiles, this.colliders);
+    this.updateMinions(delta, now);
 
     for (const t of this.towers) t.update(now, this.registry, this.projectiles);
     for (const b of this.bases) b.update(now, this.registry, this.projectiles);
 
     this.projectiles.update(delta, now, this.registry);
+    this.cleanupMinions(now);
+    this.floatingText.update(now);
 
     // Haptic on damage taken (covers bot, tower and base attacks alike).
     if (this.player.alive && this.player.hp < this.lastPlayerHp) {
@@ -331,6 +349,7 @@ export class Game {
     const cam = this.rig.camera;
     this.player.billboardHealthBar(cam);
     this.bot.billboardHealthBar(cam);
+    for (const m of this.minions) m.billboardHealthBar(cam);
     for (const t of this.towers) t.billboardHealthBar(cam);
     for (const b of this.bases) b.billboardHealthBar(cam);
 
@@ -343,13 +362,15 @@ export class Game {
       this.player.team,
       this.player.position,
       PLAYER_ATTACK_RANGE,
+      ['minion', 'hero', 'structure'],
     );
     if (!target) return;
     this.player.faceTarget(target.position);
     this.projectiles.spawn(this.player.position, target.position, now, {
       team: this.player.team,
-      damage: PLAYER_ATTACK_DAMAGE,
+      damage: this.player.attackDamage,
       target,
+      owner: this.player,
       fromPlayer: true,
     });
     this.lastAttackAt = now;
@@ -366,8 +387,9 @@ export class Game {
     );
     this.projectiles.spawn(origin, target, now, {
       team: this.player.team,
-      damage: SKILL_Q_DAMAGE,
+      damage: this.player.skillQDamage,
       kind: 'heavy',
+      owner: this.player,
       maxDistance: SKILL_Q_RANGE,
       fromPlayer: true,
     });
@@ -385,9 +407,10 @@ export class Game {
     );
     this.projectiles.spawn(origin, target, now, {
       team: this.player.team,
-      damage: SKILL_E_DAMAGE,
+      damage: this.player.skillEDamage,
       kind: 'slow',
       effect: { slow: { factor: SKILL_E_SLOW_FACTOR, durationMs: SKILL_E_SLOW_DURATION_MS } },
+      owner: this.player,
       maxDistance: SKILL_E_RANGE,
       fromPlayer: true,
     });
@@ -398,5 +421,40 @@ export class Game {
     const crystals = this.scene.userData.crystals as THREE.Mesh[] | undefined;
     if (!crystals) return;
     for (const c of crystals) c.rotation.y += delta * 0.8;
+  }
+
+  private spawnMinionWave(now: number): void {
+    this.lastMinionWaveAt = now;
+    const blueSpawn = new THREE.Vector3(SPAWN_BLUE_X - 2.2, 0, SPAWN_BLUE_Z + 2.2);
+    const redSpawn = new THREE.Vector3(SPAWN_RED_X + 2.2, 0, SPAWN_RED_Z - 2.2);
+    for (let i = 0; i < MINION_WAVE_SIZE; i++) {
+      const blue = new MinionObject(this.scene, 'blue', blueSpawn, i);
+      const red = new MinionObject(this.scene, 'red', redSpawn, i);
+      this.minions.push(blue, red);
+      this.registry.add(blue);
+      this.registry.add(red);
+    }
+  }
+
+  private updateMinions(delta: number, now: number): void {
+    for (const minion of this.minions) {
+      const objective = this.getMinionObjective(minion.team);
+      minion.update(delta, now, this.registry, this.projectiles, this.colliders, objective);
+    }
+  }
+
+  private getMinionObjective(team: Team): Unit | null {
+    if (team === 'blue') return this.towers[1].alive ? this.towers[1] : this.bases[1];
+    return this.towers[0].alive ? this.towers[0] : this.bases[0];
+  }
+
+  private cleanupMinions(now: number): void {
+    for (let i = this.minions.length - 1; i >= 0; i--) {
+      const minion = this.minions[i];
+      if (minion.alive || now - minion.deadAt < 1000) continue;
+      this.registry.remove(minion);
+      minion.dispose();
+      this.minions.splice(i, 1);
+    }
   }
 }

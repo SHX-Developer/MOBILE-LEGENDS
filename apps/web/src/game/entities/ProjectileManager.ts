@@ -18,6 +18,7 @@ export interface ProjectileSpec {
   effect?: { slow?: { factor: number; durationMs: number } };
   /** Auto attacks pass a target so the shot follows and cannot miss. */
   target?: Unit;
+  owner?: Unit;
   /** Skillshots pass maxDistance so they expire at their cast range. */
   maxDistance?: number;
   speed?: number;
@@ -33,6 +34,7 @@ interface Projectile {
   damage: number;
   effect?: ProjectileSpec['effect'];
   target?: Unit;
+  owner?: Unit;
   maxDistance?: number;
   distanceTravelled: number;
   speed: number;
@@ -47,6 +49,7 @@ interface Variant {
 export class ProjectileManager {
   /** Fires whenever a projectile flagged `fromPlayer` connects. */
   onPlayerHit?: () => void;
+  onDamage?: (target: Unit, amount: number, owner?: Unit) => void;
 
   private projectiles: Projectile[] = [];
   private readonly variants: Record<ProjectileKind, Variant>;
@@ -111,6 +114,7 @@ export class ProjectileManager {
       damage: spec.damage,
       effect: spec.effect,
       target: spec.target,
+      owner: spec.owner,
       maxDistance: spec.maxDistance,
       distanceTravelled: 0,
       speed,
@@ -162,10 +166,16 @@ export class ProjectileManager {
   }
 
   private hitUnit(p: Projectile, unit: Unit, now: number): void {
+    const wasAlive = unit.alive;
+    const damage = Math.min(unit.hp, p.damage);
     unit.takeDamage(p.damage);
+    if (damage > 0) this.onDamage?.(unit, damage, p.owner);
     if (p.effect?.slow) {
       const until = now + p.effect.slow.durationMs;
       if (until > unit.slowUntil) unit.slowUntil = until;
+    }
+    if (wasAlive && !unit.alive && p.owner?.kind === 'hero') {
+      p.owner.grantXp?.(unit.xpReward);
     }
     if (p.fromPlayer) this.onPlayerHit?.();
   }

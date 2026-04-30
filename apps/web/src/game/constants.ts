@@ -28,6 +28,11 @@ export const PLAYER_ATTACK_DAMAGE = 50;
 export const PLAYER_ATTACK_RANGE = 12;
 export const PLAYER_ATTACK_COOLDOWN_MS = 480;
 export const PLAYER_RESPAWN_MS = 6000;
+export const HERO_MAX_LEVEL = 10;
+export const HERO_HP_PER_LEVEL = 70;
+export const HERO_DAMAGE_PER_LEVEL = 10;
+export const HERO_BASE_XP_TO_LEVEL = 90;
+export const HERO_XP_LEVEL_GROWTH = 1.45;
 
 // Towers — placed midway between each base and centre, on the diagonal.
 export const TOWER_RADIUS = 1.6;
@@ -75,6 +80,18 @@ export const SKILL_E_RANGE = 14;
 export const SKILL_E_SLOW_FACTOR = 0.5;
 export const SKILL_E_SLOW_DURATION_MS = 2000;
 
+// Minions
+export const MINION_WAVE_INTERVAL_MS = 14000;
+export const MINION_WAVE_SIZE = 3;
+export const MINION_SPAWN_SPACING = 2.2;
+export const MINION_MAX_HP = 170;
+export const MINION_RADIUS = 0.75;
+export const MINION_SPEED_3D = 3.2;
+export const MINION_DAMAGE = 22;
+export const MINION_ATTACK_RANGE = 9.5;
+export const MINION_ATTACK_COOLDOWN_MS = 950;
+export const MINION_XP_REWARD = 38;
+
 // Bot
 export const BOT_MAX_HP = 500;
 export const BOT_RADIUS = 1;
@@ -86,6 +103,7 @@ export const BOT_VISION_RANGE = 32;
 export const BOT_RESPAWN_MS = 6000;
 export const BOT_RETREAT_HP_FRACTION = 0.2;
 export const BOT_REGEN_PER_SEC = 60;
+export const HERO_KILL_XP_REWARD = 130;
 
 // Colours
 export const COLOR_GROUND = 0x6ea24f;

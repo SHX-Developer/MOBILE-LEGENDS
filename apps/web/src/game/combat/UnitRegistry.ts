@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Unit, Team } from './Unit.js';
+import type { Unit, Team, UnitKind } from './Unit.js';
 
 export class UnitRegistry {
   private readonly units: Unit[] = [];
@@ -14,7 +14,14 @@ export class UnitRegistry {
   }
 
   /** Closest alive enemy of `team` within `maxRange` of `pos`, or null. */
-  findNearestEnemy(team: Team, pos: THREE.Vector3, maxRange: number): Unit | null {
+  findNearestEnemy(
+    team: Team,
+    pos: THREE.Vector3,
+    maxRange: number,
+    kinds?: UnitKind[],
+  ): Unit | null {
+    if (kinds) return this.findNearestEnemyByPriority(team, pos, maxRange, kinds);
+
     let best: Unit | null = null;
     let bestDist = maxRange;
     for (const u of this.units) {
@@ -28,6 +35,34 @@ export class UnitRegistry {
       }
     }
     return best;
+  }
+
+  /**
+   * Finds the closest enemy in the first priority bucket that has any match.
+   * Example: ['minion', 'hero', 'structure'] means minions soak shots first.
+   */
+  findNearestEnemyByPriority(
+    team: Team,
+    pos: THREE.Vector3,
+    maxRange: number,
+    priority: UnitKind[],
+  ): Unit | null {
+    for (const kind of priority) {
+      let best: Unit | null = null;
+      let bestDist = maxRange;
+      for (const u of this.units) {
+        if (!u.alive || u.team === team || u.kind !== kind) continue;
+        const dx = u.position.x - pos.x;
+        const dz = u.position.z - pos.z;
+        const d = Math.hypot(dx, dz);
+        if (d < bestDist) {
+          bestDist = d;
+          best = u;
+        }
+      }
+      if (best) return best;
+    }
+    return null;
   }
 
   /** First alive enemy unit overlapping the projectile point, or null. */

@@ -10,6 +10,12 @@ import {
   BOT_RETREAT_HP_FRACTION,
   BOT_SPEED_3D,
   BOT_VISION_RANGE,
+  HERO_BASE_XP_TO_LEVEL,
+  HERO_DAMAGE_PER_LEVEL,
+  HERO_HP_PER_LEVEL,
+  HERO_KILL_XP_REWARD,
+  HERO_MAX_LEVEL,
+  HERO_XP_LEVEL_GROWTH,
 } from '../constants.js';
 import type { Unit, Team } from '../combat/Unit.js';
 import type { UnitRegistry } from '../combat/UnitRegistry.js';
@@ -25,16 +31,19 @@ import type { ProjectileManager } from './ProjectileManager.js';
  *   • no enemy in vision → walk toward map centre
  */
 export class BotObject implements Unit {
+  readonly kind = 'hero';
   readonly group = new THREE.Group();
   readonly team: Team = 'red';
   readonly radius = BOT_RADIUS;
-  readonly maxHp = BOT_MAX_HP;
+  readonly xpReward = HERO_KILL_XP_REWARD;
   hp = BOT_MAX_HP;
   alive = true;
   slowUntil = 0;
+  level = 1;
+  xp = 0;
 
   private readonly spawn: THREE.Vector3;
-  private readonly healthBar = new HealthBar(2.4, 0.22, 0xff5050);
+  private readonly healthBar = new HealthBar(2.4, 0.22, 0xff5050, true);
   private respawnAt = 0;
   private lastAttackAt = -Infinity;
 
@@ -44,10 +53,19 @@ export class BotObject implements Unit {
     this.group.position.copy(spawn);
     this.healthBar.group.position.set(0, 3, 0);
     this.group.add(this.healthBar.group);
+    this.healthBar.setLevel(this.level);
   }
 
   get position(): THREE.Vector3 {
     return this.group.position;
+  }
+
+  get maxHp(): number {
+    return BOT_MAX_HP + (this.level - 1) * HERO_HP_PER_LEVEL;
+  }
+
+  get attackDamage(): number {
+    return BOT_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL;
   }
 
   billboardHealthBar(camera: THREE.Camera): void {
@@ -108,8 +126,9 @@ export class BotObject implements Unit {
       if (now - this.lastAttackAt >= BOT_ATTACK_COOLDOWN_MS) {
         projectiles.spawn(this.position, enemy.position, now, {
           team: this.team,
-          damage: BOT_DAMAGE,
+          damage: this.attackDamage,
           target: enemy,
+          owner: this,
         });
         this.lastAttackAt = now;
       }
@@ -121,6 +140,20 @@ export class BotObject implements Unit {
     this.hp = Math.max(0, this.hp - amount);
     this.healthBar.setRatio(this.hp / this.maxHp);
     if (this.hp <= 0) this.die();
+  }
+
+  grantXp(amount: number): void {
+    if (this.level >= HERO_MAX_LEVEL || amount <= 0) return;
+    this.xp += amount;
+    while (this.level < HERO_MAX_LEVEL && this.xp >= this.xpToNext()) {
+      this.xp -= this.xpToNext();
+      const oldMaxHp = this.maxHp;
+      this.level += 1;
+      this.hp = Math.min(this.maxHp, this.hp + (this.maxHp - oldMaxHp));
+      this.healthBar.setRatio(this.hp / this.maxHp);
+      this.healthBar.setLevel(this.level);
+    }
+    if (this.level >= HERO_MAX_LEVEL) this.xp = 0;
   }
 
   private die(): void {
@@ -136,6 +169,10 @@ export class BotObject implements Unit {
     this.group.position.copy(this.spawn);
     this.group.visible = true;
     this.healthBar.setRatio(1);
+  }
+
+  private xpToNext(): number {
+    return Math.round(HERO_BASE_XP_TO_LEVEL * HERO_XP_LEVEL_GROWTH ** (this.level - 1));
   }
 
   private moveToward(target: THREE.Vector3, dt: number, speed: number): void {
