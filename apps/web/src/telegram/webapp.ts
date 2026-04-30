@@ -50,16 +50,36 @@ export async function lockLandscape(): Promise<void> {
   }
 }
 
-export function getTelegramInitData(): string | null {
+export function getTelegramInitData(): string {
   const wa = window.Telegram?.WebApp;
-  if (!wa) return null;
-  if (wa.initData) return wa.initData;
-  const u = wa.initDataUnsafe?.user;
-  if (!u) return null;
-  return new URLSearchParams({ user: JSON.stringify(u) }).toString();
+  if (wa?.initData) return wa.initData;
+  const u = wa?.initDataUnsafe?.user;
+  if (u) return new URLSearchParams({ user: JSON.stringify(u) }).toString();
+  return new URLSearchParams({ user: JSON.stringify(getOrCreateGuestUser()) }).toString();
 }
 
 export function getTelegramUserId(): string | null {
   const u = window.Telegram?.WebApp?.initDataUnsafe?.user;
   return u ? String(u.id) : null;
+}
+
+const GUEST_KEY = 'ml.guest.user';
+
+function getOrCreateGuestUser(): TgUser {
+  try {
+    const raw = localStorage.getItem(GUEST_KEY);
+    if (raw) return JSON.parse(raw) as TgUser;
+  } catch {
+    /* localStorage unavailable */
+  }
+  const guest: TgUser = {
+    id: Math.floor(1_000_000 + Math.random() * 9_000_000_000),
+    first_name: 'Guest',
+  };
+  try {
+    localStorage.setItem(GUEST_KEY, JSON.stringify(guest));
+  } catch {
+    /* ignore */
+  }
+  return guest;
 }

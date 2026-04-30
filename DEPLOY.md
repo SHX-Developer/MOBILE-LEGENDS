@@ -133,6 +133,7 @@ In the Compose service's **Domains** tab click **Add Domain** twice:
 |---|------------------|-------|----------|---------------:|:-----:|
 | 1 | `<DOMAIN>`       | `/`   | `web`    | `80`           | ✓     |
 | 2 | `<DOMAIN>`       | `/api`| `server` | `3000`         | ✓     |
+| 3 | `<DOMAIN>`       | `/ws` | `server` | `3000`         | ✓     |
 
 Pick **Let's Encrypt** as certificate type for both. DNS A-record for the
 domain must already point to the Dokploy host.

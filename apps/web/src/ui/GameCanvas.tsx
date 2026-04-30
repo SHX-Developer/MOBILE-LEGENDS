@@ -21,7 +21,11 @@ function computeFrame(): Frame {
   return { logicalW, logicalH, vpW, vpH };
 }
 
-export function GameCanvas() {
+interface GameCanvasProps {
+  onExit?: () => void;
+}
+
+export function GameCanvas({ onExit }: GameCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Game | null>(null);
   const [frame, setFrame] = useState<Frame>(() => computeFrame());
@@ -29,6 +33,7 @@ export function GameCanvas() {
   const [matchEnd, setMatchEnd] = useState<Team | null>(null);
   const [matchMs, setMatchMs] = useState(0);
   const [respawnMs, setRespawnMs] = useState(0);
+  const [onlineStatus, setOnlineStatus] = useState('connecting');
 
   useEffect(() => {
     const update = () => setFrame(computeFrame());
@@ -59,6 +64,7 @@ export function GameCanvas() {
       if (!game) return;
       setMatchMs(game.getMatchElapsedMs());
       setRespawnMs(game.getPlayerRespawnLeft());
+      setOnlineStatus(game.getOnlineStatus());
     }, 250);
     return () => window.clearInterval(handle);
   }, [gameKey]);
@@ -110,6 +116,7 @@ export function GameCanvas() {
       >
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
         <MatchTimer elapsedMs={matchMs} respawnMs={respawnMs} />
+        <OnlineStatus status={onlineStatus} />
         <Joystick onChange={onJoystickChange} />
         <FireButton onPress={onFirePress} onRelease={onFireRelease} />
         <SkillButton
@@ -147,7 +154,44 @@ export function GameCanvas() {
         />
       </div>
 
-      {matchEnd && <MatchEndOverlay winner={matchEnd} onRestart={restart} />}
+      {matchEnd && (
+        <MatchEndOverlay winner={matchEnd} onRestart={restart} onExit={onExit} />
+      )}
+    </div>
+  );
+}
+
+function OnlineStatus({ status }: { status: string }) {
+  if (status === 'playing') return null;
+  const label =
+    status === 'queued'
+      ? 'SEARCHING 1V1'
+      : status === 'connecting'
+        ? 'CONNECTING'
+        : status === 'offline'
+          ? 'OFFLINE MODE'
+          : '';
+  if (!label) return null;
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 58,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 10,
+        padding: '6px 12px',
+        borderRadius: 8,
+        background: 'rgba(8, 12, 18, 0.68)',
+        border: '1px solid rgba(255, 255, 255, 0.16)',
+        color: status === 'offline' ? '#ffcd66' : '#9fd8ff',
+        fontSize: 12,
+        fontWeight: 900,
+        letterSpacing: 1,
+        pointerEvents: 'none',
+      }}
+    >
+      {label}
     </div>
   );
 }
@@ -527,9 +571,11 @@ const SkillButton = memo(function SkillButton({
 function MatchEndOverlay({
   winner,
   onRestart,
+  onExit,
 }: {
   winner: Team;
   onRestart: () => void;
+  onExit?: () => void;
 }) {
   const isVictory = winner === 'blue';
   return (
@@ -567,24 +613,45 @@ function MatchEndOverlay({
         >
           {isVictory ? 'VICTORY' : 'DEFEAT'}
         </div>
-        <button
-          onClick={onRestart}
-          style={{
-            fontSize: 18,
-            fontWeight: 700,
-            letterSpacing: 2,
-            padding: '12px 36px',
-            borderRadius: 999,
-            border: '2px solid #ffce5c',
-            background:
-              'radial-gradient(circle at 35% 30%, #ffce5c 0%, #e48a1a 60%, #a14b00 100%)',
-            color: '#1a1208',
-            cursor: 'pointer',
-            boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
-          }}
-        >
-          PLAY AGAIN
-        </button>
+        <div style={{ display: 'flex', gap: 16 }}>
+          <button
+            onClick={onRestart}
+            style={{
+              fontSize: 18,
+              fontWeight: 700,
+              letterSpacing: 2,
+              padding: '12px 36px',
+              borderRadius: 999,
+              border: '2px solid #ffce5c',
+              background:
+                'radial-gradient(circle at 35% 30%, #ffce5c 0%, #e48a1a 60%, #a14b00 100%)',
+              color: '#1a1208',
+              cursor: 'pointer',
+              boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
+            }}
+          >
+            PLAY AGAIN
+          </button>
+          {onExit && (
+            <button
+              onClick={onExit}
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                letterSpacing: 2,
+                padding: '12px 36px',
+                borderRadius: 999,
+                border: '2px solid rgba(255,255,255,0.4)',
+                background: 'rgba(20, 22, 36, 0.7)',
+                color: '#fff',
+                cursor: 'pointer',
+                boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
+              }}
+            >
+              MENU
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

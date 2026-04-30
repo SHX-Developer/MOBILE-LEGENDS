@@ -5,6 +5,7 @@ name: ml-moba
 # Configure the Domains tab in the Dokploy Compose service:
 #   • Host: <DOMAIN>   Path: /        Service: web     Port: 80
 #   • Host: <DOMAIN>   Path: /api     Service: server  Port: 3000
+#   • Host: <DOMAIN>   Path: /ws      Service: server  Port: 3000
 # The server already serves under the /api prefix (NestJS setGlobalPrefix),
 # so no strip-prefix middleware is needed.
 
@@ -19,22 +20,6 @@ x-logging: &logging
       max-file: "5"
 
 services:
-  db:
-    <<: [*restart, *logging]
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in env}
-      POSTGRES_DB: ${POSTGRES_DB:-ml_moba}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ml_moba}"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-      start_period: 5s
-
   server:
     <<: [*restart, *logging]
     build:
@@ -43,18 +28,15 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_HOST: db
-      DATABASE_PORT: 5432
-      DATABASE_USER: ${POSTGRES_USER:-postgres}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
-      DATABASE_NAME: ${POSTGRES_DB:-ml_moba}
+      DATABASE_HOST: ${DATABASE_HOST}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DATABASE_NAME: ${DATABASE_NAME}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       CORS_ORIGIN: https://${DOMAIN:-localhost}
     expose:
       - "3000"
-    depends_on:
-      db:
-        condition: service_healthy
     networks:
       - default
       - dokploy-network
@@ -76,9 +58,6 @@ services:
       start_period: 5s
     networks:
       - dokploy-network
-
-volumes:
-  pgdata:
 
 networks:
   default:

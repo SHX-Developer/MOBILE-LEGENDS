@@ -5,7 +5,7 @@
     "moduleResolution": "node",
     "outDir": "dist",
     "baseUrl": ".",
-    "rootDir": ".",
+    "rootDir": "../..",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "declaration": true,

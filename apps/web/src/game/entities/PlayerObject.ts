@@ -183,6 +183,32 @@ export class PlayerObject implements Unit {
     this.healthBar.setRatio(1);
   }
 
+  applyServerState(state: {
+    x: number;
+    z: number;
+    facingX: number;
+    facingZ: number;
+    hp: number;
+    maxHp: number;
+    level: number;
+    xp: number;
+    xpToNext: number;
+    alive: boolean;
+  }): void {
+    this.group.position.set(state.x, 0, state.z);
+    this.hp = state.hp;
+    this.level = state.level;
+    this.xp = state.xp;
+    this.alive = state.alive;
+    this.group.visible = state.alive;
+    if (Math.hypot(state.facingX, state.facingZ) > 0.01) {
+      this.group.rotation.y = Math.atan2(state.facingX, state.facingZ);
+      this.facing.set(state.facingX, 0, state.facingZ);
+    }
+    this.healthBar.setRatio(state.maxHp > 0 ? state.hp / state.maxHp : 0);
+    this.healthBar.setLevel(state.level, state.xpToNext > 0 ? state.xp / state.xpToNext : 1);
+  }
+
   private xpToNext(): number {
     return Math.round(HERO_BASE_XP_TO_LEVEL * HERO_XP_LEVEL_GROWTH ** (this.level - 1));
   }

@@ -13,7 +13,7 @@ export function NicknameForm() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (value.trim().length < 3) {
-      setError('Nickname must be at least 3 characters');
+      setError('Минимум 3 символа');
       return;
     }
     setSubmitting(true);
@@ -25,7 +25,7 @@ export function NicknameForm() {
       });
       setUser(updated);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed');
+      setError(err instanceof Error ? err.message : 'Не удалось');
     } finally {
       setSubmitting(false);
     }
@@ -42,17 +42,17 @@ export function NicknameForm() {
       }}
     >
       <div style={{ display: 'grid', gap: 12, width: '100%', maxWidth: 320 }}>
-        <h2 style={{ margin: 0 }}>Pick a nickname</h2>
+        <h2 style={{ margin: 0 }}>Придумайте никнейм</h2>
         <input
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="Hero name"
+          placeholder="Имя героя"
           style={inputStyle}
         />
         {error && <div style={{ color: '#ff6b6b' }}>{error}</div>}
         <button type="submit" disabled={submitting} style={buttonStyle}>
-          {submitting ? 'Saving…' : 'Continue'}
+          {submitting ? 'Сохраняем…' : 'Продолжить'}
         </button>
       </div>
     </form>

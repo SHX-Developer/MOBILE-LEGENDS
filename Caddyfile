@@ -15,6 +15,11 @@
         }
     }
 
+    @ws path /ws
+    handle @ws {
+        reverse_proxy server:3000
+    }
+
     handle {
         reverse_proxy web:80 {
             health_uri /healthz

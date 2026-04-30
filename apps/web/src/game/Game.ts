@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { MatchCombatEvent, MatchPlayerSnapshot } from '@ml/shared';
 import {
   PLAYER_ATTACK_COOLDOWN_MS,
   PLAYER_ATTACK_RANGE,
@@ -43,6 +44,7 @@ import { UnitRegistry } from './combat/UnitRegistry.js';
 import { FloatingTextManager } from './combat/FloatingTextManager.js';
 import type { Team, Unit } from './combat/Unit.js';
 import { Haptics } from './haptics.js';
+import { OnlineClient } from './OnlineClient.js';
 
 export type SkillId = 'q' | 'e' | 'c';
 
@@ -66,6 +68,7 @@ export class Game {
   private minions: MinionObject[] = [];
   private projectiles: ProjectileManager;
   private floatingText: FloatingTextManager;
+  private online = new OnlineClient();
   private colliders: Colliders;
   private towers: Tower[];
   private bases: Base[];
@@ -137,6 +140,10 @@ export class Game {
       this.floatingText.spawnDamage(target.position, amount, target.team, owner?.team);
     };
     this.lastPlayerHp = this.player.hp;
+    this.online.onMatchEnd = (winner) => {
+      this.endMatch(winner === this.online.getTeam() ? 'blue' : 'red');
+    };
+    this.online.connect();
 
     this.aimIndicator = this.buildAimIndicator();
     this.scene.add(this.aimIndicator);
@@ -236,13 +243,21 @@ export class Game {
     return Math.max(0, now - this.matchStartedAt);
   }
   getPlayerRespawnLeft(now = performance.now()): number {
+    if (this.online.getStatus() === 'playing' || this.online.getStatus() === 'ended') {
+      const own = this.getOnlineOwnSnapshot();
+      if (own && !own.alive) return own.respawnInMs;
+    }
     return this.player.alive ? 0 : Math.max(0, this.respawnAt - now);
+  }
+  getOnlineStatus(): string {
+    return this.online.getStatus();
   }
 
   destroy(): void {
     cancelAnimationFrame(this.rafId);
     this.resizeObserver.disconnect();
     this.input.dispose();
+    this.online.dispose();
     this.floatingText.dispose();
     for (const m of this.minions) m.dispose();
     this.renderer.dispose();
@@ -323,13 +338,20 @@ export class Game {
 
     const wantsAttack = this.input.consumeAttackRequest();
     const skillReq = this.input.consumeSkillRequest();
+    const movement = this.input.getMovement();
+    this.online.sendInput(movement.x, movement.z, now);
+
+    if (this.online.getStatus() === 'playing' || this.online.getStatus() === 'ended') {
+      this.runOnlineFrame(delta, now, wantsAttack, skillReq);
+      return;
+    }
 
     if (now - this.lastMinionWaveAt >= MINION_WAVE_INTERVAL_MS) {
       this.spawnMinionWave(now);
     }
 
     if (this.player.alive) {
-      this.player.update(this.input.getMovement(), delta, now);
+      this.player.update(movement, delta, now);
       this.colliders.resolve(this.player.position, PLAYER_RADIUS);
       const canAct = this.player.stunnedUntil <= now;
       if (canAct && wantsAttack) this.tryAutoAttack(now);
@@ -404,6 +426,102 @@ export class Game {
       fromPlayer: true,
     });
     this.lastAttackAt = now;
+  }
+
+  private runOnlineFrame(
+    delta: number,
+    now: number,
+    wantsAttack: boolean,
+    skillReq: { id: SkillId; dirX: number; dirZ: number } | null,
+  ): void {
+    if (wantsAttack) this.online.attack();
+    if (skillReq) {
+      let dx = skillReq.dirX;
+      let dz = skillReq.dirZ;
+      if (Math.hypot(dx, dz) < 1e-3) {
+        dx = this.player.facing.x;
+        dz = this.player.facing.z;
+      }
+      this.online.skill(skillReq.id, dx, dz);
+    }
+
+    this.clearLocalMinions();
+    this.applyOnlineSnapshot();
+    this.renderOnlineCombatEvents(this.online.drainCombatEvents(), now);
+    this.projectiles.update(delta, now, this.registry);
+    this.floatingText.update(now);
+    this.rig.follow(this.player.position);
+
+    const cam = this.rig.camera;
+    this.player.billboardHealthBar(cam);
+    this.bot.billboardHealthBar(cam);
+    for (const t of this.towers) t.billboardHealthBar(cam);
+    for (const b of this.bases) b.billboardHealthBar(cam);
+
+    this.renderer.render(this.scene, this.rig.camera);
+  }
+
+  private applyOnlineSnapshot(): void {
+    const snapshot = this.online.getSnapshot();
+    const playerId = this.online.getPlayerId();
+    if (!snapshot || !playerId) return;
+    const own = snapshot.players.find((p) => p.id === playerId);
+    const enemy = snapshot.players.find((p) => p.id !== playerId);
+    if (own) {
+      this.player.applyServerState(own);
+      this.lastPlayerHp = own.hp;
+    }
+    if (enemy) this.bot.applyServerState(enemy);
+  }
+
+  private getOnlineOwnSnapshot(): MatchPlayerSnapshot | null {
+    const snapshot = this.online.getSnapshot();
+    const playerId = this.online.getPlayerId();
+    if (!snapshot || !playerId) return null;
+    return snapshot.players.find((p) => p.id === playerId) ?? null;
+  }
+
+  private renderOnlineCombatEvents(events: MatchCombatEvent[], now: number): void {
+    const ownId = this.online.getPlayerId();
+    for (const event of events) {
+      const target = this.onlineUnitFor(event.targetId);
+      const owner = this.onlineUnitFor(event.attackerId) ?? undefined;
+      this.spawnOnlineCombatFx(event, owner, now);
+      if (event.hit && event.damage > 0 && target) {
+        this.floatingText.spawnDamage(target.position, event.damage, target.team, owner?.team);
+      }
+      if (event.hit && event.attackerId === ownId) Haptics.hitEnemy();
+      if (event.hit && event.targetId === ownId) Haptics.takeDamage();
+    }
+  }
+
+  private onlineUnitFor(playerId: string): Unit | null {
+    const ownId = this.online.getPlayerId();
+    if (playerId === ownId) return this.player;
+    const snapshot = this.online.getSnapshot();
+    if (snapshot?.players.some((p) => p.id === playerId)) return this.bot;
+    return null;
+  }
+
+  private spawnOnlineCombatFx(event: MatchCombatEvent, owner: Unit | null | undefined, now: number): void {
+    const origin = new THREE.Vector3(event.startX, 0, event.startZ);
+    const target = new THREE.Vector3(event.endX, 0, event.endZ);
+    const maxDistance = Math.max(1, origin.distanceTo(target));
+    const kind =
+      event.kind === 'attack'
+        ? 'basic'
+        : event.skillId === 'q'
+          ? 'heavy'
+          : event.skillId === 'e'
+            ? 'slow'
+            : 'control';
+    this.projectiles.spawn(origin, target, now, {
+      team: owner?.team ?? 'blue',
+      damage: 0,
+      kind,
+      maxDistance,
+      visualOnly: true,
+    });
   }
 
   private tryUseQ(now: number, dirX: number, dirZ: number): void {
@@ -507,6 +625,15 @@ export class Game {
       minion.dispose();
       this.minions.splice(i, 1);
     }
+  }
+
+  private clearLocalMinions(): void {
+    if (this.minions.length === 0) return;
+    for (const minion of this.minions) {
+      this.registry.remove(minion);
+      minion.dispose();
+    }
+    this.minions.length = 0;
   }
 
   private healHeroesAtBase(delta: number): void {

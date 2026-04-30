@@ -27,6 +27,8 @@ export interface ProjectileSpec {
   speed?: number;
   /** Set by the local player so we can fire haptics on hit. */
   fromPlayer?: boolean;
+  /** Online mode uses server combat events; these projectiles are display-only. */
+  visualOnly?: boolean;
 }
 
 interface Projectile {
@@ -42,6 +44,7 @@ interface Projectile {
   distanceTravelled: number;
   speed: number;
   fromPlayer: boolean;
+  visualOnly: boolean;
 }
 
 interface Variant {
@@ -109,6 +112,7 @@ export class ProjectileManager {
       distanceTravelled: 0,
       speed,
       fromPlayer: spec.fromPlayer === true,
+      visualOnly: spec.visualOnly === true,
     });
   }
 
@@ -141,11 +145,13 @@ export class ProjectileManager {
       p.mesh.position.z += stepZ;
       p.distanceTravelled += Math.hypot(stepX, stepZ);
 
-      const hit = registry.findHit(p.mesh.position, PROJECTILE_RADIUS, p.team);
-      if (hit) {
-        this.hitUnit(p, hit, now);
-        this.removeAt(i);
-        continue;
+      if (!p.visualOnly) {
+        const hit = registry.findHit(p.mesh.position, PROJECTILE_RADIUS, p.team);
+        if (hit) {
+          this.hitUnit(p, hit, now);
+          this.removeAt(i);
+          continue;
+        }
       }
 
       const exceededRange = p.maxDistance !== undefined && p.distanceTravelled >= p.maxDistance;
