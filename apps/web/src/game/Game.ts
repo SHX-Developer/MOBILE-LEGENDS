@@ -14,6 +14,10 @@ import {
   RESPAWN_LEVEL_PENALTY_MS,
   RESPAWN_MATCH_MINUTE_PENALTY_MS,
   RESPAWN_MAX_MS,
+  HEAL_AMOUNT,
+  HEAL_COOLDOWN_MS,
+  RECALL_CHANNEL_MS,
+  RECALL_COOLDOWN_MS,
   MINION_WAVE_INTERVAL_MS,
   SKILL_E_COOLDOWN_MS,
   SKILL_E_RANGE,
@@ -86,6 +90,14 @@ export class Game {
   private lastQAt = -Infinity;
   private lastEAt = -Infinity;
   private lastCAt = -Infinity;
+  private lastHealAt = -Infinity;
+  private lastRecallAt = -Infinity;
+  /** Time recall channel started; 0 when not channeling. */
+  private recallStartedAt = 0;
+  private recallSpawnX = 0;
+  private recallSpawnZ = 0;
+  private recallRing?: THREE.Mesh;
+  private playerHpBeforeChannel = 0;
   private respawnAt = 0;
   private readonly matchStartedAt = performance.now();
   private playerWasAlive = true;
@@ -186,6 +198,43 @@ export class Game {
   fire(): void { this.input.requestAttack(); }
   setFireHold(active: boolean): void { this.player.setRangeVisible(active); }
 
+  /** Consumable heal — small instant top-up on cooldown. */
+  tryHeal(): void {
+    const now = performance.now();
+    if (!this.player.alive) return;
+    if (now - this.lastHealAt < HEAL_COOLDOWN_MS) return;
+    this.lastHealAt = now;
+    this.player.heal(HEAL_AMOUNT);
+    Sounds.skill('e');
+    this.spawnHealRing(this.player.position);
+  }
+
+  /** Begin a 5s channel that returns the hero to spawn. Cancelled by death. */
+  startRecall(): void {
+    const now = performance.now();
+    if (!this.player.alive) return;
+    if (this.recallStartedAt) return;
+    if (now - this.lastRecallAt < RECALL_COOLDOWN_MS) return;
+    this.recallStartedAt = now;
+    this.recallSpawnX = SPAWN_BLUE_X;
+    this.recallSpawnZ = SPAWN_BLUE_Z;
+    this.playerHpBeforeChannel = this.player.hp;
+    this.recallRing = this.spawnRecallRing(this.player.position, '#9fd8ff');
+    Sounds.skill('c');
+  }
+
+  /** UI helpers for cooldown badges on the new buttons. */
+  getHealCooldownLeft(now = performance.now()): number {
+    return Math.max(0, HEAL_COOLDOWN_MS - (now - this.lastHealAt));
+  }
+  getRecallCooldownLeft(now = performance.now()): number {
+    return Math.max(0, RECALL_COOLDOWN_MS - (now - this.lastRecallAt));
+  }
+  getRecallChannelLeft(now = performance.now()): number {
+    if (!this.recallStartedAt) return 0;
+    return Math.max(0, RECALL_CHANNEL_MS - (now - this.recallStartedAt));
+  }
+
   /**
    * Begin manual aim for a skill. Initial direction snaps to the nearest
    * enemy (within ~1.5× range so off-screen targets aren't missed); falls
@@ -235,6 +284,130 @@ export class Game {
     a.active = false;
     this.aimIndicator.visible = false;
     this.input.requestSkill(skill, a.dirX, a.dirZ);
+  }
+
+  private spawnHealRing(at: THREE.Vector3): void {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.5, 1.6, 32),
+      new THREE.MeshBasicMaterial({
+        color: 0x6cff8a,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(at.x, 0.06, at.z);
+    this.scene.add(ring);
+    const startedAt = performance.now();
+    const tick = () => {
+      const t = (performance.now() - startedAt) / 600;
+      if (t >= 1) {
+        this.scene.remove(ring);
+        ring.geometry.dispose();
+        (ring.material as THREE.Material).dispose();
+        return;
+      }
+      ring.scale.setScalar(1 + t * 1.4);
+      (ring.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - t);
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  private spawnRecallRing(at: THREE.Vector3, color: string): THREE.Mesh {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(1.2, 1.55, 48),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.9,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(at.x, 0.07, at.z);
+    this.scene.add(ring);
+    return ring;
+  }
+
+  private tickRecall(now: number): void {
+    if (!this.recallStartedAt) return;
+    if (!this.player.alive) {
+      this.cancelRecall();
+      return;
+    }
+    const elapsed = now - this.recallStartedAt;
+    if (this.recallRing) {
+      // Pulse the ring on the ground beneath the channeling hero.
+      this.recallRing.position.set(this.player.position.x, 0.07, this.player.position.z);
+      const pulse = 1 + Math.sin(elapsed / 110) * 0.18;
+      this.recallRing.scale.setScalar(pulse);
+      const mat = this.recallRing.material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.5 + Math.sin(elapsed / 90) * 0.3;
+    }
+    if (elapsed >= RECALL_CHANNEL_MS) {
+      // Teleport home, full heal as a treat.
+      this.player.position.x = this.recallSpawnX;
+      this.player.position.z = this.recallSpawnZ;
+      this.player.heal(this.player.maxHp);
+      this.lastRecallAt = now;
+      this.cancelRecall();
+      this.spawnHealRing(this.player.position);
+    }
+  }
+
+  private cancelRecall(): void {
+    this.recallStartedAt = 0;
+    if (this.recallRing) {
+      this.scene.remove(this.recallRing);
+      this.recallRing.geometry.dispose();
+      (this.recallRing.material as THREE.Material).dispose();
+      this.recallRing = undefined;
+    }
+  }
+
+  /** Plain tap on a skill button — auto-aim to nearest enemy in skill range
+   *  and cast immediately, no aim UI. */
+  castAuto(skill: SkillId): void {
+    const range = skill === 'q' ? SKILL_Q_RANGE : skill === 'e' ? SKILL_E_RANGE : SKILL_C_RANGE;
+    let dirX = this.player.facing.x || 0;
+    let dirZ = this.player.facing.z || 1;
+    const enemy = this.registry.findNearestEnemy(
+      this.player.team,
+      this.player.position,
+      range,
+      ['hero', 'minion', 'structure'],
+    );
+    if (enemy) {
+      const dx = enemy.position.x - this.player.position.x;
+      const dz = enemy.position.z - this.player.position.z;
+      const len = Math.hypot(dx, dz);
+      if (len > 1e-3) {
+        dirX = dx / len;
+        dirZ = dz / len;
+      }
+    }
+    const now = performance.now();
+    if (this.mode === 'online') {
+      const ready =
+        skill === 'q'
+          ? now - this.lastQAt >= SKILL_Q_COOLDOWN_MS
+          : skill === 'e'
+            ? now - this.lastEAt >= SKILL_E_COOLDOWN_MS
+            : now - this.lastCAt >= SKILL_C_COOLDOWN_MS;
+      if (!ready) return;
+      this.online.skill(skill, dirX, dirZ);
+      if (skill === 'q') this.lastQAt = now;
+      else if (skill === 'e') this.lastEAt = now;
+      else this.lastCAt = now;
+      return;
+    }
+    if (skill === 'q') this.tryUseQ(now, dirX, dirZ);
+    else if (skill === 'e') this.tryUseE(now, dirX, dirZ);
+    else this.tryUseC(now, dirX, dirZ);
   }
 
   /** Cancel aim without firing (e.g. pointer cancel). */
@@ -453,7 +626,12 @@ export class Game {
     if (this.player.alive && this.player.hp < this.lastPlayerHp) {
       Haptics.takeDamage();
       Sounds.takeDamage();
+      // Damage breaks the recall channel.
+      if (this.recallStartedAt && this.player.hp < this.playerHpBeforeChannel) {
+        this.cancelRecall();
+      }
     }
+    this.tickRecall(now);
     this.lastPlayerHp = this.player.hp;
     this.spinCrystals(delta);
 

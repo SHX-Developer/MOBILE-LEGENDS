@@ -102,6 +102,12 @@ export const MINION_ATTACK_RANGE = 9.5;
 export const MINION_ATTACK_COOLDOWN_MS = 950;
 export const MINION_XP_REWARD = 38;
 
+// Hero utility skills
+export const HEAL_AMOUNT = 180;
+export const HEAL_COOLDOWN_MS = 22000;
+export const RECALL_CHANNEL_MS = 5000;
+export const RECALL_COOLDOWN_MS = 30000;
+
 // Bot
 export const BOT_MAX_HP = 500;
 export const BOT_RADIUS = 1;

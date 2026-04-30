@@ -124,6 +124,8 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
             these zones don't reach the camera-pan listener on the canvas. */}
         <ControlZone left={130} bottom={24} width={210} height={210} />
         <ControlZone right={20} bottom={20} width={300} height={260} />
+        <BottomCenterZone />
+
         <Joystick onChange={onJoystickChange} />
         <FireButton onPress={onFirePress} onRelease={onFireRelease} />
         {/* Three skills wrap around FIRE (which sits in the corner). Q above,
@@ -161,6 +163,26 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           totalMs={10000}
           getGame={getGame}
         />
+        <UtilityButton
+          label="HEAL"
+          accent="#6cff8a"
+          totalMs={22000}
+          centerOffsetX={-46}
+          getGame={getGame}
+          getCooldown={(g) => g.getHealCooldownLeft()}
+          getChannelLeft={() => 0}
+          onPress={(g) => g.tryHeal()}
+        />
+        <UtilityButton
+          label="HOME"
+          accent="#9fd8ff"
+          totalMs={30000}
+          centerOffsetX={46}
+          getGame={getGame}
+          getCooldown={(g) => g.getRecallCooldownLeft()}
+          getChannelLeft={(g) => g.getRecallChannelLeft()}
+          onPress={(g) => g.startRecall()}
+        />
         {matchEnd && (
           <MatchEndOverlay winner={matchEnd} onRestart={restart} onExit={onExit} />
         )}
@@ -169,6 +191,115 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
         )}
       </div>
     </div>
+  );
+}
+
+interface UtilityButtonProps {
+  label: string;
+  accent: string;
+  totalMs: number;
+  centerOffsetX: number;
+  getGame: () => Game | null;
+  getCooldown: (g: Game) => number;
+  getChannelLeft: (g: Game) => number;
+  onPress: (g: Game) => void;
+}
+
+const UtilityButton = memo(function UtilityButton({
+  label,
+  accent,
+  totalMs,
+  centerOffsetX,
+  getGame,
+  getCooldown,
+  getChannelLeft,
+  onPress,
+}: UtilityButtonProps) {
+  const [cooldown, setCooldown] = useState(0);
+  const [channel, setChannel] = useState(0);
+  useEffect(() => {
+    const handle = window.setInterval(() => {
+      const g = getGame();
+      if (!g) return;
+      setCooldown(getCooldown(g));
+      setChannel(getChannelLeft(g));
+    }, 120);
+    return () => window.clearInterval(handle);
+  }, [getGame, getCooldown, getChannelLeft]);
+
+  const onCd = cooldown > 0;
+  const channeling = channel > 0;
+  const fillPct = onCd ? Math.min(100, ((totalMs - cooldown) / totalMs) * 100) : 100;
+  return (
+    <button
+      onPointerDown={(e) => {
+        if (onCd || channeling) return;
+        const g = getGame();
+        if (!g) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        onPress(g);
+      }}
+      style={{
+        position: 'absolute',
+        left: '50%',
+        bottom: 22,
+        transform: `translateX(calc(-50% + ${centerOffsetX}px))`,
+        width: 64,
+        height: 64,
+        borderRadius: '50%',
+        border: `2px solid ${accent}`,
+        background: onCd
+          ? 'rgba(20, 24, 36, 0.7)'
+          : `radial-gradient(circle at 35% 30%, ${accent} 0%, #1a1825 75%)`,
+        color: '#0a0e15',
+        fontWeight: 900,
+        fontSize: 11,
+        letterSpacing: 1.5,
+        cursor: onCd ? 'default' : 'pointer',
+        boxShadow: channeling
+          ? `0 0 0 4px ${accent}99, 0 0 22px ${accent}aa`
+          : '0 6px 18px rgba(0,0,0,0.45)',
+        touchAction: 'none',
+        opacity: onCd ? 0.55 : 1,
+        display: 'grid',
+        placeItems: 'center',
+        overflow: 'hidden',
+        contain: 'layout paint',
+      }}
+    >
+      {onCd && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: `conic-gradient(${accent}66 ${fillPct}%, transparent ${fillPct}%)`,
+            borderRadius: '50%',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+      <div style={{ position: 'relative', pointerEvents: 'none', color: onCd ? '#fff' : '#0a0e15' }}>
+        {onCd ? Math.ceil(cooldown / 1000) : channeling ? Math.ceil(channel / 1000) : label}
+      </div>
+    </button>
+  );
+});
+
+function BottomCenterZone() {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: '50%',
+        bottom: 14,
+        transform: 'translateX(-50%)',
+        width: 200,
+        height: 80,
+        pointerEvents: 'auto',
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+    />
   );
 }
 
@@ -554,9 +685,11 @@ const SkillButton = memo(function SkillButton({
     : 100;
 
   const activePointer = useRef<number | null>(null);
+  const dragStart = useRef<{ x: number; y: number } | null>(null);
   const cancelRef = useRef<HTMLDivElement>(null);
   const [aiming, setAiming] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const DRAG_AIM_THRESHOLD = 14;
 
   function pointInCancel(clientX: number, clientY: number): boolean {
     const cancel = cancelRef.current;
@@ -598,14 +731,22 @@ const SkillButton = memo(function SkillButton({
           if (onCooldown) return;
           if (activePointer.current !== null) return;
           activePointer.current = e.pointerId;
+          dragStart.current = { x: e.clientX, y: e.clientY };
           e.currentTarget.setPointerCapture(e.pointerId);
           e.preventDefault();
-          setAiming(true);
-          setCanceling(false);
-          getGame()?.startAim(id);
+          // Tap-vs-drag is decided in onPointerMove. Don't open aim UI yet.
         }}
         onPointerMove={(e) => {
           if (activePointer.current !== e.pointerId) return;
+          const start = dragStart.current;
+          if (!start) return;
+          const dragDist = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+          if (!aiming) {
+            if (dragDist < DRAG_AIM_THRESHOLD) return;
+            setAiming(true);
+            setCanceling(false);
+            getGame()?.startAim(id);
+          }
           const r = e.currentTarget.getBoundingClientRect();
           const cx = r.left + r.width / 2;
           const cy = r.top + r.height / 2;
@@ -619,13 +760,23 @@ const SkillButton = memo(function SkillButton({
         }}
         onPointerUp={(e) => {
           if (activePointer.current !== e.pointerId) return;
-          const shouldCancel = canceling || pointInCancel(e.clientX, e.clientY);
+          const wasAiming = aiming;
+          const shouldCancel = canceling || (wasAiming && pointInCancel(e.clientX, e.clientY));
           activePointer.current = null;
+          dragStart.current = null;
           e.currentTarget.releasePointerCapture(e.pointerId);
           setAiming(false);
           setCanceling(false);
-          if (shouldCancel) getGame()?.cancelAim(id);
-          else getGame()?.releaseAim(id);
+          if (shouldCancel) {
+            if (wasAiming) getGame()?.cancelAim(id);
+            return;
+          }
+          if (wasAiming) {
+            getGame()?.releaseAim(id);
+          } else {
+            // Plain tap → auto-aim and cast at nearest enemy.
+            getGame()?.castAuto(id);
+          }
         }}
         onPointerCancel={(e) => {
           if (activePointer.current !== e.pointerId) return;

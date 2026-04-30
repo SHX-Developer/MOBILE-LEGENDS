@@ -16,6 +16,19 @@ import {
   HERO_KILL_XP_REWARD,
   HERO_MAX_LEVEL,
   HERO_XP_LEVEL_GROWTH,
+  RECALL_CHANNEL_MS,
+  SKILL_C_COOLDOWN_MS,
+  SKILL_C_DAMAGE,
+  SKILL_C_RANGE,
+  SKILL_C_STUN_DURATION_MS,
+  SKILL_E_COOLDOWN_MS,
+  SKILL_E_DAMAGE,
+  SKILL_E_RANGE,
+  SKILL_E_SLOW_DURATION_MS,
+  SKILL_E_SLOW_FACTOR,
+  SKILL_Q_COOLDOWN_MS,
+  SKILL_Q_DAMAGE,
+  SKILL_Q_RANGE,
 } from '../constants.js';
 import type { Unit, Team } from '../combat/Unit.js';
 import type { UnitRegistry } from '../combat/UnitRegistry.js';
@@ -48,6 +61,10 @@ export class BotObject implements Unit {
   private readonly healthBar = new HealthBar(2.4, 0.22, 0xff5050, true);
   private respawnAt = 0;
   private lastAttackAt = -Infinity;
+  private lastQAt = -Infinity;
+  private lastEAt = -Infinity;
+  private lastCAt = -Infinity;
+  private recallStartedAt = 0;
   private armorMat!: THREE.MeshStandardMaterial;
   private armorDarkMat!: THREE.MeshStandardMaterial;
 
@@ -106,11 +123,28 @@ export class BotObject implements Unit {
     const speed = slowed ? BOT_SPEED_3D * 0.5 : BOT_SPEED_3D;
     const lowHp = this.hp / this.maxHp <= BOT_RETREAT_HP_FRACTION;
 
+    // Channeling recall: stand still, teleport on success.
+    if (this.recallStartedAt) {
+      if (now - this.recallStartedAt >= RECALL_CHANNEL_MS) {
+        this.position.copy(this.spawn);
+        this.hp = this.maxHp;
+        this.healthBar.setRatio(1);
+        this.recallStartedAt = 0;
+      }
+      return;
+    }
+
     if (lowHp) {
+      // Start a recall channel if safe (out of immediate danger).
+      const threat = registry.findNearestEnemy(this.team, this.position, BOT_ATTACK_RANGE + 2);
+      if (!threat) {
+        this.recallStartedAt = now;
+        return;
+      }
       this.moveToward(this.spawn, deltaSec, speed);
-      const dx = this.spawn.x - this.position.x;
-      const dz = this.spawn.z - this.position.z;
-      if (dx * dx + dz * dz < 9) {
+      const sdx = this.spawn.x - this.position.x;
+      const sdz = this.spawn.z - this.position.z;
+      if (sdx * sdx + sdz * sdz < 9) {
         this.hp = Math.min(this.maxHp, this.hp + BOT_REGEN_PER_SEC * deltaSec);
         this.healthBar.setRatio(this.hp / this.maxHp);
       }
@@ -136,9 +170,13 @@ export class BotObject implements Unit {
       this.position.z += nz * speed * deltaSec;
       this.group.rotation.y = Math.atan2(nx, nz);
       colliders.resolve(this.position, this.radius);
+      // Try a long-range Q to harass while approaching.
+      this.tryCastSkill(enemy, dist, now, projectiles);
     } else {
       this.group.rotation.y = Math.atan2(dx, dz);
-      if (now - this.lastAttackAt >= BOT_ATTACK_COOLDOWN_MS) {
+      // In melee range — prefer skills first, fall back to auto-attack.
+      const cast = this.tryCastSkill(enemy, dist, now, projectiles);
+      if (!cast && now - this.lastAttackAt >= BOT_ATTACK_COOLDOWN_MS) {
         projectiles.spawn(this.position, enemy.position, now, {
           team: this.team,
           damage: this.attackDamage,
@@ -148,6 +186,63 @@ export class BotObject implements Unit {
         this.lastAttackAt = now;
       }
     }
+  }
+
+  /** Pick the longest-range skill currently available and fire toward `enemy`.
+   *  Returns true if a skill was cast (so the caller can skip the auto-attack). */
+  private tryCastSkill(
+    enemy: { position: THREE.Vector3 },
+    dist: number,
+    now: number,
+    projectiles: ProjectileManager,
+  ): boolean {
+    const dx = enemy.position.x - this.position.x;
+    const dz = enemy.position.z - this.position.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-3) return false;
+    // Prefer the heavy nuke when it's in range and ready.
+    if (dist <= SKILL_Q_RANGE && now - this.lastQAt >= SKILL_Q_COOLDOWN_MS) {
+      const damage = SKILL_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.5;
+      projectiles.spawn(this.position, enemy.position, now, {
+        team: this.team,
+        damage,
+        kind: 'heavy',
+        owner: this,
+        maxDistance: SKILL_Q_RANGE,
+        target: enemy as never,
+      });
+      this.lastQAt = now;
+      return true;
+    }
+    // Stun first if the player is close — chains nicely with auto-attacks.
+    if (dist <= SKILL_C_RANGE && now - this.lastCAt >= SKILL_C_COOLDOWN_MS) {
+      projectiles.spawn(this.position, enemy.position, now, {
+        team: this.team,
+        damage: SKILL_C_DAMAGE,
+        kind: 'control',
+        effect: { stun: { durationMs: SKILL_C_STUN_DURATION_MS } },
+        owner: this,
+        maxDistance: SKILL_C_RANGE,
+        target: enemy as never,
+      });
+      this.lastCAt = now;
+      return true;
+    }
+    // Slow on retreat / kite.
+    if (dist <= SKILL_E_RANGE && now - this.lastEAt >= SKILL_E_COOLDOWN_MS) {
+      projectiles.spawn(this.position, enemy.position, now, {
+        team: this.team,
+        damage: SKILL_E_DAMAGE,
+        kind: 'slow',
+        effect: { slow: { factor: SKILL_E_SLOW_FACTOR, durationMs: SKILL_E_SLOW_DURATION_MS } },
+        owner: this,
+        maxDistance: SKILL_E_RANGE,
+        target: enemy as never,
+      });
+      this.lastEAt = now;
+      return true;
+    }
+    return false;
   }
 
   takeDamage(amount: number): void {
