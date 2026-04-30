@@ -42,7 +42,7 @@ export class BotObject implements Unit {
     this.spawn = spawn.clone();
     this.buildVisual();
     this.group.position.copy(spawn);
-    this.healthBar.group.position.set(0, 3.0, 0);
+    this.healthBar.group.position.set(-3, 2.5, 0);
     this.group.add(this.healthBar.group);
   }
 
@@ -51,6 +51,12 @@ export class BotObject implements Unit {
   }
 
   billboardHealthBar(camera: THREE.Camera): void {
+    // See PlayerObject.billboardHealthBar — same world camera-left offset
+    // with yaw compensation so the bar floats above the bot on phone.
+    const yaw = this.group.rotation.y;
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    this.healthBar.group.position.set(-3 * cos, 2.5, -3 * sin);
     this.healthBar.billboard(camera);
   }
 

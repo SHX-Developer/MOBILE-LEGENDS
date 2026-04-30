@@ -26,7 +26,7 @@ export class PlayerObject implements Unit {
     this.spawn = spawn.clone();
     this.buildLayla();
     this.group.position.copy(spawn);
-    this.healthBar.group.position.set(0, 3.0, 0);
+    this.healthBar.group.position.set(-3, 2.5, 0);
     this.group.add(this.healthBar.group);
 
     this.rangeRing = new THREE.Mesh(
@@ -50,6 +50,14 @@ export class PlayerObject implements Unit {
   }
 
   billboardHealthBar(camera: THREE.Camera): void {
+    // World offset (-3, 2.5, 0) projects to canvas-left → phone-up after the
+    // CSS 90° CW rotation, putting the bar above the character on screen.
+    // The bar is parented to this.group, which yaws on movement, so we
+    // counter-rotate the local offset to keep the world offset stable.
+    const yaw = this.group.rotation.y;
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    this.healthBar.group.position.set(-3 * cos, 2.5, -3 * sin);
     this.healthBar.billboard(camera);
   }
 

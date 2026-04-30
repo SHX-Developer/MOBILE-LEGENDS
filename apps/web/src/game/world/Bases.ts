@@ -90,7 +90,9 @@ export class Base implements Unit {
     scene.add(this.rangeRing);
 
     this.healthBar = new HealthBar(4, 0.36, color);
-    this.healthBar.group.position.set(x, 9.5, z);
+    // Same camera-left + up offset as towers; bar reads as floating above
+    // the base crystal on the phone screen.
+    this.healthBar.group.position.set(x - 5, 8, z);
     scene.add(this.healthBar.group);
   }
 
