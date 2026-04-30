@@ -106,6 +106,10 @@ export class Tower implements Unit {
     if (this.hp <= 0) this.die();
   }
 
+  billboardHealthBar(camera: THREE.Camera): void {
+    if (this.alive) this.healthBar.billboard(camera);
+  }
+
   private die(): void {
     this.alive = false;
     this.group.visible = false;

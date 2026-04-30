@@ -49,6 +49,10 @@ export class PlayerObject implements Unit {
     this.rangeRing.visible = visible && this.alive;
   }
 
+  billboardHealthBar(camera: THREE.Camera): void {
+    this.healthBar.billboard(camera);
+  }
+
   get position(): THREE.Vector3 {
     return this.group.position;
   }

@@ -327,6 +327,13 @@ export class Game {
     if (this.aimIndicator.visible) this.refreshAimIndicator();
 
     this.rig.follow(this.player.position);
+
+    const cam = this.rig.camera;
+    this.player.billboardHealthBar(cam);
+    this.bot.billboardHealthBar(cam);
+    for (const t of this.towers) t.billboardHealthBar(cam);
+    for (const b of this.bases) b.billboardHealthBar(cam);
+
     this.renderer.render(this.scene, this.rig.camera);
   };
 

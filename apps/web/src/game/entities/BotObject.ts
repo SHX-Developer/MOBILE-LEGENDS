@@ -50,6 +50,10 @@ export class BotObject implements Unit {
     return this.group.position;
   }
 
+  billboardHealthBar(camera: THREE.Camera): void {
+    this.healthBar.billboard(camera);
+  }
+
   update(
     deltaSec: number,
     now: number,
