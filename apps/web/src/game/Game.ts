@@ -132,13 +132,34 @@ export class Game {
   fire(): void { this.input.requestAttack(); }
   setFireHold(active: boolean): void { this.player.setRangeVisible(active); }
 
-  /** Begin manual aim for a skill. Default direction is the player's current facing. */
+  /**
+   * Begin manual aim for a skill. Initial direction snaps to the nearest
+   * enemy (within ~1.5× range so off-screen targets aren't missed); falls
+   * back to the player's current facing if no enemy is around.
+   */
   startAim(skill: SkillId): void {
     const a = this.aim[skill];
     a.active = true;
+    a.range = skill === 'q' ? SKILL_Q_RANGE : SKILL_E_RANGE;
+
+    const enemy = this.registry.findNearestEnemy(
+      this.player.team,
+      this.player.position,
+      a.range * 1.6,
+    );
+    if (enemy) {
+      const dx = enemy.position.x - this.player.position.x;
+      const dz = enemy.position.z - this.player.position.z;
+      const len = Math.hypot(dx, dz);
+      if (len > 1e-3) {
+        a.dirX = dx / len;
+        a.dirZ = dz / len;
+        this.refreshAimIndicator();
+        return;
+      }
+    }
     a.dirX = this.player.facing.x || 0;
     a.dirZ = this.player.facing.z || 1;
-    a.range = skill === 'q' ? SKILL_Q_RANGE : SKILL_E_RANGE;
     this.refreshAimIndicator();
   }
 

@@ -132,33 +132,36 @@ function buildPerimeterWalls(scene: THREE.Scene, colliders: Colliders): void {
 function buildLandmarks(scene: THREE.Scene, colliders: Colliders): void {
   // Hand-picked placements off the diagonal lane so the eye has reference
   // points while moving. Each entry is a function on (scene, colliders).
+  // Lane runs along the (+x,−z) ↔ (−x,+z) anti-diagonal. Landmark coordinates
+  // are mirrored across the X axis so they stay off-lane (they were originally
+  // tuned for the (+x,+z) diagonal).
   const trees: Array<[number, number, number]> = [
-    [-44, 30, 1.0],
-    [-30, 44, 1.2],
-    [-12, 36, 0.9],
-    [-36, 12, 1.1],
-    [12, -36, 0.9],
-    [30, -44, 1.2],
-    [44, -30, 1.0],
-    [36, -12, 1.1],
+    [-44, -30, 1.0],
+    [-30, -44, 1.2],
+    [-12, -36, 0.9],
+    [-36, -12, 1.1],
+    [12, 36, 0.9],
+    [30, 44, 1.2],
+    [44, 30, 1.0],
+    [36, 12, 1.1],
     [50, 0, 1.3],
     [-50, 0, 1.3],
     [0, 50, 1.3],
     [0, -50, 1.3],
-    [-20, -42, 1.0],
-    [20, 42, 1.0],
-    [42, 20, 1.0],
-    [-42, -20, 1.0],
+    [-20, 42, 1.0],
+    [20, -42, 1.0],
+    [42, -20, 1.0],
+    [-42, 20, 1.0],
   ];
   for (const [x, z, s] of trees) addTree(scene, colliders, x, z, s);
 
   const rocks: Array<[number, number, number]> = [
-    [-18, 24, 1.4],
-    [24, -18, 1.4],
-    [-40, -8, 1.0],
-    [40, 8, 1.0],
-    [-8, 40, 1.0],
-    [8, -40, 1.0],
+    [-18, -24, 1.4],
+    [24, 18, 1.4],
+    [-40, 8, 1.0],
+    [40, -8, 1.0],
+    [-8, -40, 1.0],
+    [8, 40, 1.0],
     [0, 30, 1.1],
     [0, -30, 1.1],
     [30, 0, 1.1],
@@ -168,14 +171,14 @@ function buildLandmarks(scene: THREE.Scene, colliders: Colliders): void {
 
   // Decorative flower clusters (no collision) — pure visual reference.
   const flowers: Array<[number, number]> = [
-    [-22, 38],
-    [22, -38],
-    [-38, 22],
-    [38, -22],
-    [-15, 15],
-    [15, -15],
-    [-50, -50],
-    [50, 50],
+    [-22, -38],
+    [22, 38],
+    [-38, -22],
+    [38, 22],
+    [-15, -15],
+    [15, 15],
+    [-50, 50],
+    [50, -50],
   ];
   for (const [x, z] of flowers) addFlowers(scene, x, z);
 

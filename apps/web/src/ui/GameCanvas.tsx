@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { createGame, type Game } from '../game/index.js';
 
 const ASPECT = 16 / 9;
@@ -27,7 +27,6 @@ export function GameCanvas() {
   const [frame, setFrame] = useState<Frame>(() => computeFrame());
   const [gameKey, setGameKey] = useState(0);
   const [matchEnd, setMatchEnd] = useState<Team | null>(null);
-  const [cooldowns, setCooldowns] = useState({ q: 0, e: 0 });
 
   useEffect(() => {
     const update = () => setFrame(computeFrame());
@@ -50,18 +49,22 @@ export function GameCanvas() {
     };
   }, [gameKey]);
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      const g = gameRef.current;
-      if (!g) return;
-      setCooldowns({ q: g.getQCooldownLeft(), e: g.getECooldownLeft() });
-    }, 100);
-    return () => clearInterval(id);
+  // Stable callbacks — keep memoised children from re-mounting on parent renders.
+  const getGame = useCallback(() => gameRef.current, []);
+  const onJoystickChange = useCallback(
+    (x: number, z: number) => gameRef.current?.setJoystickAxis(x, z),
+    [],
+  );
+  const onFirePress = useCallback(() => {
+    gameRef.current?.fire();
+    gameRef.current?.setFireHold(true);
+  }, []);
+  const onFireRelease = useCallback(() => {
+    gameRef.current?.setFireHold(false);
   }, []);
 
   function restart() {
     setMatchEnd(null);
-    setCooldowns({ q: 0, e: 0 });
     setGameKey((k) => k + 1);
   }
 
@@ -92,14 +95,8 @@ export function GameCanvas() {
         }}
       >
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-        <Joystick onChange={(x, z) => gameRef.current?.setJoystickAxis(x, z)} />
-        <FireButton
-          onPress={() => {
-            gameRef.current?.fire();
-            gameRef.current?.setFireHold(true);
-          }}
-          onRelease={() => gameRef.current?.setFireHold(false)}
-        />
+        <Joystick onChange={onJoystickChange} />
+        <FireButton onPress={onFirePress} onRelease={onFireRelease} />
         <SkillButton
           id="q"
           label="Q"
@@ -108,9 +105,8 @@ export function GameCanvas() {
           right={36}
           bottom={150}
           size={84}
-          cooldownLeftMs={cooldowns.q}
           totalMs={6000}
-          getGame={() => gameRef.current}
+          getGame={getGame}
         />
         <SkillButton
           id="e"
@@ -120,9 +116,8 @@ export function GameCanvas() {
           right={140}
           bottom={92}
           size={84}
-          cooldownLeftMs={cooldowns.e}
           totalMs={8000}
-          getGame={() => gameRef.current}
+          getGame={getGame}
         />
       </div>
 
@@ -135,7 +130,11 @@ const JOY_BASE = 180;
 const JOY_KNOB = 84;
 const JOY_RADIUS = (JOY_BASE - JOY_KNOB) / 2;
 
-function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
+const Joystick = memo(function Joystick({
+  onChange,
+}: {
+  onChange: (x: number, z: number) => void;
+}) {
   const baseRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
   const activePointer = useRef<number | null>(null);
@@ -156,7 +155,6 @@ function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
     const r = base.getBoundingClientRect();
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
-    // Screen → world axis mapping (canvas is rotated 90° CW).
     const vDx = clientX - cx;
     const vDy = clientY - cy;
     let lDx = vDy;
@@ -212,6 +210,7 @@ function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
         touchAction: 'none',
         display: 'grid',
         placeItems: 'center',
+        contain: 'layout paint',
       }}
     >
       <div
@@ -229,9 +228,15 @@ function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
       />
     </div>
   );
-}
+});
 
-function FireButton({ onPress, onRelease }: { onPress: () => void; onRelease: () => void }) {
+const FireButton = memo(function FireButton({
+  onPress,
+  onRelease,
+}: {
+  onPress: () => void;
+  onRelease: () => void;
+}) {
   const activePointer = useRef<number | null>(null);
   return (
     <button
@@ -269,12 +274,13 @@ function FireButton({ onPress, onRelease }: { onPress: () => void; onRelease: ()
         cursor: 'pointer',
         boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
         touchAction: 'none',
+        contain: 'layout paint',
       }}
     >
       FIRE
     </button>
   );
-}
+});
 
 interface SkillProps {
   id: SkillId;
@@ -284,12 +290,11 @@ interface SkillProps {
   right: number;
   bottom: number;
   size: number;
-  cooldownLeftMs: number;
   totalMs: number;
   getGame: () => Game | null;
 }
 
-function SkillButton({
+const SkillButton = memo(function SkillButton({
   id,
   label,
   subtitle,
@@ -297,25 +302,29 @@ function SkillButton({
   right,
   bottom,
   size,
-  cooldownLeftMs,
   totalMs,
   getGame,
 }: SkillProps) {
-  const onCooldown = cooldownLeftMs > 0;
-  const seconds = onCooldown ? Math.ceil(cooldownLeftMs / 1000) : 0;
+  // Each skill button polls its own cooldown — keeps re-renders local.
+  const [cooldown, setCooldown] = useState(0);
+  useEffect(() => {
+    const tick = () => {
+      const g = getGame();
+      if (!g) return;
+      const cd = id === 'q' ? g.getQCooldownLeft() : g.getECooldownLeft();
+      setCooldown((prev) => (Math.abs(prev - cd) > 30 || cd === 0 ? cd : prev));
+    };
+    const handle = window.setInterval(tick, 100);
+    return () => window.clearInterval(handle);
+  }, [id, getGame]);
+
+  const onCooldown = cooldown > 0;
+  const seconds = onCooldown ? Math.ceil(cooldown / 1000) : 0;
   const fillPct = onCooldown
-    ? Math.min(100, ((totalMs - cooldownLeftMs) / totalMs) * 100)
+    ? Math.min(100, ((totalMs - cooldown) / totalMs) * 100)
     : 100;
 
   const activePointer = useRef<number | null>(null);
-
-  // Drag → world-direction. Same axis flip the joystick uses (canvas is
-  // rotated 90° CW, so screen Δy = world +x and screen −Δx = world +z).
-  function dirFromDelta(dx: number, dy: number): { x: number; z: number } {
-    const wx = dy;
-    const wz = -dx;
-    return { x: wx, z: wz };
-  }
 
   return (
     <button
@@ -332,9 +341,10 @@ function SkillButton({
         const r = e.currentTarget.getBoundingClientRect();
         const cx = r.left + r.width / 2;
         const cy = r.top + r.height / 2;
-        const { x, z } = dirFromDelta(e.clientX - cx, e.clientY - cy);
-        // Below a small dead-zone keep the previous direction (player facing).
-        if (Math.hypot(x, z) > 8) getGame()?.updateAim(id, x, z);
+        // Drag → world-direction. Same axis flip the joystick uses.
+        const wx = e.clientY - cy;
+        const wz = -(e.clientX - cx);
+        if (Math.hypot(wx, wz) > 8) getGame()?.updateAim(id, wx, wz);
       }}
       onPointerUp={(e) => {
         if (activePointer.current !== e.pointerId) return;
@@ -369,6 +379,7 @@ function SkillButton({
         display: 'grid',
         placeItems: 'center',
         overflow: 'hidden',
+        contain: 'layout paint',
       }}
     >
       {onCooldown && (
@@ -388,6 +399,7 @@ function SkillButton({
           display: 'grid',
           placeItems: 'center',
           lineHeight: 1,
+          pointerEvents: 'none',
         }}
       >
         <div>{onCooldown ? seconds : label}</div>
@@ -395,7 +407,7 @@ function SkillButton({
       </div>
     </button>
   );
-}
+});
 
 function MatchEndOverlay({
   winner,
