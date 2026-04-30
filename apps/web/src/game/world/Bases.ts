@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import {
   BASE_BLUE_X,
+  BASE_BLUE_Z,
   BASE_RED_X,
+  BASE_RED_Z,
   BASE_RADIUS,
   BASE_HIT_RADIUS,
   BASE_MAX_HP,
@@ -32,19 +34,20 @@ export class Base implements Unit {
   constructor(
     scene: THREE.Scene,
     x: number,
+    z: number,
     team: Team,
     color: number,
     colliders: Colliders,
   ) {
     this.team = team;
-    this.position = new THREE.Vector3(x, 0, 0);
+    this.position = new THREE.Vector3(x, 0, z);
     this.colliders = colliders;
 
     this.platform = new THREE.Mesh(
       new THREE.CylinderGeometry(BASE_RADIUS + 1, BASE_RADIUS + 2, 0.6, 32),
       new THREE.MeshStandardMaterial({ color, roughness: 0.6 }),
     );
-    this.platform.position.set(x, 0.3, 0);
+    this.platform.position.set(x, 0.3, z);
     scene.add(this.platform);
 
     this.crystal = new THREE.Mesh(
@@ -57,16 +60,16 @@ export class Base implements Unit {
         metalness: 0.7,
       }),
     );
-    this.crystal.position.set(x, 4, 0);
+    this.crystal.position.set(x, 4, z);
     this.crystal.castShadow = true;
     scene.add(this.crystal);
-    this.collider = colliders.addCircle(x, 0, BASE_RADIUS);
+    this.collider = colliders.addCircle(x, z, BASE_RADIUS);
 
     scene.userData.crystals = scene.userData.crystals ?? [];
     (scene.userData.crystals as THREE.Mesh[]).push(this.crystal);
 
     this.healthBar = new HealthBar(4, 0.36, color);
-    this.healthBar.group.position.set(x, 9.5, 0);
+    this.healthBar.group.position.set(x, 9.5, z);
     scene.add(this.healthBar.group);
   }
 
@@ -89,7 +92,7 @@ export class Base implements Unit {
 
 export function buildBases(scene: THREE.Scene, colliders: Colliders): Base[] {
   return [
-    new Base(scene, BASE_BLUE_X, 'blue', COLOR_BASE_BLUE, colliders),
-    new Base(scene, BASE_RED_X, 'red', COLOR_BASE_RED, colliders),
+    new Base(scene, BASE_BLUE_X, BASE_BLUE_Z, 'blue', COLOR_BASE_BLUE, colliders),
+    new Base(scene, BASE_RED_X, BASE_RED_Z, 'red', COLOR_BASE_RED, colliders),
   ];
 }

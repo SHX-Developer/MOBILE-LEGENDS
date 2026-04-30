@@ -1,13 +1,20 @@
 import * as THREE from 'three';
 
+export type SkillId = 'q' | 'e';
+
+export interface SkillRequest {
+  id: SkillId;
+  dirX: number;
+  dirZ: number;
+}
+
 export class InputController {
   private keys = new Set<string>();
   private joystick = { x: 0, z: 0 };
   private raycaster = new THREE.Raycaster();
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private pendingAttack = false;
-  private pendingQ = false;
-  private pendingE = false;
+  private pendingSkill: SkillRequest | null = null;
   private lastClickTarget: THREE.Vector3 | null = null;
 
   constructor(
@@ -45,8 +52,9 @@ export class InputController {
 
   /** External callers (e.g. mobile FIRE button) use these to request actions. */
   requestAttack(): void { this.pendingAttack = true; }
-  requestQ(): void { this.pendingQ = true; }
-  requestE(): void { this.pendingE = true; }
+  requestSkill(id: SkillId, dirX: number, dirZ: number): void {
+    this.pendingSkill = { id, dirX, dirZ };
+  }
 
   consumeAttackRequest(): boolean {
     const r = this.pendingAttack;
@@ -54,15 +62,9 @@ export class InputController {
     return r;
   }
 
-  consumeQRequest(): boolean {
-    const r = this.pendingQ;
-    this.pendingQ = false;
-    return r;
-  }
-
-  consumeERequest(): boolean {
-    const r = this.pendingE;
-    this.pendingE = false;
+  consumeSkillRequest(): SkillRequest | null {
+    const r = this.pendingSkill;
+    this.pendingSkill = null;
     return r;
   }
 
@@ -73,8 +75,11 @@ export class InputController {
   private onKeyDown = (e: KeyboardEvent): void => {
     const key = e.key.toLowerCase();
     this.keys.add(key);
-    if (key === 'q') this.pendingQ = true;
-    else if (key === 'e') this.pendingE = true;
+    // Keyboard skills fire instantly along the player's current facing.
+    // (The mobile UI uses requestSkill with a manually-aimed direction.)
+    if (key === 'q' || key === 'e') {
+      this.pendingSkill = { id: key as SkillId, dirX: 0, dirZ: 0 };
+    }
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {

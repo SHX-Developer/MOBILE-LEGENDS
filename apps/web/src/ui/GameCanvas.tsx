@@ -11,6 +11,7 @@ interface Frame {
 }
 
 type Team = 'blue' | 'red';
+type SkillId = 'q' | 'e';
 
 function computeFrame(): Frame {
   const vpW = window.innerWidth;
@@ -92,28 +93,36 @@ export function GameCanvas() {
       >
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
         <Joystick onChange={(x, z) => gameRef.current?.setJoystickAxis(x, z)} />
-        <FireButton onFire={() => gameRef.current?.fire()} />
+        <FireButton
+          onPress={() => {
+            gameRef.current?.fire();
+            gameRef.current?.setFireHold(true);
+          }}
+          onRelease={() => gameRef.current?.setFireHold(false)}
+        />
         <SkillButton
+          id="q"
           label="Q"
           subtitle="POWER"
           accent="#ff7a3d"
           right={36}
           bottom={150}
-          size={72}
+          size={84}
           cooldownLeftMs={cooldowns.q}
           totalMs={6000}
-          onUse={() => gameRef.current?.useQ()}
+          getGame={() => gameRef.current}
         />
         <SkillButton
+          id="e"
           label="E"
           subtitle="SLOW"
           accent="#4ec9ff"
-          right={130}
+          right={140}
           bottom={92}
-          size={72}
+          size={84}
           cooldownLeftMs={cooldowns.e}
           totalMs={8000}
-          onUse={() => gameRef.current?.useE()}
+          getGame={() => gameRef.current}
         />
       </div>
 
@@ -122,8 +131,8 @@ export function GameCanvas() {
   );
 }
 
-const JOY_BASE = 130;
-const JOY_KNOB = 60;
+const JOY_BASE = 180;
+const JOY_KNOB = 84;
 const JOY_RADIUS = (JOY_BASE - JOY_KNOB) / 2;
 
 function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
@@ -147,6 +156,7 @@ function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
     const r = base.getBoundingClientRect();
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
+    // Screen → world axis mapping (canvas is rotated 90° CW).
     const vDx = clientX - cx;
     const vDy = clientY - cy;
     let lDx = vDy;
@@ -190,14 +200,15 @@ function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
       }}
       style={{
         position: 'absolute',
-        left: 24,
-        bottom: 24,
+        left: 28,
+        bottom: 28,
         width: JOY_BASE,
         height: JOY_BASE,
         borderRadius: '50%',
-        background: 'rgba(20, 24, 36, 0.45)',
-        border: '2px solid rgba(255,255,255,0.35)',
-        backdropFilter: 'blur(4px)',
+        background:
+          'radial-gradient(circle at 50% 50%, rgba(60,70,95,0.55) 0%, rgba(20,24,36,0.55) 70%)',
+        border: '3px solid rgba(255,255,255,0.45)',
+        boxShadow: '0 4px 18px rgba(0,0,0,0.45), inset 0 0 0 8px rgba(255,255,255,0.05)',
         touchAction: 'none',
         display: 'grid',
         placeItems: 'center',
@@ -209,22 +220,37 @@ function Joystick({ onChange }: { onChange: (x: number, z: number) => void }) {
           width: JOY_KNOB,
           height: JOY_KNOB,
           borderRadius: '50%',
-          background: 'rgba(220, 220, 240, 0.85)',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+          background:
+            'radial-gradient(circle at 35% 30%, #f4f4ff 0%, #c2c4d6 70%, #8b8ea3 100%)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
           pointerEvents: 'none',
-          transition: 'transform 0.05s linear',
+          willChange: 'transform',
         }}
       />
     </div>
   );
 }
 
-function FireButton({ onFire }: { onFire: () => void }) {
+function FireButton({ onPress, onRelease }: { onPress: () => void; onRelease: () => void }) {
+  const activePointer = useRef<number | null>(null);
   return (
     <button
       onPointerDown={(e) => {
+        if (activePointer.current !== null) return;
+        activePointer.current = e.pointerId;
+        e.currentTarget.setPointerCapture(e.pointerId);
         e.preventDefault();
-        onFire();
+        onPress();
+      }}
+      onPointerUp={(e) => {
+        if (activePointer.current !== e.pointerId) return;
+        activePointer.current = null;
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        onRelease();
+      }}
+      onPointerCancel={() => {
+        activePointer.current = null;
+        onRelease();
       }}
       style={{
         position: 'absolute',
@@ -251,6 +277,7 @@ function FireButton({ onFire }: { onFire: () => void }) {
 }
 
 interface SkillProps {
+  id: SkillId;
   label: string;
   subtitle: string;
   accent: string;
@@ -259,10 +286,11 @@ interface SkillProps {
   size: number;
   cooldownLeftMs: number;
   totalMs: number;
-  onUse: () => void;
+  getGame: () => Game | null;
 }
 
 function SkillButton({
+  id,
   label,
   subtitle,
   accent,
@@ -271,7 +299,7 @@ function SkillButton({
   size,
   cooldownLeftMs,
   totalMs,
-  onUse,
+  getGame,
 }: SkillProps) {
   const onCooldown = cooldownLeftMs > 0;
   const seconds = onCooldown ? Math.ceil(cooldownLeftMs / 1000) : 0;
@@ -279,11 +307,45 @@ function SkillButton({
     ? Math.min(100, ((totalMs - cooldownLeftMs) / totalMs) * 100)
     : 100;
 
+  const activePointer = useRef<number | null>(null);
+
+  // Drag → world-direction. Same axis flip the joystick uses (canvas is
+  // rotated 90° CW, so screen Δy = world +x and screen −Δx = world +z).
+  function dirFromDelta(dx: number, dy: number): { x: number; z: number } {
+    const wx = dy;
+    const wz = -dx;
+    return { x: wx, z: wz };
+  }
+
   return (
     <button
       onPointerDown={(e) => {
+        if (onCooldown) return;
+        if (activePointer.current !== null) return;
+        activePointer.current = e.pointerId;
+        e.currentTarget.setPointerCapture(e.pointerId);
         e.preventDefault();
-        if (!onCooldown) onUse();
+        getGame()?.startAim(id);
+      }}
+      onPointerMove={(e) => {
+        if (activePointer.current !== e.pointerId) return;
+        const r = e.currentTarget.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const { x, z } = dirFromDelta(e.clientX - cx, e.clientY - cy);
+        // Below a small dead-zone keep the previous direction (player facing).
+        if (Math.hypot(x, z) > 8) getGame()?.updateAim(id, x, z);
+      }}
+      onPointerUp={(e) => {
+        if (activePointer.current !== e.pointerId) return;
+        activePointer.current = null;
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        getGame()?.releaseAim(id);
+      }}
+      onPointerCancel={(e) => {
+        if (activePointer.current !== e.pointerId) return;
+        activePointer.current = null;
+        getGame()?.cancelAim(id);
       }}
       style={{
         position: 'absolute',

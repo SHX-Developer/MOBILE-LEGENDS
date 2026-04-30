@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PLAYER_MAX_HP, PLAYER_RADIUS, PLAYER_SPEED_3D } from '../constants.js';
+import { PLAYER_ATTACK_RANGE, PLAYER_MAX_HP, PLAYER_RADIUS, PLAYER_SPEED_3D } from '../constants.js';
 import type { Unit, Team } from '../combat/Unit.js';
 import { HealthBar } from '../combat/HealthBar.js';
 
@@ -20,6 +20,7 @@ export class PlayerObject implements Unit {
   private velocity = new THREE.Vector3();
   private readonly spawn: THREE.Vector3;
   private readonly healthBar = new HealthBar(2.4, 0.22, 0x44ff66);
+  private readonly rangeRing: THREE.Mesh;
 
   constructor(spawn: THREE.Vector3) {
     this.spawn = spawn.clone();
@@ -27,6 +28,25 @@ export class PlayerObject implements Unit {
     this.group.position.copy(spawn);
     this.healthBar.group.position.set(0, 3.0, 0);
     this.group.add(this.healthBar.group);
+
+    this.rangeRing = new THREE.Mesh(
+      new THREE.RingGeometry(PLAYER_ATTACK_RANGE - 0.35, PLAYER_ATTACK_RANGE, 64),
+      new THREE.MeshBasicMaterial({
+        color: 0x9fd8ff,
+        transparent: true,
+        opacity: 0.7,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    this.rangeRing.rotation.x = -Math.PI / 2;
+    this.rangeRing.position.y = 0.04;
+    this.rangeRing.visible = false;
+    this.group.add(this.rangeRing);
+  }
+
+  setRangeVisible(visible: boolean): void {
+    this.rangeRing.visible = visible && this.alive;
   }
 
   get position(): THREE.Vector3 {
@@ -57,6 +77,15 @@ export class PlayerObject implements Unit {
     this.group.rotation.y = Math.atan2(dx, dz);
     const len = Math.hypot(dx, dz);
     this.facing.set(dx / len, 0, dz / len);
+  }
+
+  faceDirection(dirX: number, dirZ: number): void {
+    const len = Math.hypot(dirX, dirZ);
+    if (len < 1e-4) return;
+    const nx = dirX / len;
+    const nz = dirZ / len;
+    this.group.rotation.y = Math.atan2(nx, nz);
+    this.facing.set(nx, 0, nz);
   }
 
   takeDamage(amount: number): void {

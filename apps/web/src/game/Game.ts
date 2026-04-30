@@ -30,6 +30,15 @@ import { InputController } from './InputController.js';
 import { UnitRegistry } from './combat/UnitRegistry.js';
 import type { Team } from './combat/Unit.js';
 
+export type SkillId = 'q' | 'e';
+
+interface AimState {
+  active: boolean;
+  dirX: number;
+  dirZ: number;
+  range: number;
+}
+
 export class Game {
   /** Called once when one base falls. `winner` is the team whose base survived. */
   onMatchEnd?: (winner: Team) => void;
@@ -55,6 +64,12 @@ export class Game {
   private respawnAt = 0;
   private playerWasAlive = true;
   private gameOver = false;
+
+  private aimIndicator: THREE.Mesh;
+  private aim: Record<SkillId, AimState> = {
+    q: { active: false, dirX: 0, dirZ: 1, range: SKILL_Q_RANGE },
+    e: { active: false, dirX: 0, dirZ: 1, range: SKILL_E_RANGE },
+  };
 
   constructor(private readonly container: HTMLElement) {
     const { clientWidth, clientHeight } = container;
@@ -96,6 +111,9 @@ export class Game {
 
     this.projectiles = new ProjectileManager(this.scene);
 
+    this.aimIndicator = this.buildAimIndicator();
+    this.scene.add(this.aimIndicator);
+
     this.rig = new CameraRig(clientWidth / clientHeight);
     this.rig.follow(this.player.position);
 
@@ -112,8 +130,44 @@ export class Game {
   }
 
   fire(): void { this.input.requestAttack(); }
-  useQ(): void { this.input.requestQ(); }
-  useE(): void { this.input.requestE(); }
+  setFireHold(active: boolean): void { this.player.setRangeVisible(active); }
+
+  /** Begin manual aim for a skill. Default direction is the player's current facing. */
+  startAim(skill: SkillId): void {
+    const a = this.aim[skill];
+    a.active = true;
+    a.dirX = this.player.facing.x || 0;
+    a.dirZ = this.player.facing.z || 1;
+    a.range = skill === 'q' ? SKILL_Q_RANGE : SKILL_E_RANGE;
+    this.refreshAimIndicator();
+  }
+
+  /** Update aim direction. (dirX, dirZ) is in world space; non-zero. */
+  updateAim(skill: SkillId, dirX: number, dirZ: number): void {
+    const a = this.aim[skill];
+    if (!a.active) return;
+    const len = Math.hypot(dirX, dirZ);
+    if (len < 0.001) return;
+    a.dirX = dirX / len;
+    a.dirZ = dirZ / len;
+    this.refreshAimIndicator();
+  }
+
+  /** Release aim and trigger the skill in the locked direction. */
+  releaseAim(skill: SkillId): void {
+    const a = this.aim[skill];
+    if (!a.active) return;
+    a.active = false;
+    this.aimIndicator.visible = false;
+    this.input.requestSkill(skill, a.dirX, a.dirZ);
+  }
+
+  /** Cancel aim without firing (e.g. pointer cancel). */
+  cancelAim(skill: SkillId): void {
+    const a = this.aim[skill];
+    a.active = false;
+    if (!this.aim.q.active && !this.aim.e.active) this.aimIndicator.visible = false;
+  }
 
   getAttackCooldownLeft(now = performance.now()): number {
     return Math.max(0, PLAYER_ATTACK_COOLDOWN_MS - (now - this.lastAttackAt));
@@ -162,6 +216,38 @@ export class Game {
     this.onMatchEnd?.(winner);
   }
 
+  private buildAimIndicator(): THREE.Mesh {
+    // Bar anchored at +y edge. After rotation.x = -PI/2 the bar lies on the
+    // ground extending in world +z; rotation.z then yaws it to (dirX, dirZ).
+    const geom = new THREE.PlaneGeometry(1.4, 1);
+    geom.translate(0, -0.5, 0);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffe28a,
+      transparent: true,
+      opacity: 0.55,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.visible = false;
+    return mesh;
+  }
+
+  private refreshAimIndicator(): void {
+    const active = this.aim.q.active ? this.aim.q : this.aim.e.active ? this.aim.e : null;
+    if (!active) {
+      this.aimIndicator.visible = false;
+      return;
+    }
+    const p = this.player.position;
+    this.aimIndicator.position.set(p.x, 0.05, p.z);
+    const angle = Math.atan2(active.dirX, active.dirZ);
+    this.aimIndicator.rotation.set(-Math.PI / 2, 0, angle);
+    this.aimIndicator.scale.set(1, active.range, 1);
+    this.aimIndicator.visible = true;
+  }
+
   private loop = (): void => {
     this.rafId = requestAnimationFrame(this.loop);
     const delta = this.clock.getDelta();
@@ -174,15 +260,22 @@ export class Game {
     }
 
     const wantsAttack = this.input.consumeAttackRequest();
-    const wantsQ = this.input.consumeQRequest();
-    const wantsE = this.input.consumeERequest();
+    const skillReq = this.input.consumeSkillRequest();
 
     if (this.player.alive) {
       this.player.update(this.input.getMovement(), delta, now);
       this.colliders.resolve(this.player.position, PLAYER_RADIUS);
       if (wantsAttack) this.tryAutoAttack(now);
-      if (wantsQ) this.tryUseQ(now);
-      if (wantsE) this.tryUseE(now);
+      if (skillReq) {
+        let dx = skillReq.dirX;
+        let dz = skillReq.dirZ;
+        if (Math.hypot(dx, dz) < 1e-3) {
+          dx = this.player.facing.x;
+          dz = this.player.facing.z;
+        }
+        if (skillReq.id === 'q') this.tryUseQ(now, dx, dz);
+        else this.tryUseE(now, dx, dz);
+      }
     } else if (now >= this.respawnAt) {
       this.player.respawn();
     }
@@ -198,6 +291,8 @@ export class Game {
 
     this.projectiles.update(delta, now, this.registry);
     this.spinCrystals(delta);
+
+    if (this.aimIndicator.visible) this.refreshAimIndicator();
 
     this.rig.follow(this.player.position);
     this.renderer.render(this.scene, this.rig.camera);
@@ -219,14 +314,14 @@ export class Game {
     this.lastAttackAt = now;
   }
 
-  private tryUseQ(now: number): void {
+  private tryUseQ(now: number, dirX: number, dirZ: number): void {
     if (now - this.lastQAt < SKILL_Q_COOLDOWN_MS) return;
-    const dir = this.player.facing;
+    this.player.faceDirection(dirX, dirZ);
     const origin = this.player.position;
     const target = new THREE.Vector3(
-      origin.x + dir.x * SKILL_Q_RANGE,
+      origin.x + dirX * SKILL_Q_RANGE,
       origin.y,
-      origin.z + dir.z * SKILL_Q_RANGE,
+      origin.z + dirZ * SKILL_Q_RANGE,
     );
     this.projectiles.spawn(origin, target, now, {
       team: this.player.team,
@@ -236,14 +331,14 @@ export class Game {
     this.lastQAt = now;
   }
 
-  private tryUseE(now: number): void {
+  private tryUseE(now: number, dirX: number, dirZ: number): void {
     if (now - this.lastEAt < SKILL_E_COOLDOWN_MS) return;
-    const dir = this.player.facing;
+    this.player.faceDirection(dirX, dirZ);
     const origin = this.player.position;
     const target = new THREE.Vector3(
-      origin.x + dir.x * SKILL_E_RANGE,
+      origin.x + dirX * SKILL_E_RANGE,
       origin.y,
-      origin.z + dir.z * SKILL_E_RANGE,
+      origin.z + dirZ * SKILL_E_RANGE,
     );
     this.projectiles.spawn(origin, target, now, {
       team: this.player.team,

@@ -3,7 +3,9 @@ import {
   TOWER_RADIUS,
   TOWER_HEIGHT,
   TOWER_BLUE_X,
+  TOWER_BLUE_Z,
   TOWER_RED_X,
+  TOWER_RED_Z,
   TOWER_MAX_HP,
   TOWER_DAMAGE,
   TOWER_ATTACK_RANGE,
@@ -30,6 +32,7 @@ export class Tower implements Unit {
 
   private readonly group: THREE.Group;
   private readonly healthBar: HealthBar;
+  private readonly rangeRing: THREE.Mesh;
   private readonly collider: CircleCollider;
   private readonly colliders: Colliders;
   private lastAttackAt = -Infinity;
@@ -37,12 +40,13 @@ export class Tower implements Unit {
   constructor(
     scene: THREE.Scene,
     x: number,
+    z: number,
     team: Team,
     color: number,
     colliders: Colliders,
   ) {
     this.team = team;
-    this.position = new THREE.Vector3(x, 0, 0);
+    this.position = new THREE.Vector3(x, 0, z);
     this.colliders = colliders;
     this.group = new THREE.Group();
 
@@ -52,14 +56,14 @@ export class Tower implements Unit {
       new THREE.CylinderGeometry(TOWER_RADIUS * 1.4, TOWER_RADIUS * 1.6, 1, 16),
       mat,
     );
-    base.position.set(x, 0.5, 0);
+    base.position.set(x, 0.5, z);
     this.group.add(base);
 
     const shaft = new THREE.Mesh(
       new THREE.CylinderGeometry(TOWER_RADIUS, TOWER_RADIUS * 1.2, TOWER_HEIGHT, 16),
       mat,
     );
-    shaft.position.set(x, 1 + TOWER_HEIGHT / 2, 0);
+    shaft.position.set(x, 1 + TOWER_HEIGHT / 2, z);
     shaft.castShadow = true;
     this.group.add(shaft);
 
@@ -67,15 +71,19 @@ export class Tower implements Unit {
       new THREE.ConeGeometry(TOWER_RADIUS * 1.3, 1.6, 16),
       mat,
     );
-    cap.position.set(x, 1 + TOWER_HEIGHT + 0.8, 0);
+    cap.position.set(x, 1 + TOWER_HEIGHT + 0.8, z);
     cap.castShadow = true;
     this.group.add(cap);
 
     scene.add(this.group);
-    this.collider = colliders.addCircle(x, 0, this.radius);
+    this.collider = colliders.addCircle(x, z, this.radius);
+
+    this.rangeRing = buildRangeRing(TOWER_ATTACK_RANGE, color, 0.32);
+    this.rangeRing.position.set(x, 0.04, z);
+    scene.add(this.rangeRing);
 
     this.healthBar = new HealthBar(3.5, 0.32, color);
-    this.healthBar.group.position.set(x, 8.5, 0);
+    this.healthBar.group.position.set(x, 8.5, z);
     scene.add(this.healthBar.group);
   }
 
@@ -101,15 +109,32 @@ export class Tower implements Unit {
   private die(): void {
     this.alive = false;
     this.group.visible = false;
+    this.rangeRing.visible = false;
     this.healthBar.group.visible = false;
     this.colliders.removeCircle(this.collider);
     this.onDestroyed?.();
   }
 }
 
+function buildRangeRing(range: number, color: number, opacity: number): THREE.Mesh {
+  const inner = range - 0.4;
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(inner, range, 64),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  return ring;
+}
+
 export function buildTowers(scene: THREE.Scene, colliders: Colliders): Tower[] {
   return [
-    new Tower(scene, TOWER_BLUE_X, 'blue', COLOR_TOWER_BLUE, colliders),
-    new Tower(scene, TOWER_RED_X, 'red', COLOR_TOWER_RED, colliders),
+    new Tower(scene, TOWER_BLUE_X, TOWER_BLUE_Z, 'blue', COLOR_TOWER_BLUE, colliders),
+    new Tower(scene, TOWER_RED_X, TOWER_RED_Z, 'red', COLOR_TOWER_RED, colliders),
   ];
 }
