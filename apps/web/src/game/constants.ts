@@ -50,6 +50,10 @@ export const BASE_RED_X = HALF_W - 14;
 export const BASE_RED_Z = -HALF_H + 14;
 export const BASE_MAX_HP = 1500;
 export const BASE_HIT_RADIUS = 5;
+// Base attacks like a tower — slightly stronger and longer-ranged.
+export const BASE_DAMAGE = 55;
+export const BASE_ATTACK_RANGE = 16;
+export const BASE_ATTACK_COOLDOWN_MS = 1000;
 
 // Spawn points — just in front of each base, on the lane diagonal.
 const SPAWN_OFFSET = 6;

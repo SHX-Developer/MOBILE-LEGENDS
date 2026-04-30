@@ -15,6 +15,8 @@ export interface ProjectileSpec {
   kind?: ProjectileKind;
   /** Status effect applied to whatever the projectile hits. */
   effect?: { slow?: { factor: number; durationMs: number } };
+  /** Set by the local player so we can fire haptics on hit. */
+  fromPlayer?: boolean;
 }
 
 interface Projectile {
@@ -24,6 +26,7 @@ interface Projectile {
   team: Team;
   damage: number;
   effect?: ProjectileSpec['effect'];
+  fromPlayer: boolean;
 }
 
 interface Variant {
@@ -32,6 +35,9 @@ interface Variant {
 }
 
 export class ProjectileManager {
+  /** Fires whenever a projectile flagged `fromPlayer` connects. */
+  onPlayerHit?: () => void;
+
   private projectiles: Projectile[] = [];
   private readonly variants: Record<ProjectileKind, Variant>;
 
@@ -89,6 +95,7 @@ export class ProjectileManager {
       team: spec.team,
       damage: spec.damage,
       effect: spec.effect,
+      fromPlayer: spec.fromPlayer === true,
     });
   }
 
@@ -105,6 +112,7 @@ export class ProjectileManager {
           const until = now + p.effect.slow.durationMs;
           if (until > hit.slowUntil) hit.slowUntil = until;
         }
+        if (p.fromPlayer) this.onPlayerHit?.();
         this.scene.remove(p.mesh);
         this.projectiles.splice(i, 1);
         continue;

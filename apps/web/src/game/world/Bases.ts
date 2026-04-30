@@ -1,17 +1,22 @@
 import * as THREE from 'three';
 import {
+  BASE_ATTACK_COOLDOWN_MS,
+  BASE_ATTACK_RANGE,
   BASE_BLUE_X,
   BASE_BLUE_Z,
-  BASE_RED_X,
-  BASE_RED_Z,
-  BASE_RADIUS,
+  BASE_DAMAGE,
   BASE_HIT_RADIUS,
   BASE_MAX_HP,
+  BASE_RADIUS,
+  BASE_RED_X,
+  BASE_RED_Z,
   COLOR_BASE_BLUE,
   COLOR_BASE_RED,
 } from '../constants.js';
 import { Colliders, CircleCollider } from './Colliders.js';
 import type { Unit, Team } from '../combat/Unit.js';
+import type { UnitRegistry } from '../combat/UnitRegistry.js';
+import type { ProjectileManager } from '../entities/ProjectileManager.js';
 import { HealthBar } from '../combat/HealthBar.js';
 
 export class Base implements Unit {
@@ -28,8 +33,10 @@ export class Base implements Unit {
   private readonly platform: THREE.Mesh;
   private readonly crystal: THREE.Mesh;
   private readonly healthBar: HealthBar;
+  private readonly rangeRing: THREE.Mesh;
   private readonly collider: CircleCollider;
   private readonly colliders: Colliders;
+  private lastAttackAt = -Infinity;
 
   constructor(
     scene: THREE.Scene,
@@ -68,9 +75,36 @@ export class Base implements Unit {
     scene.userData.crystals = scene.userData.crystals ?? [];
     (scene.userData.crystals as THREE.Mesh[]).push(this.crystal);
 
+    this.rangeRing = new THREE.Mesh(
+      new THREE.RingGeometry(BASE_ATTACK_RANGE - 0.4, BASE_ATTACK_RANGE, 64),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.28,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    this.rangeRing.rotation.x = -Math.PI / 2;
+    this.rangeRing.position.set(x, 0.04, z);
+    scene.add(this.rangeRing);
+
     this.healthBar = new HealthBar(4, 0.36, color);
     this.healthBar.group.position.set(x, 9.5, z);
     scene.add(this.healthBar.group);
+  }
+
+  update(now: number, registry: UnitRegistry, projectiles: ProjectileManager): void {
+    if (!this.alive) return;
+    if (now - this.lastAttackAt < BASE_ATTACK_COOLDOWN_MS) return;
+    const target = registry.findNearestEnemy(this.team, this.position, BASE_ATTACK_RANGE);
+    if (!target) return;
+    projectiles.spawn(this.position, target.position, now, {
+      team: this.team,
+      damage: BASE_DAMAGE,
+      kind: 'heavy',
+    });
+    this.lastAttackAt = now;
   }
 
   takeDamage(amount: number): void {
@@ -84,6 +118,7 @@ export class Base implements Unit {
     this.alive = false;
     this.crystal.visible = false;
     this.platform.visible = false;
+    this.rangeRing.visible = false;
     this.healthBar.group.visible = false;
     this.colliders.removeCircle(this.collider);
     this.onDestroyed?.();

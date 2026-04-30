@@ -6,10 +6,12 @@ import * as THREE from 'three';
  */
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
-  private offset = new THREE.Vector3(0, 18, 12);
+  // Slightly higher and further back than the original (0,18,12) so more of
+  // the surrounding lane fits in the player's view.
+  private offset = new THREE.Vector3(0, 24, 16);
 
   constructor(aspect: number) {
-    this.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 500);
+    this.camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 500);
   }
 
   resize(aspect: number): void {

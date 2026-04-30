@@ -29,6 +29,7 @@ import { CameraRig } from './CameraRig.js';
 import { InputController } from './InputController.js';
 import { UnitRegistry } from './combat/UnitRegistry.js';
 import type { Team } from './combat/Unit.js';
+import { Haptics } from './haptics.js';
 
 export type SkillId = 'q' | 'e';
 
@@ -64,6 +65,7 @@ export class Game {
   private respawnAt = 0;
   private playerWasAlive = true;
   private gameOver = false;
+  private lastPlayerHp = 0;
 
   private aimIndicator: THREE.Mesh;
   private aim: Record<SkillId, AimState> = {
@@ -110,6 +112,8 @@ export class Game {
     this.bases[1].onDestroyed = () => this.endMatch('blue');
 
     this.projectiles = new ProjectileManager(this.scene);
+    this.projectiles.onPlayerHit = () => Haptics.hitEnemy();
+    this.lastPlayerHp = this.player.hp;
 
     this.aimIndicator = this.buildAimIndicator();
     this.scene.add(this.aimIndicator);
@@ -309,8 +313,15 @@ export class Game {
     this.bot.update(delta, now, this.registry, this.projectiles, this.colliders);
 
     for (const t of this.towers) t.update(now, this.registry, this.projectiles);
+    for (const b of this.bases) b.update(now, this.registry, this.projectiles);
 
     this.projectiles.update(delta, now, this.registry);
+
+    // Haptic on damage taken (covers bot, tower and base attacks alike).
+    if (this.player.alive && this.player.hp < this.lastPlayerHp) {
+      Haptics.takeDamage();
+    }
+    this.lastPlayerHp = this.player.hp;
     this.spinCrystals(delta);
 
     if (this.aimIndicator.visible) this.refreshAimIndicator();
@@ -331,6 +342,7 @@ export class Game {
     this.projectiles.spawn(this.player.position, target.position, now, {
       team: this.player.team,
       damage: PLAYER_ATTACK_DAMAGE,
+      fromPlayer: true,
     });
     this.lastAttackAt = now;
   }
@@ -348,6 +360,7 @@ export class Game {
       team: this.player.team,
       damage: SKILL_Q_DAMAGE,
       kind: 'heavy',
+      fromPlayer: true,
     });
     this.lastQAt = now;
   }
@@ -366,6 +379,7 @@ export class Game {
       damage: SKILL_E_DAMAGE,
       kind: 'slow',
       effect: { slow: { factor: SKILL_E_SLOW_FACTOR, durationMs: SKILL_E_SLOW_DURATION_MS } },
+      fromPlayer: true,
     });
     this.lastEAt = now;
   }
