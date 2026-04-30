@@ -122,14 +122,16 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
         {mode === 'online' && <OnlineStatus status={onlineStatus} />}
         <Joystick onChange={onJoystickChange} />
         <FireButton onPress={onFirePress} onRelease={onFireRelease} />
+        {/* Three skills wrap around FIRE (which sits in the corner). Q above,
+            E top-left diagonal, C straight left — like a fan. */}
         <SkillButton
           id="q"
           label="Q"
           subtitle="POWER"
           accent="#ff7a3d"
-          right={36}
-          bottom={150}
-          size={84}
+          right={42}
+          bottom={156}
+          size={74}
           totalMs={6000}
           getGame={getGame}
         />
@@ -138,9 +140,9 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label="E"
           subtitle="SLOW"
           accent="#4ec9ff"
-          right={140}
-          bottom={92}
-          size={84}
+          right={132}
+          bottom={132}
+          size={74}
           totalMs={8000}
           getGame={getGame}
         />
@@ -149,9 +151,9 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label="C"
           subtitle="STUN"
           accent="#b56cff"
-          right={240}
-          bottom={36}
-          size={78}
+          right={172}
+          bottom={42}
+          size={74}
           totalMs={10000}
           getGame={getGame}
         />
@@ -382,8 +384,8 @@ const Joystick = memo(function Joystick({
       }}
       style={{
         position: 'absolute',
-        left: 28,
-        bottom: 28,
+        left: 80,
+        bottom: 36,
         width: JOY_BASE,
         height: JOY_BASE,
         borderRadius: '50%',
@@ -443,20 +445,20 @@ const FireButton = memo(function FireButton({
       }}
       style={{
         position: 'absolute',
-        right: 28,
-        bottom: 40,
-        width: 96,
-        height: 96,
+        right: 30,
+        bottom: 30,
+        width: 102,
+        height: 102,
         borderRadius: '50%',
-        border: '2px solid rgba(255, 200, 80, 0.7)',
+        border: '3px solid rgba(255, 210, 100, 0.8)',
         background:
-          'radial-gradient(circle at 35% 30%, #ffce5c 0%, #e48a1a 60%, #a14b00 100%)',
+          'radial-gradient(circle at 35% 30%, #ffd96a 0%, #e48a1a 60%, #8a3d00 100%)',
         color: '#1a1208',
-        fontWeight: 800,
-        fontSize: 16,
-        letterSpacing: 1,
+        fontWeight: 900,
+        fontSize: 18,
+        letterSpacing: 2,
         cursor: 'pointer',
-        boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
+        boxShadow: '0 8px 22px rgba(0,0,0,0.55), 0 0 0 4px rgba(255,206,92,0.18)',
         touchAction: 'none',
         contain: 'layout paint',
       }}

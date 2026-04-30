@@ -132,13 +132,13 @@ export class InputController {
       this.drag.engaged = true;
     }
     // Map screen delta → world delta. The CSS rotation in portrait swaps
-    // the axes; sign chosen so the world appears to drag with the finger.
+    // the axes; sign chosen so the camera follows the finger (drag-the-camera).
     const portrait = window.innerHeight > window.innerWidth;
     const screenX = portrait ? dy : dx;
     const screenZ = portrait ? -dx : dy;
     const scale = 0.06;
-    this.drag.cumX = -screenX * scale;
-    this.drag.cumZ = -screenZ * scale;
+    this.drag.cumX = screenX * scale;
+    this.drag.cumZ = screenZ * scale;
     // Clamp so the player can't pan halfway across the world.
     const maxOffset = 24;
     if (this.drag.cumX > maxOffset) this.drag.cumX = maxOffset;
