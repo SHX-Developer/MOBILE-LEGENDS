@@ -58,6 +58,12 @@ export class AuthService {
     const computed = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
     if (computed !== hash) {
+      console.error('[auth] hash mismatch', {
+        dataCheckString,
+        receivedHash: hash,
+        computedHash: computed,
+        botTokenTail: botToken.slice(-6),
+      });
       throw new BadRequestException('initData hash mismatch');
     }
   }
