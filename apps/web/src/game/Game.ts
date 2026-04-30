@@ -349,6 +349,7 @@ export class Game {
     this.projectiles.spawn(this.player.position, target.position, now, {
       team: this.player.team,
       damage: PLAYER_ATTACK_DAMAGE,
+      target,
       fromPlayer: true,
     });
     this.lastAttackAt = now;
@@ -367,6 +368,7 @@ export class Game {
       team: this.player.team,
       damage: SKILL_Q_DAMAGE,
       kind: 'heavy',
+      maxDistance: SKILL_Q_RANGE,
       fromPlayer: true,
     });
     this.lastQAt = now;
@@ -386,6 +388,7 @@ export class Game {
       damage: SKILL_E_DAMAGE,
       kind: 'slow',
       effect: { slow: { factor: SKILL_E_SLOW_FACTOR, durationMs: SKILL_E_SLOW_DURATION_MS } },
+      maxDistance: SKILL_E_RANGE,
       fromPlayer: true,
     });
     this.lastEAt = now;

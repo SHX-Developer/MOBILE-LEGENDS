@@ -109,6 +109,7 @@ export class BotObject implements Unit {
         projectiles.spawn(this.position, enemy.position, now, {
           team: this.team,
           damage: BOT_DAMAGE,
+          target: enemy,
         });
         this.lastAttackAt = now;
       }

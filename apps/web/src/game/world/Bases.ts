@@ -104,6 +104,7 @@ export class Base implements Unit {
       team: this.team,
       damage: BASE_DAMAGE,
       kind: 'heavy',
+      target,
     });
     this.lastAttackAt = now;
   }

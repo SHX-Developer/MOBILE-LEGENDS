@@ -18,6 +18,11 @@ import {
   BASE_BLUE_Z,
   BASE_RED_X,
   BASE_RED_Z,
+  SPAWN_BLUE_X,
+  SPAWN_BLUE_Z,
+  SPAWN_RED_X,
+  SPAWN_RED_Z,
+  SPAWN_ZONE_RADIUS,
 } from '../constants.js';
 import { buildBases, Base } from './Bases.js';
 import { buildTowers, Tower } from './Towers.js';
@@ -41,6 +46,7 @@ export function buildMap(scene: THREE.Scene): MapEntities {
   buildGround(scene);
   buildLane(scene);
   buildPerimeterWalls(scene, colliders);
+  buildSpawnZones(scene);
   const bases = buildBases(scene, colliders);
   const towers = buildTowers(scene, colliders);
   buildLandmarks(scene, colliders);
@@ -113,8 +119,9 @@ function buildLane(scene: THREE.Scene): void {
 
 function buildPerimeterWalls(scene: THREE.Scene, colliders: Colliders): void {
   const mat = new THREE.MeshStandardMaterial({ color: COLOR_WALL, roughness: 0.9 });
-  const wallH = 2.4;
-  const wallT = 2.2;
+  const capMat = new THREE.MeshStandardMaterial({ color: 0xb6a083, roughness: 0.85 });
+  const wallH = 3.2;
+  const wallT = 3.2;
   const sides: Array<[number, number, number, number]> = [
     [0, -HALF_H - wallT / 2, HALF_W + wallT, wallT / 2],
     [0, HALF_H + wallT / 2, HALF_W + wallT, wallT / 2],
@@ -126,6 +133,84 @@ function buildPerimeterWalls(scene: THREE.Scene, colliders: Colliders): void {
     wall.position.set(cx, wallH / 2, cz);
     scene.add(wall);
     colliders.addRect(cx, cz, hw, hz);
+
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(hw * 2, 0.35, hz * 2), capMat);
+    cap.position.set(cx, wallH + 0.175, cz);
+    scene.add(cap);
+  }
+
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x756756, roughness: 0.8 });
+  for (const x of [-HALF_W - wallT / 2, HALF_W + wallT / 2]) {
+    for (const z of [-HALF_H - wallT / 2, HALF_H + wallT / 2]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(4.4, wallH + 1, 4.4), postMat);
+      post.position.set(x, (wallH + 1) / 2, z);
+      scene.add(post);
+    }
+  }
+}
+
+function buildSpawnZones(scene: THREE.Scene): void {
+  addSpawnZone(scene, SPAWN_BLUE_X, SPAWN_BLUE_Z, 0x4f9dff, BASE_BLUE_X, BASE_BLUE_Z);
+  addSpawnZone(scene, SPAWN_RED_X, SPAWN_RED_Z, 0xff6b6b, BASE_RED_X, BASE_RED_Z);
+}
+
+function addSpawnZone(
+  scene: THREE.Scene,
+  cx: number,
+  cz: number,
+  color: number,
+  baseX: number,
+  baseZ: number,
+): void {
+  const pad = new THREE.Mesh(
+    new THREE.CircleGeometry(SPAWN_ZONE_RADIUS, 56),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  pad.rotation.x = -Math.PI / 2;
+  pad.position.set(cx, 0.045, cz);
+  scene.add(pad);
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(SPAWN_ZONE_RADIUS - 0.45, SPAWN_ZONE_RADIUS, 64),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.65,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(cx, 0.055, cz);
+  scene.add(ring);
+
+  const dirX = -baseX;
+  const dirZ = -baseZ;
+  const len = Math.hypot(dirX, dirZ);
+  const nx = dirX / len;
+  const nz = dirZ / len;
+  const angle = Math.atan2(nx, nz);
+  const arrowMat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
+  for (let i = 0; i < 3; i++) {
+    const step = 1.8 + i * 1.5;
+    const arrow = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.45), arrowMat);
+    arrow.rotation.x = -Math.PI / 2;
+    arrow.rotation.z = angle + Math.PI / 2;
+    arrow.position.set(cx + nx * step, 0.065, cz + nz * step);
+    scene.add(arrow);
   }
 }
 

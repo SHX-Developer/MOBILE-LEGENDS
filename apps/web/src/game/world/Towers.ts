@@ -96,6 +96,7 @@ export class Tower implements Unit {
     projectiles.spawn(this.position, target.position, now, {
       team: this.team,
       damage: TOWER_DAMAGE,
+      target,
     });
     this.lastAttackAt = now;
   }
