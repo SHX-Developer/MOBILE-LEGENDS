@@ -220,8 +220,8 @@ export class PlayerObject implements Unit {
 
   private buildLayla(): void {
     const skin = new THREE.MeshStandardMaterial({ color: 0xf3c8a4, roughness: 0.7 });
-    const cloak = new THREE.MeshStandardMaterial({ color: 0x4a2a78, roughness: 0.6 });
-    const cloakLight = new THREE.MeshStandardMaterial({ color: 0x6c3fa8, roughness: 0.6 });
+    const cloak = new THREE.MeshStandardMaterial({ color: 0x1f4c8a, roughness: 0.6 });
+    const cloakLight = new THREE.MeshStandardMaterial({ color: 0x3d7bc4, roughness: 0.6 });
     const trim = new THREE.MeshStandardMaterial({
       color: 0xf2cf5a,
       roughness: 0.4,

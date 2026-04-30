@@ -22,10 +22,11 @@ function computeFrame(): Frame {
 }
 
 interface GameCanvasProps {
+  mode: 'online' | 'offline';
   onExit?: () => void;
 }
 
-export function GameCanvas({ onExit }: GameCanvasProps = {}) {
+export function GameCanvas({ mode, onExit }: GameCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Game | null>(null);
   const [frame, setFrame] = useState<Frame>(() => computeFrame());
@@ -47,14 +48,14 @@ export function GameCanvas({ onExit }: GameCanvasProps = {}) {
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const game = createGame(containerRef.current);
+    const game = createGame(containerRef.current, { mode });
     game.onMatchEnd = (winner) => setMatchEnd(winner);
     gameRef.current = game;
     return () => {
       game.destroy();
       gameRef.current = null;
     };
-  }, [gameKey]);
+  }, [gameKey, mode]);
 
   useEffect(() => {
     setMatchMs(0);
@@ -116,7 +117,7 @@ export function GameCanvas({ onExit }: GameCanvasProps = {}) {
       >
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
         <MatchTimer elapsedMs={matchMs} respawnMs={respawnMs} />
-        <OnlineStatus status={onlineStatus} />
+        {mode === 'online' && <OnlineStatus status={onlineStatus} />}
         <Joystick onChange={onJoystickChange} />
         <FireButton onPress={onFirePress} onRelease={onFireRelease} />
         <SkillButton
@@ -157,6 +158,79 @@ export function GameCanvas({ onExit }: GameCanvasProps = {}) {
       {matchEnd && (
         <MatchEndOverlay winner={matchEnd} onRestart={restart} onExit={onExit} />
       )}
+      {mode === 'online' && !matchEnd && onlineStatus !== 'playing' && (
+        <QueueOverlay status={onlineStatus} onCancel={onExit} />
+      )}
+    </div>
+  );
+}
+
+function QueueOverlay({ status, onCancel }: { status: string; onCancel?: () => void }) {
+  const label =
+    status === 'queued'
+      ? 'ИЩЕМ ИГРОКОВ'
+      : status === 'offline'
+        ? 'НЕТ СОЕДИНЕНИЯ'
+        : 'ПОДКЛЮЧЕНИЕ';
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 30,
+        display: 'grid',
+        placeItems: 'center',
+        gap: 24,
+        background:
+          'radial-gradient(ellipse at center, #1c2238 0%, #0a0d18 70%, #050709 100%)',
+        color: '#fff',
+      }}
+    >
+      <div style={{ display: 'grid', placeItems: 'center', gap: 18 }}>
+        <Spinner />
+        <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: 6 }}>{label}</div>
+        {status === 'queued' && (
+          <div style={{ fontSize: 13, color: '#7a8aab', letterSpacing: 2 }}>
+            ОЖИДАЕМ ВТОРОГО ИГРОКА
+          </div>
+        )}
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            style={{
+              marginTop: 16,
+              padding: '12px 32px',
+              fontSize: 14,
+              fontWeight: 800,
+              letterSpacing: 3,
+              borderRadius: 999,
+              border: '2px solid rgba(255,255,255,0.4)',
+              background: 'rgba(20, 22, 36, 0.7)',
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            ОТМЕНА
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <div
+      style={{
+        width: 56,
+        height: 56,
+        borderRadius: '50%',
+        border: '4px solid rgba(255,255,255,0.15)',
+        borderTopColor: '#ffce5c',
+        animation: 'ml-spin 1s linear infinite',
+      }}
+    >
+      <style>{`@keyframes ml-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

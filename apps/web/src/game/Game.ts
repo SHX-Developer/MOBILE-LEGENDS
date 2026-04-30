@@ -47,6 +47,11 @@ import { Haptics } from './haptics.js';
 import { OnlineClient } from './OnlineClient.js';
 
 export type SkillId = 'q' | 'e' | 'c';
+export type GameMode = 'online' | 'offline';
+
+export interface GameOptions {
+  mode: GameMode;
+}
 
 interface AimState {
   active: boolean;
@@ -95,7 +100,10 @@ export class Game {
     c: { active: false, dirX: 0, dirZ: 1, range: SKILL_C_RANGE },
   };
 
-  constructor(private readonly container: HTMLElement) {
+  private readonly mode: GameMode;
+
+  constructor(private readonly container: HTMLElement, opts: GameOptions = { mode: 'offline' }) {
+    this.mode = opts.mode;
     const { clientWidth, clientHeight } = container;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
@@ -129,9 +137,13 @@ export class Game {
     this.towers[0].onDestroyed = () => this.registry.add(this.bases[0]);
     this.towers[1].onDestroyed = () => this.registry.add(this.bases[1]);
 
-    // Match end: blue base falls → red wins; red base falls → blue wins.
-    this.bases[0].onDestroyed = () => this.endMatch('red');
-    this.bases[1].onDestroyed = () => this.endMatch('blue');
+    // Match end via base destruction is offline-only. Online uses
+    // server-driven kill score so client base sims can drift cosmetically
+    // without falsely declaring a winner.
+    if (this.mode === 'offline') {
+      this.bases[0].onDestroyed = () => this.endMatch('red');
+      this.bases[1].onDestroyed = () => this.endMatch('blue');
+    }
 
     this.projectiles = new ProjectileManager(this.scene);
     this.projectiles.onPlayerHit = () => Haptics.hitEnemy();
@@ -143,7 +155,7 @@ export class Game {
     this.online.onMatchEnd = (winner) => {
       this.endMatch(winner === this.online.getTeam() ? 'blue' : 'red');
     };
-    this.online.connect();
+    if (this.mode === 'online') this.online.connect();
 
     this.aimIndicator = this.buildAimIndicator();
     this.scene.add(this.aimIndicator);
@@ -339,9 +351,17 @@ export class Game {
     const wantsAttack = this.input.consumeAttackRequest();
     const skillReq = this.input.consumeSkillRequest();
     const movement = this.input.getMovement();
-    this.online.sendInput(movement.x, movement.z, now);
 
-    if (this.online.getStatus() === 'playing' || this.online.getStatus() === 'ended') {
+    if (this.mode === 'online') {
+      this.online.sendInput(movement.x, movement.z, now);
+      const status = this.online.getStatus();
+      if (status !== 'playing' && status !== 'ended') {
+        // Queued / connecting: render an empty scene so the queue overlay
+        // sits over a quiet backdrop, no offline simulation kicks in.
+        this.rig.follow(this.player.position);
+        this.renderer.render(this.scene, this.rig.camera);
+        return;
+      }
       this.runOnlineFrame(delta, now, wantsAttack, skillReq);
       return;
     }
@@ -445,16 +465,34 @@ export class Game {
       this.online.skill(skillReq.id, dx, dz);
     }
 
-    this.clearLocalMinions();
+    // Hero positions/HP are server-authoritative (applied via snapshot).
+    // Towers, bases, minions and projectiles run locally for visual richness;
+    // they may drift cosmetically between the two clients but the canonical
+    // win condition (3 kills) is decided by the server.
+    if (now - this.lastMinionWaveAt >= MINION_WAVE_INTERVAL_MS) {
+      this.spawnMinionWave(now);
+    }
+    this.bot.respawnDelayMs = this.getRespawnDelayMs(this.bot.level, now);
+    this.healHeroesAtBase(delta);
+    this.updateMinions(delta, now);
+    for (const t of this.towers) t.update(now, this.registry, this.projectiles);
+    for (const b of this.bases) b.update(now, this.registry, this.projectiles);
+
     this.applyOnlineSnapshot();
     this.renderOnlineCombatEvents(this.online.drainCombatEvents(), now);
     this.projectiles.update(delta, now, this.registry);
+    this.cleanupMinions(now);
     this.floatingText.update(now);
+    this.spinCrystals(delta);
+
+    if (this.aimIndicator.visible) this.refreshAimIndicator();
+
     this.rig.follow(this.player.position);
 
     const cam = this.rig.camera;
     this.player.billboardHealthBar(cam);
     this.bot.billboardHealthBar(cam);
+    for (const m of this.minions) m.billboardHealthBar(cam);
     for (const t of this.towers) t.billboardHealthBar(cam);
     for (const b of this.bases) b.billboardHealthBar(cam);
 
@@ -625,15 +663,6 @@ export class Game {
       minion.dispose();
       this.minions.splice(i, 1);
     }
-  }
-
-  private clearLocalMinions(): void {
-    if (this.minions.length === 0) return;
-    for (const minion of this.minions) {
-      this.registry.remove(minion);
-      minion.dispose();
-    }
-    this.minions.length = 0;
   }
 
   private healHeroesAtBase(delta: number): void {

@@ -1,7 +1,7 @@
 import { useUserStore } from '../store/userStore.js';
 
 interface MainMenuProps {
-  onPlay: () => void;
+  onPlay: (mode: 'online' | 'offline') => void;
 }
 
 export function MainMenu({ onPlay }: MainMenuProps) {
@@ -13,9 +13,14 @@ export function MainMenu({ onPlay }: MainMenuProps) {
         <div style={labelStyle}>HERO</div>
         <div style={nicknameStyle}>{user.nickname ?? '—'}</div>
       </div>
-      <button style={playStyle} onClick={onPlay}>
-        ИГРАТЬ
-      </button>
+      <div style={buttonsStyle}>
+        <button style={onlineBtn} onClick={() => onPlay('online')}>
+          ОНЛАЙН
+        </button>
+        <button style={offlineBtn} onClick={() => onPlay('offline')}>
+          ОФЛАЙН
+        </button>
+      </div>
     </div>
   );
 }
@@ -53,16 +58,34 @@ const nicknameStyle: React.CSSProperties = {
   textShadow: '0 4px 18px rgba(0,0,0,0.6)',
 };
 
-const playStyle: React.CSSProperties = {
-  fontSize: 22,
+const buttonsStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 18,
+};
+
+const baseBtn: React.CSSProperties = {
+  fontSize: 20,
   fontWeight: 900,
   letterSpacing: 4,
-  padding: '18px 64px',
+  padding: '16px 48px',
   borderRadius: 999,
-  border: '2px solid #ffce5c',
+  border: '2px solid',
+  cursor: 'pointer',
+  boxShadow: '0 8px 24px rgba(0,0,0,0.55)',
+};
+
+const onlineBtn: React.CSSProperties = {
+  ...baseBtn,
+  borderColor: '#ffce5c',
   background:
     'radial-gradient(circle at 35% 30%, #ffce5c 0%, #e48a1a 60%, #a14b00 100%)',
   color: '#1a1208',
-  cursor: 'pointer',
-  boxShadow: '0 8px 24px rgba(0,0,0,0.55)',
+};
+
+const offlineBtn: React.CSSProperties = {
+  ...baseBtn,
+  borderColor: 'rgba(255,255,255,0.4)',
+  background:
+    'radial-gradient(circle at 35% 30%, #4a5d80 0%, #1f2a44 60%, #0e1424 100%)',
+  color: '#fff',
 };
