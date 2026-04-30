@@ -454,6 +454,7 @@ export class Game {
     wantsAttack: boolean,
     skillReq: { id: SkillId; dirX: number; dirZ: number } | null,
   ): void {
+    this.applyOnlineTeamColorsOnce();
     if (wantsAttack) this.online.attack();
     if (skillReq) {
       let dx = skillReq.dirX;
@@ -465,23 +466,16 @@ export class Game {
       this.online.skill(skillReq.id, dx, dz);
     }
 
-    // Hero positions/HP are server-authoritative (applied via snapshot).
-    // Towers, bases, minions and projectiles run locally for visual richness;
-    // they may drift cosmetically between the two clients but the canonical
-    // win condition (3 kills) is decided by the server.
-    if (now - this.lastMinionWaveAt >= MINION_WAVE_INTERVAL_MS) {
-      this.spawnMinionWave(now);
-    }
-    this.bot.respawnDelayMs = this.getRespawnDelayMs(this.bot.level, now);
-    this.healHeroesAtBase(delta);
-    this.updateMinions(delta, now);
-    for (const t of this.towers) t.update(now, this.registry, this.projectiles);
-    for (const b of this.bases) b.update(now, this.registry, this.projectiles);
+    // Online is currently a 1v1 hero deathmatch — server only simulates the
+    // two heroes. Towers/bases stay in the scene as decoration but receive
+    // no AI; minions are removed because there is no server source of truth
+    // for them yet. Full server-authoritative MOBA simulation is a separate
+    // refactor (see Game.ts history).
+    this.clearLocalMinions();
 
     this.applyOnlineSnapshot();
     this.renderOnlineCombatEvents(this.online.drainCombatEvents(), now);
     this.projectiles.update(delta, now, this.registry);
-    this.cleanupMinions(now);
     this.floatingText.update(now);
     this.spinCrystals(delta);
 
@@ -492,11 +486,30 @@ export class Game {
     const cam = this.rig.camera;
     this.player.billboardHealthBar(cam);
     this.bot.billboardHealthBar(cam);
-    for (const m of this.minions) m.billboardHealthBar(cam);
     for (const t of this.towers) t.billboardHealthBar(cam);
     for (const b of this.bases) b.billboardHealthBar(cam);
 
     this.renderer.render(this.scene, this.rig.camera);
+  }
+
+  private appliedOnlineTeam = false;
+  private applyOnlineTeamColorsOnce(): void {
+    if (this.appliedOnlineTeam) return;
+    const myTeam = this.online.getTeam();
+    if (!myTeam) return;
+    const enemyTeam: Team = myTeam === 'blue' ? 'red' : 'blue';
+    this.player.setTeam(myTeam);
+    this.bot.setTeam(enemyTeam);
+    this.appliedOnlineTeam = true;
+  }
+
+  private clearLocalMinions(): void {
+    if (this.minions.length === 0) return;
+    for (const minion of this.minions) {
+      this.registry.remove(minion);
+      minion.dispose();
+    }
+    this.minions.length = 0;
   }
 
   private applyOnlineSnapshot(): void {

@@ -33,7 +33,7 @@ import type { ProjectileManager } from './ProjectileManager.js';
 export class BotObject implements Unit {
   readonly kind = 'hero';
   readonly group = new THREE.Group();
-  readonly team: Team = 'red';
+  team: Team = 'red';
   readonly radius = BOT_RADIUS;
   readonly xpReward = HERO_KILL_XP_REWARD;
   hp = BOT_MAX_HP;
@@ -48,6 +48,8 @@ export class BotObject implements Unit {
   private readonly healthBar = new HealthBar(2.4, 0.22, 0xff5050, true);
   private respawnAt = 0;
   private lastAttackAt = -Infinity;
+  private armorMat!: THREE.MeshStandardMaterial;
+  private armorDarkMat!: THREE.MeshStandardMaterial;
 
   constructor(spawn: THREE.Vector3) {
     this.spawn = spawn.clone();
@@ -75,6 +77,16 @@ export class BotObject implements Unit {
     // rotated-phone landscape view.
     this.healthBar.group.position.set(0, 3, 0);
     this.healthBar.billboard(camera);
+  }
+
+  /** Recolor the bot's armor for its server-assigned team. */
+  setTeam(team: Team): void {
+    this.team = team;
+    const palette = team === 'red'
+      ? { armor: 0xc73c3c, armorDark: 0x6a1717 }
+      : { armor: 0x2a4f8a, armorDark: 0x172846 };
+    this.armorMat.color.setHex(palette.armor);
+    this.armorDarkMat.color.setHex(palette.armorDark);
   }
 
   update(
@@ -231,6 +243,8 @@ export class BotObject implements Unit {
     const skin = new THREE.MeshStandardMaterial({ color: 0xe6c5a0, roughness: 0.7 });
     const armor = new THREE.MeshStandardMaterial({ color: 0xc73c3c, roughness: 0.6 });
     const armorDark = new THREE.MeshStandardMaterial({ color: 0x6a1717, roughness: 0.5 });
+    this.armorMat = armor;
+    this.armorDarkMat = armorDark;
     const accent = new THREE.MeshStandardMaterial({
       color: 0xf2c14e,
       roughness: 0.4,

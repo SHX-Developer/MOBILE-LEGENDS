@@ -26,7 +26,7 @@ export class PlayerObject implements Unit {
   readonly kind = 'hero';
   readonly group = new THREE.Group();
   readonly facing = new THREE.Vector3(0, 0, 1);
-  readonly team: Team = 'blue';
+  team: Team = 'blue';
   readonly radius = PLAYER_RADIUS;
   readonly xpReward = HERO_KILL_XP_REWARD;
   hp = PLAYER_MAX_HP;
@@ -40,6 +40,8 @@ export class PlayerObject implements Unit {
   private readonly spawn: THREE.Vector3;
   private readonly healthBar = new HealthBar(2.4, 0.22, 0x44ff66, true);
   private readonly rangeRing: THREE.Mesh;
+  private cloakMat!: THREE.MeshStandardMaterial;
+  private cloakLightMat!: THREE.MeshStandardMaterial;
 
   constructor(spawn: THREE.Vector3) {
     this.spawn = spawn.clone();
@@ -67,6 +69,16 @@ export class PlayerObject implements Unit {
 
   setRangeVisible(visible: boolean): void {
     this.rangeRing.visible = visible && this.alive;
+  }
+
+  /** Swap the hero's team allegiance and recolor the cloak to match. */
+  setTeam(team: Team): void {
+    this.team = team;
+    const palette = team === 'blue'
+      ? { cloak: 0x1f4c8a, cloakLight: 0x3d7bc4 }
+      : { cloak: 0x8a1f1f, cloakLight: 0xc44a4a };
+    this.cloakMat.color.setHex(palette.cloak);
+    this.cloakLightMat.color.setHex(palette.cloakLight);
   }
 
   billboardHealthBar(camera: THREE.Camera): void {
@@ -222,6 +234,8 @@ export class PlayerObject implements Unit {
     const skin = new THREE.MeshStandardMaterial({ color: 0xf3c8a4, roughness: 0.7 });
     const cloak = new THREE.MeshStandardMaterial({ color: 0x1f4c8a, roughness: 0.6 });
     const cloakLight = new THREE.MeshStandardMaterial({ color: 0x3d7bc4, roughness: 0.6 });
+    this.cloakMat = cloak;
+    this.cloakLightMat = cloakLight;
     const trim = new THREE.MeshStandardMaterial({
       color: 0xf2cf5a,
       roughness: 0.4,
