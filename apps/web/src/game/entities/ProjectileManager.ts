@@ -73,13 +73,16 @@ export class ProjectileManager {
         create: createArrowProjectile,
       },
       heavy: {
-        create: () => createOrbProjectile(0.6, 0xff6e40, 0xff3a1f),
+        // POWER — chunky orange arrow with a halo orb riding behind it.
+        create: () => createSkillArrow(0xff7a3d, 0xff3a1f, 1.4),
       },
       slow: {
-        create: () => createOrbProjectile(0.42, 0x66ddff, 0x33aaff),
+        // SLOW — icy blue arrow with cyan glow.
+        create: () => createSkillArrow(0x66ddff, 0x2a8fdc, 1.0),
       },
       control: {
-        create: () => createOrbProjectile(0.46, 0xb56cff, 0x7434ff),
+        // STUN — violet arrow with electric purple glow.
+        create: () => createSkillArrow(0xb56cff, 0x7434ff, 1.0),
       },
       meteor: {
         create: createMeteorProjectile,
@@ -346,24 +349,53 @@ function createArrowProjectile(): THREE.Object3D {
   return arrow;
 }
 
-const ORB_GEOM_CACHE = new Map<number, THREE.SphereGeometry>();
-const ORB_MAT_CACHE = new Map<string, THREE.MeshStandardMaterial>();
+// Skill arrows reuse the arrow body geometry but get tinted/emissive
+// materials per skill. Cached by colour so repeated casts don't reallocate.
+const SKILL_ARROW_SHAFT_GEOM = new THREE.CylinderGeometry(0.07, 0.05, 1.4, 8);
+const SKILL_ARROW_TIP_GEOM = new THREE.ConeGeometry(0.18, 0.4, 12);
+const SKILL_ARROW_HALO_GEOM = new THREE.SphereGeometry(0.32, 12, 12);
+const SKILL_ARROW_MAT_CACHE = new Map<string, {
+  shaft: THREE.MeshStandardMaterial;
+  tip: THREE.MeshStandardMaterial;
+  halo: THREE.MeshBasicMaterial;
+}>();
 
-function createOrbProjectile(radius: number, color: number, emissive: number): THREE.Object3D {
-  let geom = ORB_GEOM_CACHE.get(radius);
-  if (!geom) {
-    geom = new THREE.SphereGeometry(radius, 12, 12);
-    ORB_GEOM_CACHE.set(radius, geom);
+function getSkillArrowMats(color: number, emissive: number) {
+  const key = `${color.toString(16)}-${emissive.toString(16)}`;
+  let mats = SKILL_ARROW_MAT_CACHE.get(key);
+  if (!mats) {
+    mats = {
+      shaft: new THREE.MeshStandardMaterial({
+        color, emissive, emissiveIntensity: 1.4, roughness: 0.3, metalness: 0.5,
+      }),
+      tip: new THREE.MeshStandardMaterial({
+        color: 0xffffff, emissive, emissiveIntensity: 2.2, roughness: 0.2, metalness: 0.5,
+      }),
+      halo: new THREE.MeshBasicMaterial({
+        color: emissive, transparent: true, opacity: 0.55, depthWrite: false,
+      }),
+    };
+    SKILL_ARROW_MAT_CACHE.set(key, mats);
   }
-  const matKey = `${color.toString(16)}-${emissive.toString(16)}`;
-  let mat = ORB_MAT_CACHE.get(matKey);
-  if (!mat) {
-    mat = new THREE.MeshStandardMaterial({
-      color, emissive, emissiveIntensity: 1.0,
-    });
-    ORB_MAT_CACHE.set(matKey, mat);
-  }
-  return new THREE.Mesh(geom, mat);
+  return mats;
+}
+
+function createSkillArrow(color: number, emissive: number, scale = 1.0): THREE.Object3D {
+  const mats = getSkillArrowMats(color, emissive);
+  const arrow = new THREE.Group();
+  const shaft = new THREE.Mesh(SKILL_ARROW_SHAFT_GEOM, mats.shaft);
+  shaft.rotation.x = Math.PI / 2;
+  arrow.add(shaft);
+  const tip = new THREE.Mesh(SKILL_ARROW_TIP_GEOM, mats.tip);
+  tip.rotation.x = Math.PI / 2;
+  tip.position.z = 0.85;
+  arrow.add(tip);
+  // Soft halo orb riding the arrow — gives skill shots a "energy" feel.
+  const halo = new THREE.Mesh(SKILL_ARROW_HALO_GEOM, mats.halo);
+  halo.position.z = -0.2;
+  arrow.add(halo);
+  arrow.scale.setScalar(scale);
+  return arrow;
 }
 
 const METEOR_CORE_GEOM = new THREE.DodecahedronGeometry(0.65, 0);

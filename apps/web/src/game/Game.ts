@@ -651,12 +651,26 @@ export class Game {
   };
 
   private tryAutoAttack(now: number): void {
+    this.fireAtNearest(now, ['minion', 'hero', 'structure']);
+  }
+
+  /** Public — invoked by the right-side BAШНЯ button. Locks aim onto towers/bases. */
+  attackTower(): void {
+    this.fireAtNearest(performance.now(), ['structure']);
+  }
+  /** Public — invoked by the МИНЬОН button. Locks aim onto minions. */
+  attackMinion(): void {
+    this.fireAtNearest(performance.now(), ['minion']);
+  }
+
+  private fireAtNearest(now: number, kinds: Array<'minion' | 'hero' | 'structure'>): void {
+    if (!this.player.alive) return;
     if (now - this.lastAttackAt < PLAYER_ATTACK_COOLDOWN_MS) return;
     const target = this.registry.findNearestEnemy(
       this.player.team,
       this.player.position,
       PLAYER_ATTACK_RANGE,
-      ['minion', 'hero', 'structure'],
+      kinds,
     );
     if (!target) return;
     this.player.faceTarget(target.position);

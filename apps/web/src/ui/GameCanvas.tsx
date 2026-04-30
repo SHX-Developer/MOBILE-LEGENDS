@@ -136,7 +136,7 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           subtitle="POWER"
           accent="#ff7a3d"
           right={28}
-          bottom={170}
+          bottom={210}
           size={86}
           totalMs={6000}
           getGame={getGame}
@@ -146,8 +146,8 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label=""
           subtitle="SLOW"
           accent="#4ec9ff"
-          right={148}
-          bottom={148}
+          right={170}
+          bottom={186}
           size={86}
           totalMs={8000}
           getGame={getGame}
@@ -157,10 +157,22 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label=""
           subtitle="STUN"
           accent="#b56cff"
-          right={188}
-          bottom={48}
+          right={232}
+          bottom={70}
           size={86}
           totalMs={10000}
+          getGame={getGame}
+        />
+        <TriangleAttackButton
+          variant="tower"
+          right={148}
+          bottom={36}
+          getGame={getGame}
+        />
+        <TriangleAttackButton
+          variant="minion"
+          right={56}
+          bottom={144}
           getGame={getGame}
         />
         <UtilityButton
@@ -183,6 +195,18 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           getChannelLeft={(g) => g.getRecallChannelLeft()}
           onPress={(g) => g.startRecall()}
         />
+        {/* Death dim — soft black wash while waiting on respawn. */}
+        {!matchEnd && respawnMs > 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(0,0,0,0.32)',
+              pointerEvents: 'none',
+              zIndex: 5,
+            }}
+          />
+        )}
         {matchEnd && (
           <MatchEndOverlay winner={matchEnd} onRestart={restart} onExit={onExit} />
         )}
@@ -193,6 +217,67 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
     </div>
   );
 }
+
+const TriangleAttackButton = memo(function TriangleAttackButton({
+  variant,
+  right,
+  bottom,
+  getGame,
+}: {
+  variant: 'tower' | 'minion';
+  right: number;
+  bottom: number;
+  getGame: () => Game | null;
+}) {
+  const accent = variant === 'tower' ? '#f0b04a' : '#7be38e';
+  const label = variant === 'tower' ? 'БАШНЯ' : 'МИНЬОН';
+  return (
+    <button
+      onPointerDown={(e) => {
+        const g = getGame();
+        if (!g) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        if (variant === 'tower') g.attackTower();
+        else g.attackMinion();
+      }}
+      style={{
+        position: 'absolute',
+        right,
+        bottom,
+        width: 64,
+        height: 64,
+        // Triangle shape pointing inward toward FIRE — sharp tip at the
+        // bottom-right corner so both buttons "lean" into the auto-attack.
+        clipPath: variant === 'tower'
+          ? 'polygon(50% 100%, 0% 0%, 100% 0%)' // pointing down (above-targets)
+          : 'polygon(100% 50%, 0% 0%, 0% 100%)', // pointing right (left-targets)
+        border: 'none',
+        background: `linear-gradient(135deg, ${accent} 0%, #1a1825 100%)`,
+        color: '#0a0e15',
+        fontWeight: 900,
+        fontSize: 9,
+        letterSpacing: 1,
+        cursor: 'pointer',
+        boxShadow: `0 0 0 2px ${accent}66, 0 4px 14px rgba(0,0,0,0.45)`,
+        touchAction: 'none',
+        display: 'grid',
+        placeItems: 'center',
+        contain: 'layout paint',
+      }}
+    >
+      <span
+        style={{
+          // Pull the label toward the centre of the triangle.
+          transform: variant === 'tower' ? 'translateY(-8px)' : 'translateX(-8px)',
+          pointerEvents: 'none',
+        }}
+      >
+        {label}
+      </span>
+    </button>
+  );
+});
 
 interface UtilityButtonProps {
   label: string;
@@ -705,25 +790,25 @@ const SkillButton = memo(function SkillButton({
           ref={cancelRef}
           style={{
             position: 'absolute',
-            right: 34,
-            bottom: 260,
-            width: 92,
-            height: 50,
-            borderRadius: 8,
-            border: `2px solid ${canceling ? '#ff6b6b' : 'rgba(255,255,255,0.35)'}`,
-            background: canceling ? 'rgba(190, 38, 38, 0.78)' : 'rgba(8, 12, 18, 0.72)',
+            right: 240,
+            bottom: 320,
+            width: 78,
+            height: 78,
+            borderRadius: '50%',
+            border: `3px solid ${canceling ? '#ff6b6b' : 'rgba(255,255,255,0.4)'}`,
+            background: canceling ? 'rgba(190, 38, 38, 0.85)' : 'rgba(8, 12, 18, 0.78)',
             color: '#fff',
             display: 'grid',
             placeItems: 'center',
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: 900,
-            letterSpacing: 1,
+            letterSpacing: 1.5,
             pointerEvents: 'none',
-            boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
+            boxShadow: '0 6px 22px rgba(0,0,0,0.5)',
             zIndex: 11,
           }}
         >
-          CANCEL
+          ОТМЕНА
         </div>
       )}
       <button

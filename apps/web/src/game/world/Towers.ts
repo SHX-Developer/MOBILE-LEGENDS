@@ -39,7 +39,12 @@ export class Tower implements Unit {
   private readonly rangeRing: THREE.Mesh;
   private readonly collider: CircleCollider;
   private readonly colliders: Colliders;
+  private readonly scene: THREE.Scene;
+  private readonly tipY: number;
+  private readonly color: number;
   private lastAttackAt = -Infinity;
+  private dyingAt = 0;
+  private debris: Array<{ mesh: THREE.Mesh; vx: number; vy: number; vz: number; spawnedAt: number }> = [];
 
   constructor(
     scene: THREE.Scene,
@@ -52,6 +57,9 @@ export class Tower implements Unit {
     this.team = team;
     this.position = new THREE.Vector3(x, 0, z);
     this.colliders = colliders;
+    this.scene = scene;
+    this.color = color;
+    this.tipY = 1 + TOWER_HEIGHT + 1.6;
     this.group = new THREE.Group();
 
     const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
@@ -93,6 +101,10 @@ export class Tower implements Unit {
   }
 
   update(now: number, registry: UnitRegistry, projectiles: ProjectileManager): void {
+    if (this.dyingAt) {
+      this.tickDeath(now);
+      return;
+    }
     if (!this.alive) return;
     if (this.stunnedUntil > now) return;
     if (now - this.lastAttackAt < TOWER_ATTACK_COOLDOWN_MS) return;
@@ -102,6 +114,11 @@ export class Tower implements Unit {
       'structure',
     ]);
     if (!target) return;
+    // Muzzle flash from the tip of the tower so the shot reads as fired.
+    projectiles.spawnMuzzleFlash(
+      new THREE.Vector3(this.position.x, this.tipY - 1, this.position.z),
+      new THREE.Vector3(0, 0, 0),
+    );
     projectiles.spawn(this.position, target.position, now, {
       team: this.team,
       damage: TOWER_DAMAGE,
@@ -126,11 +143,67 @@ export class Tower implements Unit {
 
   private die(): void {
     this.alive = false;
-    this.group.visible = false;
+    this.dyingAt = performance.now();
+    // Hide UI bits but keep the tower mesh visible — it animates a collapse.
     this.rangeRing.visible = false;
     this.healthBar.group.visible = false;
     this.colliders.removeCircle(this.collider);
+    this.spawnDebris();
     this.onDestroyed?.();
+  }
+
+  /** Wobble + sink the tower over ~1500ms then hide it entirely. Debris
+   *  pieces spawned in spawnDebris() are advected by gravity in parallel. */
+  private tickDeath(now: number): void {
+    const elapsed = now - this.dyingAt;
+    const t = Math.min(1, elapsed / 1500);
+    // Wobble for the first half, then tip backwards as it collapses.
+    const wobble = elapsed < 500 ? Math.sin(elapsed / 30) * 0.08 * (1 - elapsed / 500) : 0;
+    const tilt = Math.max(0, (t - 0.4) / 0.6) * 0.9;
+    this.group.rotation.set(tilt, wobble, wobble * 0.5);
+    this.group.position.y = -2.5 * t * t;
+    if (t >= 1) this.group.visible = false;
+
+    // Update debris.
+    const dt = 1 / 60;
+    for (let i = this.debris.length - 1; i >= 0; i--) {
+      const d = this.debris[i];
+      const age = now - d.spawnedAt;
+      if (age > 1400) {
+        this.scene.remove(d.mesh);
+        d.mesh.geometry.dispose();
+        (d.mesh.material as THREE.Material).dispose();
+        this.debris.splice(i, 1);
+        continue;
+      }
+      d.mesh.position.x += d.vx * dt;
+      d.mesh.position.y += d.vy * dt;
+      d.mesh.position.z += d.vz * dt;
+      d.vy -= 18 * dt;
+      d.mesh.rotation.x += dt * 4;
+      d.mesh.rotation.y += dt * 6;
+    }
+  }
+
+  private spawnDebris(): void {
+    const mat = new THREE.MeshStandardMaterial({ color: this.color, roughness: 0.85, flatShading: true });
+    for (let i = 0; i < 14; i++) {
+      const chunk = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5 + Math.random() * 0.4, 0.5 + Math.random() * 0.4, 0.5 + Math.random() * 0.4),
+        mat,
+      );
+      chunk.position.set(this.position.x, 1 + Math.random() * 5, this.position.z);
+      const a = Math.random() * Math.PI * 2;
+      const speed = 4 + Math.random() * 5;
+      this.debris.push({
+        mesh: chunk,
+        vx: Math.cos(a) * speed,
+        vy: 6 + Math.random() * 4,
+        vz: Math.sin(a) * speed,
+        spawnedAt: performance.now(),
+      });
+      this.scene.add(chunk);
+    }
   }
 }
 
