@@ -19,7 +19,6 @@ export class AuthService {
   ) {}
 
   async authenticate(initData: string): Promise<TelegramAuthResponse> {
-    console.log('[auth] raw initData:', initData);
     const tgUser = this.verifyAndExtractUser(initData);
     const { user, isNew } = await this.users.findOrCreate(String(tgUser.id));
     return { user: this.users.toPublic(user), isNew };
@@ -50,7 +49,7 @@ export class AuthService {
 
     const data: string[] = [];
     params.forEach((v, k) => {
-      if (k !== 'hash' && k !== 'signature') data.push(`${k}=${v}`);
+      if (k !== 'hash') data.push(`${k}=${v}`);
     });
     data.sort();
     const dataCheckString = data.join('\n');
@@ -59,12 +58,6 @@ export class AuthService {
     const computed = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
     if (computed !== hash) {
-      console.error('[auth] hash mismatch', {
-        dataCheckString,
-        receivedHash: hash,
-        computedHash: computed,
-        botTokenTail: botToken.slice(-6),
-      });
       throw new BadRequestException('initData hash mismatch');
     }
   }
