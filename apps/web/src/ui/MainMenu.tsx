@@ -1,4 +1,5 @@
 import { useUserStore } from '../store/userStore.js';
+import { Sounds } from '../game/Sounds.js';
 
 interface MainMenuProps {
   onPlay: (mode: 'online' | 'offline') => void;
@@ -7,6 +8,11 @@ interface MainMenuProps {
 export function MainMenu({ onPlay }: MainMenuProps) {
   const user = useUserStore((s) => s.user);
   if (!user) return null;
+  const start = (mode: 'online' | 'offline') => {
+    // First user gesture — unlock the AudioContext so SFX can play.
+    Sounds.unlock();
+    onPlay(mode);
+  };
   return (
     <div style={wrapStyle}>
       <div style={headerStyle}>
@@ -14,10 +20,10 @@ export function MainMenu({ onPlay }: MainMenuProps) {
         <div style={nicknameStyle}>{user.nickname ?? '—'}</div>
       </div>
       <div style={buttonsStyle}>
-        <button style={onlineBtn} onClick={() => onPlay('online')}>
+        <button style={onlineBtn} onClick={() => start('online')}>
           ОНЛАЙН
         </button>
-        <button style={offlineBtn} onClick={() => onPlay('offline')}>
+        <button style={offlineBtn} onClick={() => start('offline')}>
           ОФЛАЙН
         </button>
       </div>

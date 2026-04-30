@@ -16,6 +16,16 @@ export class InputController {
   private pendingAttack = false;
   private pendingSkill: SkillRequest | null = null;
   private lastClickTarget: THREE.Vector3 | null = null;
+  private drag: {
+    pointerId: number;
+    startX: number;
+    startY: number;
+    cumX: number;
+    cumZ: number;
+    engaged: boolean;
+  } | null = null;
+  private onCameraPan?: (worldDx: number, worldDz: number) => void;
+  private onCameraPanRelease?: () => void;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -24,12 +34,26 @@ export class InputController {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     canvas.addEventListener('pointerdown', this.onPointerDown);
+    canvas.addEventListener('pointermove', this.onPointerMove);
+    canvas.addEventListener('pointerup', this.onPointerUp);
+    canvas.addEventListener('pointercancel', this.onPointerUp);
   }
 
   dispose(): void {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
+    this.canvas.removeEventListener('pointermove', this.onPointerMove);
+    this.canvas.removeEventListener('pointerup', this.onPointerUp);
+    this.canvas.removeEventListener('pointercancel', this.onPointerUp);
+  }
+
+  setCameraPanHandlers(
+    pan: (worldDx: number, worldDz: number) => void,
+    release: () => void,
+  ): void {
+    this.onCameraPan = pan;
+    this.onCameraPanRelease = release;
   }
 
   setJoystick(x: number, z: number): void {
@@ -87,6 +111,54 @@ export class InputController {
   };
 
   private onPointerDown = (e: PointerEvent): void => {
+    if (this.drag) return;
+    this.canvas.setPointerCapture(e.pointerId);
+    this.drag = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      cumX: 0,
+      cumZ: 0,
+      engaged: false,
+    };
+  };
+
+  private onPointerMove = (e: PointerEvent): void => {
+    if (!this.drag || this.drag.pointerId !== e.pointerId) return;
+    const dx = e.clientX - this.drag.startX;
+    const dy = e.clientY - this.drag.startY;
+    if (!this.drag.engaged) {
+      if (Math.hypot(dx, dy) < 10) return;
+      this.drag.engaged = true;
+    }
+    // Map screen delta → world delta. The CSS rotation in portrait swaps
+    // the axes; sign chosen so the world appears to drag with the finger.
+    const portrait = window.innerHeight > window.innerWidth;
+    const screenX = portrait ? dy : dx;
+    const screenZ = portrait ? -dx : dy;
+    const scale = 0.06;
+    this.drag.cumX = -screenX * scale;
+    this.drag.cumZ = -screenZ * scale;
+    // Clamp so the player can't pan halfway across the world.
+    const maxOffset = 24;
+    if (this.drag.cumX > maxOffset) this.drag.cumX = maxOffset;
+    else if (this.drag.cumX < -maxOffset) this.drag.cumX = -maxOffset;
+    if (this.drag.cumZ > maxOffset) this.drag.cumZ = maxOffset;
+    else if (this.drag.cumZ < -maxOffset) this.drag.cumZ = -maxOffset;
+    this.onCameraPan?.(this.drag.cumX, this.drag.cumZ);
+  };
+
+  private onPointerUp = (e: PointerEvent): void => {
+    if (!this.drag || this.drag.pointerId !== e.pointerId) return;
+    const wasDrag = this.drag.engaged;
+    try { this.canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
+    this.drag = null;
+    if (wasDrag) {
+      this.onCameraPanRelease?.();
+      return;
+    }
+    // Treat a quick tap as a click-to-attack (mostly desktop convenience —
+    // mobile users have the FIRE button).
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(
       ((e.clientX - rect.left) / rect.width) * 2 - 1,

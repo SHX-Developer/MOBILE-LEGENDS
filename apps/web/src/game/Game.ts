@@ -43,6 +43,7 @@ import { UnitRegistry } from './combat/UnitRegistry.js';
 import { FloatingTextManager } from './combat/FloatingTextManager.js';
 import type { Team, Unit } from './combat/Unit.js';
 import { Haptics } from './haptics.js';
+import { Sounds } from './Sounds.js';
 import { OnlineClient } from './OnlineClient.js';
 
 export type SkillId = 'q' | 'e' | 'c';
@@ -145,7 +146,10 @@ export class Game {
     }
 
     this.projectiles = new ProjectileManager(this.scene);
-    this.projectiles.onPlayerHit = () => Haptics.hitEnemy();
+    this.projectiles.onPlayerHit = () => {
+      Haptics.hitEnemy();
+      Sounds.hit();
+    };
     this.floatingText = new FloatingTextManager(this.scene);
     this.projectiles.onDamage = (target, amount, owner) => {
       this.floatingText.spawnDamage(target.position, amount, target.team, owner?.team);
@@ -163,6 +167,10 @@ export class Game {
     this.rig.follow(this.player.position);
 
     this.input = new InputController(this.renderer.domElement, this.rig.camera);
+    this.input.setCameraPanHandlers(
+      (dx, dz) => this.rig.setLookOffset(dx, dz),
+      () => this.rig.setLookOffset(0, 0),
+    );
 
     this.resizeObserver = new ResizeObserver(() => this.handleResize());
     this.resizeObserver.observe(container);
@@ -304,35 +312,69 @@ export class Game {
     this.onMatchEnd?.(winner);
   }
 
+  private aimMat!: THREE.MeshBasicMaterial;
+  private aimTip!: THREE.Mesh;
+  private aimTipMat!: THREE.MeshBasicMaterial;
+
   private buildAimIndicator(): THREE.Mesh {
     // Bar anchored at +y edge. After rotation.x = -PI/2 the bar lies on the
     // ground extending in world +z; rotation.z then yaws it to (dirX, dirZ).
     const geom = new THREE.PlaneGeometry(1.4, 1);
     geom.translate(0, -0.5, 0);
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffe28a,
+      color: 0xff7a3d,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.62,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
+    this.aimMat = mat;
     const mesh = new THREE.Mesh(geom, mat);
     mesh.rotation.x = -Math.PI / 2;
     mesh.visible = false;
+
+    // Bright arrowhead at the far end so the player can see range cleanly.
+    const tipGeom = new THREE.PlaneGeometry(2.4, 1.2);
+    const tipMat = new THREE.MeshBasicMaterial({
+      color: 0xff7a3d,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.aimTipMat = tipMat;
+    const tip = new THREE.Mesh(tipGeom, tipMat);
+    tip.position.set(0, -1.0, 0.02);
+    mesh.add(tip);
+    this.aimTip = tip;
+
     return mesh;
   }
 
+  private skillAccent(id: SkillId): number {
+    return id === 'q' ? 0xff7a3d : id === 'e' ? 0x4ec9ff : 0xb56cff;
+  }
+
   private refreshAimIndicator(): void {
-    const active = this.aim.q.active ? this.aim.q : this.aim.e.active ? this.aim.e : this.aim.c.active ? this.aim.c : null;
-    if (!active) {
+    let activeId: SkillId | null = null;
+    let active: AimState | null = null;
+    if (this.aim.q.active) { activeId = 'q'; active = this.aim.q; }
+    else if (this.aim.e.active) { activeId = 'e'; active = this.aim.e; }
+    else if (this.aim.c.active) { activeId = 'c'; active = this.aim.c; }
+    if (!active || !activeId) {
       this.aimIndicator.visible = false;
       return;
     }
+    const accent = this.skillAccent(activeId);
+    this.aimMat.color.setHex(accent);
+    this.aimTipMat.color.setHex(accent);
     const p = this.player.position;
     this.aimIndicator.position.set(p.x, 0.05, p.z);
     const angle = Math.atan2(active.dirX, active.dirZ);
     this.aimIndicator.rotation.set(-Math.PI / 2, 0, angle);
     this.aimIndicator.scale.set(1, active.range, 1);
+    // Tip stays the same world size — undo parent y-scale.
+    this.aimTip.scale.set(1, 1 / Math.max(active.range, 0.01), 1);
     this.aimIndicator.visible = true;
   }
 
@@ -342,7 +384,7 @@ export class Game {
     const now = performance.now();
 
     if (this.gameOver) {
-      this.rig.follow(this.player.position);
+      this.rig.follow(this.player.position, delta);
       this.renderer.render(this.scene, this.rig.camera);
       return;
     }
@@ -357,7 +399,7 @@ export class Game {
       if (status !== 'playing' && status !== 'ended') {
         // Queued / connecting: render an empty scene so the queue overlay
         // sits over a quiet backdrop, no offline simulation kicks in.
-        this.rig.follow(this.player.position);
+        this.rig.follow(this.player.position, delta);
         this.renderer.render(this.scene, this.rig.camera);
         return;
       }
@@ -407,16 +449,17 @@ export class Game {
     this.cleanupMinions(now);
     this.floatingText.update(now);
 
-    // Haptic on damage taken (covers bot, tower and base attacks alike).
+    // Haptic + thump on damage taken (covers bot, tower and base attacks alike).
     if (this.player.alive && this.player.hp < this.lastPlayerHp) {
       Haptics.takeDamage();
+      Sounds.takeDamage();
     }
     this.lastPlayerHp = this.player.hp;
     this.spinCrystals(delta);
 
     if (this.aimIndicator.visible) this.refreshAimIndicator();
 
-    this.rig.follow(this.player.position);
+    this.rig.follow(this.player.position, delta);
 
     const cam = this.rig.camera;
     this.player.billboardHealthBar(cam);
@@ -440,6 +483,7 @@ export class Game {
     this.player.faceTarget(target.position);
     this.player.triggerAttackPose(now);
     this.projectiles.spawnMuzzleFlash(this.player.position, this.player.facing);
+    Sounds.attack();
     this.projectiles.spawn(this.player.position, target.position, now, {
       team: this.player.team,
       damage: this.player.attackDamage,
@@ -500,7 +544,7 @@ export class Game {
 
     if (this.aimIndicator.visible) this.refreshAimIndicator();
 
-    this.rig.follow(this.player.position);
+    this.rig.follow(this.player.position, delta);
 
     const cam = this.rig.camera;
     this.player.billboardHealthBar(cam);
@@ -632,6 +676,7 @@ export class Game {
       maxDistance: SKILL_Q_RANGE,
       fromPlayer: true,
     });
+    Sounds.skill('q');
     this.lastQAt = now;
   }
 
@@ -653,6 +698,7 @@ export class Game {
       maxDistance: SKILL_E_RANGE,
       fromPlayer: true,
     });
+    Sounds.skill('e');
     this.lastEAt = now;
   }
 
@@ -674,6 +720,7 @@ export class Game {
       maxDistance: SKILL_C_RANGE,
       fromPlayer: true,
     });
+    Sounds.skill('c');
     this.lastCAt = now;
   }
 
@@ -687,7 +734,7 @@ export class Game {
     this.lastMinionWaveAt = now;
     const blueSpawn = new THREE.Vector3(SPAWN_BLUE_X - 2.2, 0, SPAWN_BLUE_Z + 2.2);
     const redSpawn = new THREE.Vector3(SPAWN_RED_X + 2.2, 0, SPAWN_RED_Z - 2.2);
-    const variants: MinionVariant[] = ['melee', 'melee', 'ranged', 'tank'];
+    const variants: MinionVariant[] = ['melee', 'ranged', 'tank'];
     for (let i = 0; i < variants.length; i++) {
       const config = MINION_CONFIGS[variants[i]];
       this.minions.push(

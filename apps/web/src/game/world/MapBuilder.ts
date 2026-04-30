@@ -270,6 +270,128 @@ function buildLandmarks(scene: THREE.Scene, colliders: Colliders): void {
   // Highlight rings around each base so the destination is unmistakable.
   addCornerMarker(scene, BASE_BLUE_X, BASE_BLUE_Z, 0x4684e6);
   addCornerMarker(scene, BASE_RED_X, BASE_RED_Z, 0xe85656);
+
+  // Filler vegetation. Pseudo-random with a deterministic seed so rebuilds
+  // place the props in the same spots — important for collider tests later.
+  scatterFoliage(scene, colliders);
+  buildCampfires(scene);
+}
+
+const RNG_SEED = 0x9e3779b1;
+function makeRng(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 0xffffffff;
+  };
+}
+
+/**
+ * Scatter small props (grass tufts, bushes, pebbles) across the map but keep
+ * a clear corridor along the lane and around bases/towers/spawn pads so the
+ * playable lane stays readable.
+ */
+function scatterFoliage(scene: THREE.Scene, colliders: Colliders): void {
+  const rng = makeRng(RNG_SEED);
+  const grassMat = new THREE.MeshStandardMaterial({ color: 0x3f8033, roughness: 1 });
+  const grassDarkMat = new THREE.MeshStandardMaterial({ color: 0x2d6024, roughness: 1 });
+  const bushMat = new THREE.MeshStandardMaterial({ color: 0x376a32, roughness: 0.95 });
+  const pebbleMat = new THREE.MeshStandardMaterial({ color: 0x8a8780, roughness: 1, flatShading: true });
+
+  // Grass tufts — tiny cones, no collider.
+  const grassGeom = new THREE.ConeGeometry(0.16, 0.45, 4);
+  for (let i = 0; i < 320; i++) {
+    const x = (rng() - 0.5) * (MAP_W - 8);
+    const z = (rng() - 0.5) * (MAP_H - 8);
+    if (distanceToLane(x, z) < LANE_WIDTH * 0.55 + 1.2) continue;
+    if (nearReservedZone(x, z)) continue;
+    const tuft = new THREE.Mesh(grassGeom, rng() > 0.5 ? grassMat : grassDarkMat);
+    tuft.position.set(x, 0.22, z);
+    tuft.rotation.y = rng() * Math.PI * 2;
+    const s = 0.7 + rng() * 0.7;
+    tuft.scale.setScalar(s);
+    scene.add(tuft);
+  }
+
+  // Bushes — flattened spheres, light collider so player can't walk through.
+  const bushGeom = new THREE.SphereGeometry(0.55, 8, 6);
+  for (let i = 0; i < 22; i++) {
+    const x = (rng() - 0.5) * (MAP_W - 16);
+    const z = (rng() - 0.5) * (MAP_H - 16);
+    if (distanceToLane(x, z) < LANE_WIDTH * 0.7 + 2) continue;
+    if (nearReservedZone(x, z)) continue;
+    const bush = new THREE.Mesh(bushGeom, bushMat);
+    bush.position.set(x, 0.45, z);
+    bush.scale.set(1 + rng() * 0.6, 0.85, 1 + rng() * 0.6);
+    bush.castShadow = true;
+    scene.add(bush);
+    colliders.addCircle(x, z, 0.55);
+  }
+
+  // Pebbles — visual only.
+  const pebbleGeom = new THREE.DodecahedronGeometry(0.18, 0);
+  for (let i = 0; i < 90; i++) {
+    const x = (rng() - 0.5) * (MAP_W - 8);
+    const z = (rng() - 0.5) * (MAP_H - 8);
+    if (nearReservedZone(x, z)) continue;
+    const peb = new THREE.Mesh(pebbleGeom, pebbleMat);
+    peb.position.set(x, 0.12, z);
+    peb.rotation.set(rng() * 1, rng() * Math.PI * 2, rng() * 1);
+    peb.scale.setScalar(0.7 + rng() * 0.9);
+    scene.add(peb);
+  }
+}
+
+function distanceToLane(x: number, z: number): number {
+  // Lane runs along (+x,−z) ↔ (−x,+z); perpendicular distance is |x + z|/√2.
+  return Math.abs(x + z) / Math.SQRT2;
+}
+
+function nearReservedZone(x: number, z: number): boolean {
+  // Don't crowd bases, spawn pads, or towers.
+  const dBase = (cx: number, cz: number) => Math.hypot(x - cx, z - cz);
+  if (dBase(BASE_BLUE_X, BASE_BLUE_Z) < 14) return true;
+  if (dBase(BASE_RED_X, BASE_RED_Z) < 14) return true;
+  if (dBase(SPAWN_BLUE_X, SPAWN_BLUE_Z) < 8) return true;
+  if (dBase(SPAWN_RED_X, SPAWN_RED_Z) < 8) return true;
+  if (dBase(-22, 22) < 6) return true; // tower blue
+  if (dBase(22, -22) < 6) return true; // tower red
+  return false;
+}
+
+/** Two campfires — small ambient landmark on the off-lane sides. */
+function buildCampfires(scene: THREE.Scene): void {
+  const spots: Array<[number, number]> = [
+    [-26, -26],
+    [26, 26],
+  ];
+  for (const [x, z] of spots) {
+    const stones = new THREE.Group();
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      const stone = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.28, 0),
+        new THREE.MeshStandardMaterial({ color: 0x6f6862, roughness: 1, flatShading: true }),
+      );
+      stone.position.set(Math.cos(a) * 0.7, 0.16, Math.sin(a) * 0.7);
+      stone.rotation.set(Math.random(), Math.random() * Math.PI * 2, Math.random());
+      stones.add(stone);
+    }
+    const flame = new THREE.Mesh(
+      new THREE.ConeGeometry(0.35, 0.7, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0xff9a3c,
+        emissive: 0xff5a18,
+        emissiveIntensity: 1.2,
+        transparent: true,
+        opacity: 0.9,
+      }),
+    );
+    flame.position.y = 0.55;
+    stones.add(flame);
+    stones.position.set(x, 0, z);
+    scene.add(stones);
+  }
 }
 
 function addTree(

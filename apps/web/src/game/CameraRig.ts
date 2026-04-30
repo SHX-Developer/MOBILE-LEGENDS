@@ -9,6 +9,10 @@ export class CameraRig {
   // Slightly higher and further back than the original (0,18,12) so more of
   // the surrounding lane fits in the player's view.
   private offset = new THREE.Vector3(0, 24, 16);
+  /** User-driven look-ahead, applied on top of the followed target. */
+  private lookOffset = new THREE.Vector3();
+  /** Where the look offset is being eased toward when no input is active. */
+  private lookTarget = new THREE.Vector3();
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 500);
@@ -19,12 +23,23 @@ export class CameraRig {
     this.camera.updateProjectionMatrix();
   }
 
-  follow(target: THREE.Vector3): void {
-    this.camera.position.set(
-      target.x + this.offset.x,
-      target.y + this.offset.y,
-      target.z + this.offset.z,
-    );
-    this.camera.lookAt(target.x, target.y, target.z);
+  /** Drag-to-look. Caller passes a world-space delta clamped to taste. */
+  setLookOffset(x: number, z: number): void {
+    this.lookTarget.set(x, 0, z);
+  }
+
+  follow(target: THREE.Vector3, deltaSec = 0): void {
+    // Ease the look offset toward its target each frame.
+    if (deltaSec > 0) {
+      const k = Math.min(1, deltaSec * 6);
+      this.lookOffset.x += (this.lookTarget.x - this.lookOffset.x) * k;
+      this.lookOffset.z += (this.lookTarget.z - this.lookOffset.z) * k;
+    } else {
+      this.lookOffset.copy(this.lookTarget);
+    }
+    const cx = target.x + this.lookOffset.x;
+    const cz = target.z + this.lookOffset.z;
+    this.camera.position.set(cx + this.offset.x, target.y + this.offset.y, cz + this.offset.z);
+    this.camera.lookAt(cx, target.y, cz);
   }
 }

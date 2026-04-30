@@ -1,8 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { createGame, type Game } from '../game/index.js';
 
-const ASPECT = 16 / 9;
-
 interface Frame {
   logicalW: number;
   logicalH: number;
@@ -16,8 +14,12 @@ type SkillId = 'q' | 'e' | 'c';
 function computeFrame(): Frame {
   const vpW = window.innerWidth;
   const vpH = window.innerHeight;
-  const logicalH = Math.min(vpW, vpH / ASPECT);
-  const logicalW = ASPECT * logicalH;
+  const portrait = vpH > vpW;
+  // In portrait we rotate 90° and want the rotated content to fully fill the
+  // viewport, so the pre-rotation width = vpH, height = vpW. The camera aspect
+  // floats slightly off 16:9; the camera FOV soaks up the difference cleanly.
+  const logicalW = portrait ? vpH : vpW;
+  const logicalH = portrait ? vpW : vpH;
   return { logicalW, logicalH, vpW, vpH };
 }
 
@@ -153,14 +155,13 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           totalMs={10000}
           getGame={getGame}
         />
+        {matchEnd && (
+          <MatchEndOverlay winner={matchEnd} onRestart={restart} onExit={onExit} />
+        )}
+        {mode === 'online' && !matchEnd && onlineStatus !== 'playing' && (
+          <QueueOverlay status={onlineStatus} onCancel={onExit} />
+        )}
       </div>
-
-      {matchEnd && (
-        <MatchEndOverlay winner={matchEnd} onRestart={restart} onExit={onExit} />
-      )}
-      {mode === 'online' && !matchEnd && onlineStatus !== 'playing' && (
-        <QueueOverlay status={onlineStatus} onCancel={onExit} />
-      )}
     </div>
   );
 }
