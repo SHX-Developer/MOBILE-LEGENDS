@@ -56,14 +56,17 @@ export class HealthBar {
 
     if (showLevel) {
       this.levelCanvas = document.createElement('canvas');
-      this.levelCanvas.width = 192;
-      this.levelCanvas.height = 192;
+      this.levelCanvas.width = 256;
+      this.levelCanvas.height = 256;
       const ctx = this.levelCanvas.getContext('2d');
       if (!ctx) throw new Error('2D canvas is required for health bar level labels');
       this.levelCtx = ctx;
       this.levelTexture = new THREE.CanvasTexture(this.levelCanvas);
+      this.levelTexture.generateMipmaps = false;
+      this.levelTexture.minFilter = THREE.LinearFilter;
+      this.levelTexture.magFilter = THREE.LinearFilter;
       const level = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.78, 0.78),
+        new THREE.PlaneGeometry(1.18, 1.18),
         new THREE.MeshBasicMaterial({
           map: this.levelTexture,
           transparent: true,
@@ -72,7 +75,7 @@ export class HealthBar {
           side: THREE.DoubleSide,
         }),
       );
-      level.position.set(-longAxis / 2 - 0.58, 0, 0.02);
+      level.position.set(-longAxis / 2 - 0.85, 0, 0.02);
       level.renderOrder = 10001;
       this.group.add(level);
       this.setLevel(1, 0);
@@ -89,9 +92,9 @@ export class HealthBar {
     const ctx = this.levelCtx;
     ctx.clearRect(0, 0, this.levelCanvas.width, this.levelCanvas.height);
 
-    const cx = 96;
-    const cy = 96;
-    const radius = 58;
+    const cx = 128;
+    const cy = 128;
+    const radius = 77;
     ctx.fillStyle = 'rgba(7, 10, 16, 0.98)';
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -100,7 +103,7 @@ export class HealthBar {
     ctx.lineWidth = 13;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
     ctx.beginPath();
-    ctx.arc(cx, cy, radius + 12, 0, Math.PI * 2);
+    ctx.arc(cx, cy, radius + 18, 0, Math.PI * 2);
     ctx.stroke();
 
     const pct = Math.max(0, Math.min(progress, 1));
@@ -108,20 +111,20 @@ export class HealthBar {
       ctx.strokeStyle = '#ffd852';
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.arc(cx, cy, radius + 12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
+      ctx.arc(cx, cy, radius + 18, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
       ctx.stroke();
       ctx.lineCap = 'butt';
     }
 
-    ctx.lineWidth = 6;
+    ctx.lineWidth = 8;
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = '900 88px Arial, sans-serif';
+    ctx.font = `900 ${level >= 10 ? 108 : 132}px Arial, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.strokeText(String(level), cx, cy + 2);
-    ctx.fillText(String(level), cx, cy + 2);
+    ctx.strokeText(String(level), cx, cy + 4);
+    ctx.fillText(String(level), cx, cy + 4);
     this.levelTexture.needsUpdate = true;
   }
 

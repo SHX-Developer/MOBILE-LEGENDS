@@ -100,6 +100,7 @@ export class Base implements Unit {
 
   update(now: number, registry: UnitRegistry, projectiles: ProjectileManager): void {
     if (!this.alive) return;
+    if (this.stunnedUntil > now) return;
     if (now - this.lastAttackAt < BASE_ATTACK_COOLDOWN_MS) return;
     const target = registry.findNearestEnemy(this.team, this.position, BASE_ATTACK_RANGE, [
       'minion',

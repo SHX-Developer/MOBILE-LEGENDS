@@ -4,6 +4,12 @@ import {
   PLAYER_ATTACK_RANGE,
   PLAYER_RADIUS,
   PLAYER_RESPAWN_MS,
+  BASE_BLUE_X,
+  BASE_BLUE_Z,
+  BASE_RED_X,
+  BASE_RED_Z,
+  BASE_REGEN_RADIUS,
+  HERO_BASE_REGEN_PER_SEC,
   RESPAWN_LEVEL_PENALTY_MS,
   RESPAWN_MATCH_MINUTE_PENALTY_MS,
   RESPAWN_MAX_MS,
@@ -338,23 +344,24 @@ export class Game {
         else if (skillReq.id === 'e') this.tryUseE(now, dx, dz);
         else this.tryUseC(now, dx, dz);
       }
-    } else if (now >= this.respawnAt) {
+    } else if (!this.playerWasAlive && now >= this.respawnAt) {
       this.player.respawn();
     }
 
-    if (!this.player.alive && this.playerWasAlive) {
-      this.respawnAt = now + this.getRespawnDelayMs(this.player.level, now);
-    }
-    this.playerWasAlive = this.player.alive;
-
     this.bot.respawnDelayMs = this.getRespawnDelayMs(this.bot.level, now);
     this.bot.update(delta, now, this.registry, this.projectiles, this.colliders);
+    this.healHeroesAtBase(delta);
     this.updateMinions(delta, now);
 
     for (const t of this.towers) t.update(now, this.registry, this.projectiles);
     for (const b of this.bases) b.update(now, this.registry, this.projectiles);
 
     this.projectiles.update(delta, now, this.registry);
+    if (!this.player.alive && this.playerWasAlive) {
+      this.respawnAt = now + this.getRespawnDelayMs(this.player.level, now);
+    }
+    this.playerWasAlive = this.player.alive;
+
     this.cleanupMinions(now);
     this.floatingText.update(now);
 
@@ -502,6 +509,16 @@ export class Game {
     }
   }
 
+  private healHeroesAtBase(delta: number): void {
+    const heal = HERO_BASE_REGEN_PER_SEC * delta;
+    if (isNear(this.player.position, BASE_BLUE_X, BASE_BLUE_Z, BASE_REGEN_RADIUS)) {
+      this.player.heal(heal);
+    }
+    if (isNear(this.bot.position, BASE_RED_X, BASE_RED_Z, BASE_REGEN_RADIUS)) {
+      this.bot.heal(heal);
+    }
+  }
+
   private getRespawnDelayMs(level: number, now: number): number {
     const matchMinutes = Math.floor(this.getMatchElapsedMs(now) / 60000);
     const delay =
@@ -510,4 +527,10 @@ export class Game {
       matchMinutes * RESPAWN_MATCH_MINUTE_PENALTY_MS;
     return Math.min(RESPAWN_MAX_MS, delay);
   }
+}
+
+function isNear(pos: THREE.Vector3, x: number, z: number, radius: number): boolean {
+  const dx = pos.x - x;
+  const dz = pos.z - z;
+  return dx * dx + dz * dz <= radius * radius;
 }

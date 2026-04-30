@@ -94,6 +94,7 @@ export class Tower implements Unit {
 
   update(now: number, registry: UnitRegistry, projectiles: ProjectileManager): void {
     if (!this.alive) return;
+    if (this.stunnedUntil > now) return;
     if (now - this.lastAttackAt < TOWER_ATTACK_COOLDOWN_MS) return;
     const target = registry.findNearestEnemy(this.team, this.position, TOWER_ATTACK_RANGE, [
       'minion',

@@ -391,87 +391,136 @@ const SkillButton = memo(function SkillButton({
     : 100;
 
   const activePointer = useRef<number | null>(null);
+  const cancelRef = useRef<HTMLDivElement>(null);
+  const [aiming, setAiming] = useState(false);
+  const [canceling, setCanceling] = useState(false);
+
+  function pointInCancel(clientX: number, clientY: number): boolean {
+    const cancel = cancelRef.current;
+    if (!cancel) return false;
+    const r = cancel.getBoundingClientRect();
+    return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+  }
 
   return (
-    <button
-      onPointerDown={(e) => {
-        if (onCooldown) return;
-        if (activePointer.current !== null) return;
-        activePointer.current = e.pointerId;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        e.preventDefault();
-        getGame()?.startAim(id);
-      }}
-      onPointerMove={(e) => {
-        if (activePointer.current !== e.pointerId) return;
-        const r = e.currentTarget.getBoundingClientRect();
-        const cx = r.left + r.width / 2;
-        const cy = r.top + r.height / 2;
-        // Drag → world-direction. Same axis flip the joystick uses.
-        const wx = e.clientY - cy;
-        const wz = -(e.clientX - cx);
-        if (Math.hypot(wx, wz) > 8) getGame()?.updateAim(id, wx, wz);
-      }}
-      onPointerUp={(e) => {
-        if (activePointer.current !== e.pointerId) return;
-        activePointer.current = null;
-        e.currentTarget.releasePointerCapture(e.pointerId);
-        getGame()?.releaseAim(id);
-      }}
-      onPointerCancel={(e) => {
-        if (activePointer.current !== e.pointerId) return;
-        activePointer.current = null;
-        getGame()?.cancelAim(id);
-      }}
-      style={{
-        position: 'absolute',
-        right,
-        bottom,
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        border: `2px solid ${accent}`,
-        background: onCooldown
-          ? 'rgba(20, 24, 36, 0.7)'
-          : `radial-gradient(circle at 35% 30%, ${accent} 0%, #1a1825 75%)`,
-        color: '#fff',
-        fontWeight: 800,
-        fontSize: 22,
-        letterSpacing: 1,
-        cursor: onCooldown ? 'default' : 'pointer',
-        boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
-        touchAction: 'none',
-        opacity: onCooldown ? 0.55 : 1,
-        display: 'grid',
-        placeItems: 'center',
-        overflow: 'hidden',
-        contain: 'layout paint',
-      }}
-    >
-      {onCooldown && (
+    <>
+      {aiming && (
         <div
+          ref={cancelRef}
           style={{
             position: 'absolute',
-            inset: 0,
-            background: `conic-gradient(${accent}66 ${fillPct}%, transparent ${fillPct}%)`,
-            borderRadius: '50%',
+            right: 34,
+            bottom: 260,
+            width: 92,
+            height: 50,
+            borderRadius: 8,
+            border: `2px solid ${canceling ? '#ff6b6b' : 'rgba(255,255,255,0.35)'}`,
+            background: canceling ? 'rgba(190, 38, 38, 0.78)' : 'rgba(8, 12, 18, 0.72)',
+            color: '#fff',
+            display: 'grid',
+            placeItems: 'center',
+            fontSize: 13,
+            fontWeight: 900,
+            letterSpacing: 1,
             pointerEvents: 'none',
+            boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
+            zIndex: 11,
           }}
-        />
+        >
+          CANCEL
+        </div>
       )}
-      <div
+      <button
+        onPointerDown={(e) => {
+          if (onCooldown) return;
+          if (activePointer.current !== null) return;
+          activePointer.current = e.pointerId;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          e.preventDefault();
+          setAiming(true);
+          setCanceling(false);
+          getGame()?.startAim(id);
+        }}
+        onPointerMove={(e) => {
+          if (activePointer.current !== e.pointerId) return;
+          const r = e.currentTarget.getBoundingClientRect();
+          const cx = r.left + r.width / 2;
+          const cy = r.top + r.height / 2;
+          const shouldCancel = pointInCancel(e.clientX, e.clientY);
+          setCanceling(shouldCancel);
+          if (shouldCancel) return;
+          // Drag -> world-direction. Same axis flip the joystick uses.
+          const wx = e.clientY - cy;
+          const wz = -(e.clientX - cx);
+          if (Math.hypot(wx, wz) > 8) getGame()?.updateAim(id, wx, wz);
+        }}
+        onPointerUp={(e) => {
+          if (activePointer.current !== e.pointerId) return;
+          const shouldCancel = canceling || pointInCancel(e.clientX, e.clientY);
+          activePointer.current = null;
+          e.currentTarget.releasePointerCapture(e.pointerId);
+          setAiming(false);
+          setCanceling(false);
+          if (shouldCancel) getGame()?.cancelAim(id);
+          else getGame()?.releaseAim(id);
+        }}
+        onPointerCancel={(e) => {
+          if (activePointer.current !== e.pointerId) return;
+          activePointer.current = null;
+          setAiming(false);
+          setCanceling(false);
+          getGame()?.cancelAim(id);
+        }}
         style={{
-          position: 'relative',
+          position: 'absolute',
+          right,
+          bottom,
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          border: `2px solid ${accent}`,
+          background: onCooldown
+            ? 'rgba(20, 24, 36, 0.7)'
+            : `radial-gradient(circle at 35% 30%, ${accent} 0%, #1a1825 75%)`,
+          color: '#fff',
+          fontWeight: 800,
+          fontSize: 22,
+          letterSpacing: 1,
+          cursor: onCooldown ? 'default' : 'pointer',
+          boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
+          touchAction: 'none',
+          opacity: onCooldown ? 0.55 : 1,
           display: 'grid',
           placeItems: 'center',
-          lineHeight: 1,
-          pointerEvents: 'none',
+          overflow: 'hidden',
+          contain: 'layout paint',
         }}
       >
-        <div>{onCooldown ? seconds : label}</div>
-        <div style={{ fontSize: 9, opacity: 0.8, marginTop: 2 }}>{subtitle}</div>
-      </div>
-    </button>
+        {onCooldown && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: `conic-gradient(${accent}66 ${fillPct}%, transparent ${fillPct}%)`,
+              borderRadius: '50%',
+              pointerEvents: 'none',
+            }}
+          />
+        )}
+        <div
+          style={{
+            position: 'relative',
+            display: 'grid',
+            placeItems: 'center',
+            lineHeight: 1,
+            pointerEvents: 'none',
+          }}
+        >
+          <div>{onCooldown ? seconds : label}</div>
+          <div style={{ fontSize: 9, opacity: 0.8, marginTop: 2 }}>{subtitle}</div>
+        </div>
+      </button>
+    </>
   );
 });
 

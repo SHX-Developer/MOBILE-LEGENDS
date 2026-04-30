@@ -145,6 +145,12 @@ export class BotObject implements Unit {
     if (this.hp <= 0) this.die();
   }
 
+  heal(amount: number): void {
+    if (!this.alive || amount <= 0 || this.hp >= this.maxHp) return;
+    this.hp = Math.min(this.maxHp, this.hp + amount);
+    this.healthBar.setRatio(this.hp / this.maxHp);
+  }
+
   grantXp(amount: number): void {
     if (this.level >= HERO_MAX_LEVEL || amount <= 0) return;
     this.xp += amount;

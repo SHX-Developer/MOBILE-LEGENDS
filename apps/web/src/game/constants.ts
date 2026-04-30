@@ -37,6 +37,7 @@ export const HERO_HP_PER_LEVEL = 70;
 export const HERO_DAMAGE_PER_LEVEL = 10;
 export const HERO_BASE_XP_TO_LEVEL = 90;
 export const HERO_XP_LEVEL_GROWTH = 1.45;
+export const HERO_BASE_REGEN_PER_SEC = 85;
 
 // Towers — placed midway between each base and centre, on the diagonal.
 export const TOWER_RADIUS = 1.6;
@@ -60,6 +61,7 @@ export const BASE_RED_X = HALF_W - 14;
 export const BASE_RED_Z = -HALF_H + 14;
 export const BASE_MAX_HP = 1500;
 export const BASE_HIT_RADIUS = 5;
+export const BASE_REGEN_RADIUS = 12;
 // Base attacks like a tower — slightly stronger and longer-ranged.
 export const BASE_DAMAGE = 55;
 export const BASE_ATTACK_RANGE = 16;
