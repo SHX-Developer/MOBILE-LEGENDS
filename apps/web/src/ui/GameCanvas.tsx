@@ -120,6 +120,10 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
         <MatchTimer elapsedMs={matchMs} respawnMs={respawnMs} />
         {mode === 'online' && <OnlineStatus status={onlineStatus} />}
+        {/* Invisible safety nets around the controls — empty taps inside
+            these zones don't reach the camera-pan listener on the canvas. */}
+        <ControlZone left={130} bottom={24} width={210} height={210} />
+        <ControlZone right={20} bottom={20} width={300} height={260} />
         <Joystick onChange={onJoystickChange} />
         <FireButton onPress={onFirePress} onRelease={onFireRelease} />
         {/* Three skills wrap around FIRE (which sits in the corner). Q above,
@@ -129,9 +133,9 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label="Q"
           subtitle="POWER"
           accent="#ff7a3d"
-          right={42}
-          bottom={156}
-          size={74}
+          right={48}
+          bottom={170}
+          size={86}
           totalMs={6000}
           getGame={getGame}
         />
@@ -140,9 +144,9 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label="E"
           subtitle="SLOW"
           accent="#4ec9ff"
-          right={132}
-          bottom={132}
-          size={74}
+          right={148}
+          bottom={148}
+          size={86}
           totalMs={8000}
           getGame={getGame}
         />
@@ -151,9 +155,9 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label="C"
           subtitle="STUN"
           accent="#b56cff"
-          right={172}
-          bottom={42}
-          size={74}
+          right={188}
+          bottom={48}
+          size={86}
           totalMs={10000}
           getGame={getGame}
         />
@@ -165,6 +169,38 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
         )}
       </div>
     </div>
+  );
+}
+
+function ControlZone({
+  left,
+  right,
+  bottom,
+  width,
+  height,
+}: {
+  left?: number;
+  right?: number;
+  bottom: number;
+  width: number;
+  height: number;
+}) {
+  // A transparent absorber: receives pointer events that miss the buttons it
+  // wraps, so the canvas pan listener underneath never sees them. Buttons sit
+  // on top in DOM order and still receive their own taps.
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left,
+        right,
+        bottom,
+        width,
+        height,
+        pointerEvents: 'auto',
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+    />
   );
 }
 
@@ -384,7 +420,7 @@ const Joystick = memo(function Joystick({
       }}
       style={{
         position: 'absolute',
-        left: 80,
+        left: 150,
         bottom: 36,
         width: JOY_BASE,
         height: JOY_BASE,

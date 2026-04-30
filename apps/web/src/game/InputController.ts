@@ -128,7 +128,9 @@ export class InputController {
     const dx = e.clientX - this.drag.startX;
     const dy = e.clientY - this.drag.startY;
     if (!this.drag.engaged) {
-      if (Math.hypot(dx, dy) < 10) return;
+      // Higher threshold than the usual 8–10px because finger taps near skill
+      // buttons jitter a bit and we don't want them to count as a pan.
+      if (Math.hypot(dx, dy) < 22) return;
       this.drag.engaged = true;
     }
     // Map screen delta → world delta. The CSS rotation in portrait swaps
