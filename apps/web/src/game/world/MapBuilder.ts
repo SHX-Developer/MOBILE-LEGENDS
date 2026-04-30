@@ -290,6 +290,10 @@ function makeRng(seed: number): () => number {
  * Scatter small props (grass tufts, bushes, pebbles) across the map but keep
  * a clear corridor along the lane and around bases/towers/spawn pads so the
  * playable lane stays readable.
+ *
+ * Grass and pebble props use InstancedMesh — one draw call for hundreds of
+ * sprites instead of one per sprite. Bushes stay individual because they're
+ * few and need colliders.
  */
 function scatterFoliage(scene: THREE.Scene, colliders: Colliders): void {
   const rng = makeRng(RNG_SEED);
@@ -298,22 +302,38 @@ function scatterFoliage(scene: THREE.Scene, colliders: Colliders): void {
   const bushMat = new THREE.MeshStandardMaterial({ color: 0x376a32, roughness: 0.95 });
   const pebbleMat = new THREE.MeshStandardMaterial({ color: 0x8a8780, roughness: 1, flatShading: true });
 
-  // Grass tufts — tiny cones, no collider.
+  // Grass — two instanced meshes (light/dark) for one draw call each.
   const grassGeom = new THREE.ConeGeometry(0.16, 0.45, 4);
+  const grassLight = new THREE.InstancedMesh(grassGeom, grassMat, 200);
+  const grassDark = new THREE.InstancedMesh(grassGeom, grassDarkMat, 200);
+  let lightIdx = 0;
+  let darkIdx = 0;
+  const tmpMat = new THREE.Matrix4();
+  const tmpQuat = new THREE.Quaternion();
+  const tmpScale = new THREE.Vector3();
+  const tmpPos = new THREE.Vector3();
   for (let i = 0; i < 320; i++) {
     const x = (rng() - 0.5) * (MAP_W - 8);
     const z = (rng() - 0.5) * (MAP_H - 8);
     if (distanceToLane(x, z) < LANE_WIDTH * 0.55 + 1.2) continue;
     if (nearReservedZone(x, z)) continue;
-    const tuft = new THREE.Mesh(grassGeom, rng() > 0.5 ? grassMat : grassDarkMat);
-    tuft.position.set(x, 0.22, z);
-    tuft.rotation.y = rng() * Math.PI * 2;
+    const yaw = rng() * Math.PI * 2;
     const s = 0.7 + rng() * 0.7;
-    tuft.scale.setScalar(s);
-    scene.add(tuft);
+    tmpPos.set(x, 0.22, z);
+    tmpQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    tmpScale.setScalar(s);
+    tmpMat.compose(tmpPos, tmpQuat, tmpScale);
+    const useDark = rng() > 0.5;
+    if (useDark && darkIdx < grassDark.count) grassDark.setMatrixAt(darkIdx++, tmpMat);
+    else if (!useDark && lightIdx < grassLight.count) grassLight.setMatrixAt(lightIdx++, tmpMat);
   }
+  grassLight.count = lightIdx;
+  grassDark.count = darkIdx;
+  grassLight.instanceMatrix.needsUpdate = true;
+  grassDark.instanceMatrix.needsUpdate = true;
+  scene.add(grassLight, grassDark);
 
-  // Bushes — flattened spheres, light collider so player can't walk through.
+  // Bushes — kept as individual meshes because each needs a collider.
   const bushGeom = new THREE.SphereGeometry(0.55, 8, 6);
   for (let i = 0; i < 22; i++) {
     const x = (rng() - 0.5) * (MAP_W - 16);
@@ -323,23 +343,28 @@ function scatterFoliage(scene: THREE.Scene, colliders: Colliders): void {
     const bush = new THREE.Mesh(bushGeom, bushMat);
     bush.position.set(x, 0.45, z);
     bush.scale.set(1 + rng() * 0.6, 0.85, 1 + rng() * 0.6);
-    bush.castShadow = true;
     scene.add(bush);
     colliders.addCircle(x, z, 0.55);
   }
 
-  // Pebbles — visual only.
+  // Pebbles — purely decorative, perfect for instancing.
   const pebbleGeom = new THREE.DodecahedronGeometry(0.18, 0);
+  const pebbles = new THREE.InstancedMesh(pebbleGeom, pebbleMat, 90);
+  let pebIdx = 0;
   for (let i = 0; i < 90; i++) {
     const x = (rng() - 0.5) * (MAP_W - 8);
     const z = (rng() - 0.5) * (MAP_H - 8);
     if (nearReservedZone(x, z)) continue;
-    const peb = new THREE.Mesh(pebbleGeom, pebbleMat);
-    peb.position.set(x, 0.12, z);
-    peb.rotation.set(rng() * 1, rng() * Math.PI * 2, rng() * 1);
-    peb.scale.setScalar(0.7 + rng() * 0.9);
-    scene.add(peb);
+    const euler = new THREE.Euler(rng(), rng() * Math.PI * 2, rng());
+    tmpQuat.setFromEuler(euler);
+    tmpScale.setScalar(0.7 + rng() * 0.9);
+    tmpPos.set(x, 0.12, z);
+    tmpMat.compose(tmpPos, tmpQuat, tmpScale);
+    if (pebIdx < pebbles.count) pebbles.setMatrixAt(pebIdx++, tmpMat);
   }
+  pebbles.count = pebIdx;
+  pebbles.instanceMatrix.needsUpdate = true;
+  scene.add(pebbles);
 }
 
 function distanceToLane(x: number, z: number): number {

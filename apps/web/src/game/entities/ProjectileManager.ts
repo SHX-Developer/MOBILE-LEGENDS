@@ -208,34 +208,32 @@ export class ProjectileManager {
     this.projectiles.splice(index, 1);
   }
 
-  /** Brief flash + scatter at the impact point. Pure FX, no damage. */
+  /** Brief flash + scatter at the impact point. Pure FX, no damage.
+   *  Skipped when too many bursts are already in flight to keep FPS up. */
   spawnHitBurst(at: THREE.Vector3, team: Team): void {
+    if (this.fx.length > FX_BUDGET) return;
     const color = team === 'blue' ? 0x9fd8ff : 0xffb37a;
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.1, 0.55, 18),
-      new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: 0.95,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      }),
-    );
+    const ringMat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const ring = new THREE.Mesh(HIT_RING_GEOM, ringMat);
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(at.x, 1.0, at.z);
     this.scene.add(ring);
     this.fx.push({ mesh: ring, spawnedAt: performance.now(), kind: 'ring', durationMs: 260 });
 
     for (let i = 0; i < 6; i++) {
-      const speck = new THREE.Mesh(
-        new THREE.SphereGeometry(0.13, 6, 6),
-        new THREE.MeshBasicMaterial({
-          color,
-          transparent: true,
-          opacity: 1,
-          depthWrite: false,
-        }),
-      );
+      const speckMat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+      });
+      const speck = new THREE.Mesh(HIT_SPECK_GEOM, speckMat);
       speck.position.set(at.x, 1.2, at.z);
       const a = (Math.PI * 2 * i) / 6 + Math.random() * 0.4;
       const v = new THREE.Vector3(Math.cos(a) * 5, 2 + Math.random() * 2, Math.sin(a) * 5);
@@ -252,15 +250,14 @@ export class ProjectileManager {
 
   /** Quick flash at the muzzle when a hero fires. */
   spawnMuzzleFlash(at: THREE.Vector3, facing: THREE.Vector3): void {
-    const flash = new THREE.Mesh(
-      new THREE.SphereGeometry(0.28, 8, 8),
-      new THREE.MeshBasicMaterial({
-        color: 0xffe28a,
-        transparent: true,
-        opacity: 1,
-        depthWrite: false,
-      }),
-    );
+    if (this.fx.length > FX_BUDGET) return;
+    const flashMat = new THREE.MeshBasicMaterial({
+      color: 0xffe28a,
+      transparent: true,
+      opacity: 1,
+      depthWrite: false,
+    });
+    const flash = new THREE.Mesh(MUZZLE_FLASH_GEOM, flashMat);
     flash.position.set(at.x + facing.x * 0.7, 1.45, at.z + facing.z * 0.7);
     this.scene.add(flash);
     this.fx.push({ mesh: flash, spawnedAt: performance.now(), kind: 'flash', durationMs: 140 });
@@ -273,9 +270,10 @@ export class ProjectileManager {
       const t = (now - f.spawnedAt) / f.durationMs;
       if (t >= 1) {
         this.scene.remove(f.mesh);
+        // Materials are per-instance (animated opacity), dispose them.
+        // Geometries are shared module-level singletons — leave them alone.
         const m = f.mesh as THREE.Mesh;
         (m.material as THREE.Material).dispose();
-        m.geometry.dispose();
         this.fx.splice(i, 1);
         continue;
       }
@@ -307,68 +305,89 @@ interface FxBurst {
   velocity?: THREE.Vector3;
 }
 
+// FX cap — beyond this many concurrent sprites we drop new bursts entirely.
+const FX_BUDGET = 80;
+const HIT_RING_GEOM = new THREE.RingGeometry(0.1, 0.55, 18);
+const HIT_SPECK_GEOM = new THREE.SphereGeometry(0.13, 6, 6);
+const MUZZLE_FLASH_GEOM = new THREE.SphereGeometry(0.28, 8, 8);
+
+// --- Cached projectile assets ---------------------------------------------
+// Geometries and materials are immutable per kind, so allocate them once
+// at module load and clone the lightweight Object3Ds for each shot.
+const ARROW_SHAFT_MAT = new THREE.MeshStandardMaterial({
+  color: 0xd9b56d,
+  roughness: 0.55,
+  metalness: 0.15,
+});
+const ARROW_TIP_MAT = new THREE.MeshStandardMaterial({
+  color: 0xf8f0dc,
+  emissive: 0xffcf5a,
+  emissiveIntensity: 0.35,
+  roughness: 0.35,
+  metalness: 0.6,
+});
+const ARROW_SHAFT_GEOM = new THREE.CylinderGeometry(0.045, 0.045, 1.2, 8);
+const ARROW_TIP_GEOM = new THREE.ConeGeometry(0.13, 0.34, 10);
+const ARROW_TAIL_GEOM = new THREE.ConeGeometry(0.11, 0.22, 8);
+
 function createArrowProjectile(): THREE.Object3D {
   const arrow = new THREE.Group();
-  const shaftMat = new THREE.MeshStandardMaterial({
-    color: 0xd9b56d,
-    roughness: 0.55,
-    metalness: 0.15,
-  });
-  const tipMat = new THREE.MeshStandardMaterial({
-    color: 0xf8f0dc,
-    emissive: 0xffcf5a,
-    emissiveIntensity: 0.35,
-    roughness: 0.35,
-    metalness: 0.6,
-  });
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.2, 8), shaftMat);
+  const shaft = new THREE.Mesh(ARROW_SHAFT_GEOM, ARROW_SHAFT_MAT);
   shaft.rotation.x = Math.PI / 2;
   arrow.add(shaft);
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.34, 10), tipMat);
+  const tip = new THREE.Mesh(ARROW_TIP_GEOM, ARROW_TIP_MAT);
   tip.rotation.x = Math.PI / 2;
   tip.position.z = 0.76;
   arrow.add(tip);
-  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.22, 8), shaftMat);
+  const tail = new THREE.Mesh(ARROW_TAIL_GEOM, ARROW_SHAFT_MAT);
   tail.rotation.x = -Math.PI / 2;
   tail.position.z = -0.68;
   arrow.add(tail);
   return arrow;
 }
 
+const ORB_GEOM_CACHE = new Map<number, THREE.SphereGeometry>();
+const ORB_MAT_CACHE = new Map<string, THREE.MeshStandardMaterial>();
+
 function createOrbProjectile(radius: number, color: number, emissive: number): THREE.Object3D {
-  return new THREE.Mesh(
-    new THREE.SphereGeometry(radius, 12, 12),
-    new THREE.MeshStandardMaterial({
-      color,
-      emissive,
-      emissiveIntensity: 1.0,
-    }),
-  );
+  let geom = ORB_GEOM_CACHE.get(radius);
+  if (!geom) {
+    geom = new THREE.SphereGeometry(radius, 12, 12);
+    ORB_GEOM_CACHE.set(radius, geom);
+  }
+  const matKey = `${color.toString(16)}-${emissive.toString(16)}`;
+  let mat = ORB_MAT_CACHE.get(matKey);
+  if (!mat) {
+    mat = new THREE.MeshStandardMaterial({
+      color, emissive, emissiveIntensity: 1.0,
+    });
+    ORB_MAT_CACHE.set(matKey, mat);
+  }
+  return new THREE.Mesh(geom, mat);
 }
+
+const METEOR_CORE_GEOM = new THREE.DodecahedronGeometry(0.65, 0);
+const METEOR_TAIL_GEOM = new THREE.ConeGeometry(0.38, 1.1, 12);
+const METEOR_CORE_MAT = new THREE.MeshStandardMaterial({
+  color: 0xff7a2f,
+  emissive: 0xff3300,
+  emissiveIntensity: 1.25,
+  roughness: 0.85,
+  flatShading: true,
+});
+const METEOR_TAIL_MAT = new THREE.MeshStandardMaterial({
+  color: 0xffc34d,
+  emissive: 0xff6a00,
+  emissiveIntensity: 0.9,
+  transparent: true,
+  opacity: 0.82,
+});
 
 function createMeteorProjectile(): THREE.Object3D {
   const meteor = new THREE.Group();
-  const core = new THREE.Mesh(
-    new THREE.DodecahedronGeometry(0.65, 0),
-    new THREE.MeshStandardMaterial({
-      color: 0xff7a2f,
-      emissive: 0xff3300,
-      emissiveIntensity: 1.25,
-      roughness: 0.85,
-      flatShading: true,
-    }),
-  );
+  const core = new THREE.Mesh(METEOR_CORE_GEOM, METEOR_CORE_MAT);
   meteor.add(core);
-  const tail = new THREE.Mesh(
-    new THREE.ConeGeometry(0.38, 1.1, 12),
-    new THREE.MeshStandardMaterial({
-      color: 0xffc34d,
-      emissive: 0xff6a00,
-      emissiveIntensity: 0.9,
-      transparent: true,
-      opacity: 0.82,
-    }),
-  );
+  const tail = new THREE.Mesh(METEOR_TAIL_GEOM, METEOR_TAIL_MAT);
   tail.rotation.x = -Math.PI / 2;
   tail.position.z = -0.72;
   meteor.add(tail);

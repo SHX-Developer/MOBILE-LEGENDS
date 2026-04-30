@@ -50,6 +50,7 @@ export class PlayerObject implements Unit {
   private leftArm?: THREE.Object3D;
   private rightArm?: THREE.Object3D;
   private bowGroup?: THREE.Object3D;
+  private bodyRoot?: THREE.Object3D;
   private deathStartedAt = 0;
 
   constructor(spawn: THREE.Vector3) {
@@ -164,18 +165,24 @@ export class PlayerObject implements Unit {
 
   private animateGait(speed: number, deltaSec: number, now: number): void {
     const drawing = now < this.attackLockUntil;
+    const k = Math.min(1, deltaSec * 14);
+    const lerp = (a: number, b: number) => a + (b - a) * k;
     if (drawing) {
-      // Hold limbs nearly still, pull the bow back slightly.
-      const k = Math.min(1, deltaSec * 14);
-      const lerp = (a: number, b: number) => a + (b - a) * k;
-      if (this.leftLeg) this.leftLeg.rotation.x = lerp(this.leftLeg.rotation.x, 0);
-      if (this.rightLeg) this.rightLeg.rotation.x = lerp(this.rightLeg.rotation.x, 0);
-      if (this.leftArm) this.leftArm.rotation.x = lerp(this.leftArm.rotation.x, -0.55);
-      if (this.rightArm) this.rightArm.rotation.x = lerp(this.rightArm.rotation.x, -0.95);
-      if (this.bowGroup) this.bowGroup.scale.x = lerp(this.bowGroup.scale.x, 1.1);
+      // Time within the 220ms windup, normalised 0..1.
+      const t = 1 - (this.attackLockUntil - now) / 220;
+      // Bow draw: front arm forward (raises bow), back arm pulls string back.
+      const drawAmount = Math.sin(Math.min(1, t) * Math.PI); // 0→1→0
+      if (this.leftArm) this.leftArm.rotation.x = lerp(this.leftArm.rotation.x, -0.7 - drawAmount * 0.25);
+      if (this.rightArm) this.rightArm.rotation.x = lerp(this.rightArm.rotation.x, -0.4 - drawAmount * 0.7);
+      if (this.leftLeg) this.leftLeg.rotation.x = lerp(this.leftLeg.rotation.x, -0.18);
+      if (this.rightLeg) this.rightLeg.rotation.x = lerp(this.rightLeg.rotation.x, 0.18);
+      // Forward lean of the torso/head while drawing the string.
+      if (this.bodyRoot) this.bodyRoot.rotation.x = lerp(this.bodyRoot.rotation.x, 0.18);
+      if (this.bowGroup) this.bowGroup.scale.x = lerp(this.bowGroup.scale.x, 1.05 + drawAmount * 0.15);
       return;
     }
-    if (this.bowGroup) this.bowGroup.scale.x = 1;
+    if (this.bodyRoot) this.bodyRoot.rotation.x = lerp(this.bodyRoot.rotation.x, 0);
+    if (this.bowGroup) this.bowGroup.scale.x = lerp(this.bowGroup.scale.x, 1);
     if (speed > 0.3) {
       this.gaitPhase += deltaSec * (5 + speed * 0.4);
       const swing = Math.sin(this.gaitPhase) * 0.7;
@@ -184,8 +191,6 @@ export class PlayerObject implements Unit {
       if (this.leftArm) this.leftArm.rotation.x = -swing * 0.6;
       if (this.rightArm) this.rightArm.rotation.x = swing * 0.6;
     } else {
-      const k = Math.min(1, deltaSec * 8);
-      const lerp = (a: number, b: number) => a + (b - a) * k;
       if (this.leftLeg) this.leftLeg.rotation.x = lerp(this.leftLeg.rotation.x, 0);
       if (this.rightLeg) this.rightLeg.rotation.x = lerp(this.rightLeg.rotation.x, 0);
       if (this.leftArm) this.leftArm.rotation.x = lerp(this.leftArm.rotation.x, 0);
@@ -346,6 +351,7 @@ export class PlayerObject implements Unit {
     // pivot for the camera and FX consistent.
     const body = new THREE.Group();
     this.group.add(body);
+    this.bodyRoot = body;
 
     // Slim legs (tights), hip pivots so the gait swing reads.
     const thighGeom = new THREE.CylinderGeometry(0.13, 0.12, 0.65, 10);

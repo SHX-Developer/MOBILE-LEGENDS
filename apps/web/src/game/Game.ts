@@ -584,8 +584,9 @@ export class Game {
       this.spawnMinionWave(now);
     }
 
+    // Always tick the player so the death-fall animation runs while dead.
+    this.player.update(movement, delta, now);
     if (this.player.alive) {
-      this.player.update(movement, delta, now);
       this.colliders.resolve(this.player.position, PLAYER_RADIUS);
       const canAct = this.player.stunnedUntil <= now;
       if (canAct && wantsAttack) this.tryAutoAttack(now);
