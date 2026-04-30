@@ -27,6 +27,8 @@ export class MinionObject implements Unit {
 
   private readonly healthBar: HealthBar;
   private lastAttackAt = -Infinity;
+  private avoidSide: 1 | -1 = 1;
+  private lastProgress = 0;
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -78,8 +80,7 @@ export class MinionObject implements Unit {
     }
 
     if (objective?.alive) {
-      this.moveToward(objective.position, deltaSec);
-      colliders.resolve(this.position, this.radius);
+      this.moveToward(objective.position, deltaSec, colliders);
     }
   }
 
@@ -106,16 +107,58 @@ export class MinionObject implements Unit {
     this.group.visible = false;
   }
 
-  private moveToward(target: THREE.Vector3, deltaSec: number): void {
+  private moveToward(target: THREE.Vector3, deltaSec: number, colliders: Colliders): void {
     const dx = target.x - this.position.x;
     const dz = target.z - this.position.z;
     const dist = Math.hypot(dx, dz);
     if (dist < 0.05) return;
     const nx = dx / dist;
     const nz = dz / dist;
-    this.position.x += nx * MINION_SPEED_3D * deltaSec;
-    this.position.z += nz * MINION_SPEED_3D * deltaSec;
-    this.group.rotation.y = Math.atan2(nx, nz);
+    const step = MINION_SPEED_3D * deltaSec;
+    const dir = this.pickMoveDirection(nx, nz, target, step, colliders);
+    this.position.x += dir.x * step;
+    this.position.z += dir.z * step;
+    colliders.resolve(this.position, this.radius);
+    this.group.rotation.y = Math.atan2(dir.x, dir.z);
+  }
+
+  private pickMoveDirection(
+    nx: number,
+    nz: number,
+    target: THREE.Vector3,
+    step: number,
+    colliders: Colliders,
+  ): { x: number; z: number } {
+    const before = distTo(this.position.x, this.position.z, target.x, target.z);
+    const angles = [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.55, -1.55, 2.1, -2.1];
+    let best: { x: number; z: number } | null = null;
+    let bestScore = -Infinity;
+
+    for (const rawAngle of angles) {
+      const angle = rawAngle === 0 ? 0 : Math.abs(rawAngle) * this.avoidSide * Math.sign(rawAngle);
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const x = nx * cos - nz * sin;
+      const z = nx * sin + nz * cos;
+      const next = { x: this.position.x + x * step, z: this.position.z + z * step };
+      if (colliders.collides(next, this.radius)) continue;
+      const after = distTo(next.x, next.z, target.x, target.z);
+      const progress = before - after;
+      const score = progress - Math.abs(angle) * 0.08;
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x, z };
+      }
+    }
+
+    if (!best) {
+      this.avoidSide *= -1;
+      return { x: -nz * this.avoidSide, z: nx * this.avoidSide };
+    }
+
+    if (bestScore < this.lastProgress * 0.25) this.avoidSide *= -1;
+    this.lastProgress = bestScore;
+    return best;
   }
 
   private face(target: THREE.Vector3): void {
@@ -154,4 +197,8 @@ export class MinionObject implements Unit {
     muzzle.position.set(0, 1.02, 0.9);
     this.group.add(muzzle);
   }
+}
+
+function distTo(ax: number, az: number, bx: number, bz: number): number {
+  return Math.hypot(bx - ax, bz - az);
 }

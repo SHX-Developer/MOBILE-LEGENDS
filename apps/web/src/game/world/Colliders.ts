@@ -42,6 +42,25 @@ export class Colliders {
     if (i >= 0) this.rects.splice(i, 1);
   }
 
+  collides(pos: { x: number; z: number }, radius: number): boolean {
+    for (const c of this.circles) {
+      const dx = pos.x - c.x;
+      const dz = pos.z - c.z;
+      const minDist = radius + c.r;
+      if (dx * dx + dz * dz < minDist * minDist) return true;
+    }
+    for (const r of this.rects) {
+      const dx = pos.x - r.x;
+      const dz = pos.z - r.z;
+      const cx = clamp(dx, -r.halfW, r.halfW);
+      const cz = clamp(dz, -r.halfZ, r.halfZ);
+      const ddx = dx - cx;
+      const ddz = dz - cz;
+      if (ddx * ddx + ddz * ddz < radius * radius) return true;
+    }
+    return false;
+  }
+
   resolve(pos: { x: number; z: number }, radius: number): void {
     for (const c of this.circles) {
       const dx = pos.x - c.x;

@@ -56,14 +56,14 @@ export class HealthBar {
 
     if (showLevel) {
       this.levelCanvas = document.createElement('canvas');
-      this.levelCanvas.width = 96;
-      this.levelCanvas.height = 64;
+      this.levelCanvas.width = 160;
+      this.levelCanvas.height = 112;
       const ctx = this.levelCanvas.getContext('2d');
       if (!ctx) throw new Error('2D canvas is required for health bar level labels');
       this.levelCtx = ctx;
       this.levelTexture = new THREE.CanvasTexture(this.levelCanvas);
       const level = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.58, 0.38),
+        new THREE.PlaneGeometry(0.95, 0.66),
         new THREE.MeshBasicMaterial({
           map: this.levelTexture,
           transparent: true,
@@ -72,7 +72,7 @@ export class HealthBar {
           side: THREE.DoubleSide,
         }),
       );
-      level.position.set(-longAxis / 2 - 0.42, 0, 0.02);
+      level.position.set(-longAxis / 2 - 0.68, 0, 0.02);
       level.renderOrder = 10001;
       this.group.add(level);
       this.setLevel(1);
@@ -88,18 +88,25 @@ export class HealthBar {
     if (!this.levelCtx || !this.levelCanvas || !this.levelTexture) return;
     const ctx = this.levelCtx;
     ctx.clearRect(0, 0, this.levelCanvas.width, this.levelCanvas.height);
-    ctx.fillStyle = 'rgba(10, 14, 20, 0.92)';
-    ctx.strokeStyle = 'rgba(255, 230, 120, 0.95)';
-    ctx.lineWidth = 5;
+    ctx.fillStyle = 'rgba(8, 12, 18, 0.96)';
+    ctx.strokeStyle = 'rgba(255, 216, 82, 1)';
+    ctx.lineWidth = 7;
     ctx.beginPath();
-    roundedRect(ctx, 10, 8, 76, 48, 18);
+    roundedRect(ctx, 10, 8, 140, 96, 28);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '800 34px system-ui, sans-serif';
+
+    ctx.fillStyle = '#ffd852';
+    ctx.font = '900 24px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(String(level), 48, 34);
+    ctx.fillText('LV', 44, 56);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 58px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(level), 100, 57);
     this.levelTexture.needsUpdate = true;
   }
 
