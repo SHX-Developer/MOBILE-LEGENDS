@@ -83,11 +83,8 @@ export class Tower implements Unit {
     scene.add(this.rangeRing);
 
     this.healthBar = new HealthBar(3.5, 0.32, color);
-    // Offset in world camera-left (−X) + up (+Y) projects to phone-up after
-    // the CSS 90° CW canvas rotation, placing the bar above the tower
-    // on the phone screen. Tower top is around y=10, so the +Y component
-    // positions the bar near the top in screen space.
-    this.healthBar.group.position.set(x - 1.5, 10, z);
+    // Centered over the tower in the rotated-phone landscape view.
+    this.healthBar.group.position.set(x, 10, z);
     scene.add(this.healthBar.group);
   }
 

@@ -2,19 +2,13 @@ import * as THREE from 'three';
 
 const _camQuat = new THREE.Quaternion();
 const _parentInv = new THREE.Quaternion();
-// 90° around local +Z. We use it to map the geometry's long axis (+X) onto
-// camera-up after billboarding — see billboard() below.
-const _zTilt = new THREE.Quaternion().setFromAxisAngle(
-  new THREE.Vector3(0, 0, 1),
-  Math.PI / 2,
-);
 
 /**
  * Floating health bar — a billboard quad whose long axis reads horizontally
- * in the user's portrait phone view. The CSS canvas is rotated 90° CW, so
- * what's canvas-up becomes phone-right; we orient the bar so its long axis
- * sits on camera-up (→ canvas-up → phone-right). Call billboard(camera)
- * once per frame.
+ * in the player's rotated-phone game view. The DOM canvas is rotated 90° CW
+ * for Telegram's portrait shell, but players turn the phone while playing,
+ * so the bar should stay horizontal in the underlying landscape canvas.
+ * Call billboard(camera) once per frame.
  *
  * Two flat planes are stacked: a tight black backing and a colored fill that
  * shrinks toward phone-left as HP drops (drains from the right).
@@ -64,15 +58,13 @@ export class HealthBar {
   }
 
   /**
-   * Orient the bar to face the camera with its long axis on phone-horizontal.
-   * Setting group.quaternion = camera.q * Z90 sends local +X → camera-up,
-   * which after the canvas's CSS 90° CW rotation reads as phone-right.
+   * Orient the bar to face the camera with its long axis on landscape-screen
+   * horizontal. A plain camera quaternion keeps local +X on camera-right.
    * The parent inverse keeps it correct even when the parent group rotates
    * (e.g. PlayerObject yaws on movement).
    */
   billboard(camera: THREE.Camera): void {
     camera.getWorldQuaternion(_camQuat);
-    _camQuat.multiply(_zTilt);
     const parent = this.group.parent;
     if (parent) {
       parent.getWorldQuaternion(_parentInv).invert();
