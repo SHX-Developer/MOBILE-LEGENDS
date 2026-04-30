@@ -10,6 +10,7 @@ import {
   TOWER_DAMAGE,
   TOWER_ATTACK_RANGE,
   TOWER_ATTACK_COOLDOWN_MS,
+  TOWER_PROJECTILE_SPEED_3D,
   COLOR_TOWER_BLUE,
   COLOR_TOWER_RED,
 } from '../constants.js';
@@ -28,6 +29,7 @@ export class Tower implements Unit {
   hp = TOWER_MAX_HP;
   alive = true;
   slowUntil = 0;
+  stunnedUntil = 0;
   readonly position: THREE.Vector3;
 
   onDestroyed?: () => void;
@@ -102,6 +104,8 @@ export class Tower implements Unit {
     projectiles.spawn(this.position, target.position, now, {
       team: this.team,
       damage: TOWER_DAMAGE,
+      kind: 'meteor',
+      speed: TOWER_PROJECTILE_SPEED_3D,
       target,
       owner: this,
     });

@@ -11,7 +11,7 @@ interface Frame {
 }
 
 type Team = 'blue' | 'red';
-type SkillId = 'q' | 'e';
+type SkillId = 'q' | 'e' | 'c';
 
 function computeFrame(): Frame {
   const vpW = window.innerWidth;
@@ -27,6 +27,8 @@ export function GameCanvas() {
   const [frame, setFrame] = useState<Frame>(() => computeFrame());
   const [gameKey, setGameKey] = useState(0);
   const [matchEnd, setMatchEnd] = useState<Team | null>(null);
+  const [matchMs, setMatchMs] = useState(0);
+  const [respawnMs, setRespawnMs] = useState(0);
 
   useEffect(() => {
     const update = () => setFrame(computeFrame());
@@ -47,6 +49,18 @@ export function GameCanvas() {
       game.destroy();
       gameRef.current = null;
     };
+  }, [gameKey]);
+
+  useEffect(() => {
+    setMatchMs(0);
+    setRespawnMs(0);
+    const handle = window.setInterval(() => {
+      const game = gameRef.current;
+      if (!game) return;
+      setMatchMs(game.getMatchElapsedMs());
+      setRespawnMs(game.getPlayerRespawnLeft());
+    }, 250);
+    return () => window.clearInterval(handle);
   }, [gameKey]);
 
   // Stable callbacks — keep memoised children from re-mounting on parent renders.
@@ -95,6 +109,7 @@ export function GameCanvas() {
         }}
       >
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+        <MatchTimer elapsedMs={matchMs} respawnMs={respawnMs} />
         <Joystick onChange={onJoystickChange} />
         <FireButton onPress={onFirePress} onRelease={onFireRelease} />
         <SkillButton
@@ -119,11 +134,61 @@ export function GameCanvas() {
           totalMs={8000}
           getGame={getGame}
         />
+        <SkillButton
+          id="c"
+          label="C"
+          subtitle="STUN"
+          accent="#b56cff"
+          right={240}
+          bottom={36}
+          size={78}
+          totalMs={10000}
+          getGame={getGame}
+        />
       </div>
 
       {matchEnd && <MatchEndOverlay winner={matchEnd} onRestart={restart} />}
     </div>
   );
+}
+
+function MatchTimer({ elapsedMs, respawnMs }: { elapsedMs: number; respawnMs: number }) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 14,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 10,
+        minWidth: 112,
+        height: respawnMs > 0 ? 50 : 34,
+        padding: respawnMs > 0 ? '6px 14px' : '4px 14px',
+        borderRadius: 8,
+        background: 'rgba(8, 12, 18, 0.72)',
+        border: '1px solid rgba(255, 255, 255, 0.18)',
+        color: '#fff',
+        display: 'grid',
+        placeItems: 'center',
+        pointerEvents: 'none',
+        boxShadow: '0 5px 18px rgba(0,0,0,0.35)',
+      }}
+    >
+      <div style={{ fontSize: 20, fontWeight: 900, lineHeight: 1 }}>{formatMatchTime(elapsedMs)}</div>
+      {respawnMs > 0 && (
+        <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, color: '#ffcd66', lineHeight: 1 }}>
+          RESPAWN {Math.ceil(respawnMs / 1000)}s
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatMatchTime(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 const JOY_BASE = 180;
@@ -311,7 +376,8 @@ const SkillButton = memo(function SkillButton({
     const tick = () => {
       const g = getGame();
       if (!g) return;
-      const cd = id === 'q' ? g.getQCooldownLeft() : g.getECooldownLeft();
+      const cd =
+        id === 'q' ? g.getQCooldownLeft() : id === 'e' ? g.getECooldownLeft() : g.getCCooldownLeft();
       setCooldown((prev) => (Math.abs(prev - cd) > 30 || cd === 0 ? cd : prev));
     };
     const handle = window.setInterval(tick, 100);

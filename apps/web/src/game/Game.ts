@@ -4,12 +4,18 @@ import {
   PLAYER_ATTACK_RANGE,
   PLAYER_RADIUS,
   PLAYER_RESPAWN_MS,
+  RESPAWN_LEVEL_PENALTY_MS,
+  RESPAWN_MATCH_MINUTE_PENALTY_MS,
+  RESPAWN_MAX_MS,
   MINION_WAVE_INTERVAL_MS,
   MINION_WAVE_SIZE,
   SKILL_E_COOLDOWN_MS,
   SKILL_E_RANGE,
   SKILL_E_SLOW_DURATION_MS,
   SKILL_E_SLOW_FACTOR,
+  SKILL_C_COOLDOWN_MS,
+  SKILL_C_RANGE,
+  SKILL_C_STUN_DURATION_MS,
   SKILL_Q_COOLDOWN_MS,
   SKILL_Q_RANGE,
   SPAWN_BLUE_X,
@@ -32,7 +38,7 @@ import { FloatingTextManager } from './combat/FloatingTextManager.js';
 import type { Team, Unit } from './combat/Unit.js';
 import { Haptics } from './haptics.js';
 
-export type SkillId = 'q' | 'e';
+export type SkillId = 'q' | 'e' | 'c';
 
 interface AimState {
   active: boolean;
@@ -65,7 +71,9 @@ export class Game {
   private lastAttackAt = -Infinity;
   private lastQAt = -Infinity;
   private lastEAt = -Infinity;
+  private lastCAt = -Infinity;
   private respawnAt = 0;
+  private readonly matchStartedAt = performance.now();
   private playerWasAlive = true;
   private gameOver = false;
   private lastPlayerHp = 0;
@@ -75,6 +83,7 @@ export class Game {
   private aim: Record<SkillId, AimState> = {
     q: { active: false, dirX: 0, dirZ: 1, range: SKILL_Q_RANGE },
     e: { active: false, dirX: 0, dirZ: 1, range: SKILL_E_RANGE },
+    c: { active: false, dirX: 0, dirZ: 1, range: SKILL_C_RANGE },
   };
 
   constructor(private readonly container: HTMLElement) {
@@ -153,7 +162,7 @@ export class Game {
   startAim(skill: SkillId): void {
     const a = this.aim[skill];
     a.active = true;
-    a.range = skill === 'q' ? SKILL_Q_RANGE : SKILL_E_RANGE;
+    a.range = skill === 'q' ? SKILL_Q_RANGE : skill === 'e' ? SKILL_E_RANGE : SKILL_C_RANGE;
 
     const enemy = this.registry.findNearestEnemy(
       this.player.team,
@@ -200,7 +209,9 @@ export class Game {
   cancelAim(skill: SkillId): void {
     const a = this.aim[skill];
     a.active = false;
-    if (!this.aim.q.active && !this.aim.e.active) this.aimIndicator.visible = false;
+    if (!this.aim.q.active && !this.aim.e.active && !this.aim.c.active) {
+      this.aimIndicator.visible = false;
+    }
   }
 
   getAttackCooldownLeft(now = performance.now()): number {
@@ -211,6 +222,15 @@ export class Game {
   }
   getECooldownLeft(now = performance.now()): number {
     return Math.max(0, SKILL_E_COOLDOWN_MS - (now - this.lastEAt));
+  }
+  getCCooldownLeft(now = performance.now()): number {
+    return Math.max(0, SKILL_C_COOLDOWN_MS - (now - this.lastCAt));
+  }
+  getMatchElapsedMs(now = performance.now()): number {
+    return Math.max(0, now - this.matchStartedAt);
+  }
+  getPlayerRespawnLeft(now = performance.now()): number {
+    return this.player.alive ? 0 : Math.max(0, this.respawnAt - now);
   }
 
   destroy(): void {
@@ -271,7 +291,7 @@ export class Game {
   }
 
   private refreshAimIndicator(): void {
-    const active = this.aim.q.active ? this.aim.q : this.aim.e.active ? this.aim.e : null;
+    const active = this.aim.q.active ? this.aim.q : this.aim.e.active ? this.aim.e : this.aim.c.active ? this.aim.c : null;
     if (!active) {
       this.aimIndicator.visible = false;
       return;
@@ -305,8 +325,9 @@ export class Game {
     if (this.player.alive) {
       this.player.update(this.input.getMovement(), delta, now);
       this.colliders.resolve(this.player.position, PLAYER_RADIUS);
-      if (wantsAttack) this.tryAutoAttack(now);
-      if (skillReq) {
+      const canAct = this.player.stunnedUntil <= now;
+      if (canAct && wantsAttack) this.tryAutoAttack(now);
+      if (canAct && skillReq) {
         let dx = skillReq.dirX;
         let dz = skillReq.dirZ;
         if (Math.hypot(dx, dz) < 1e-3) {
@@ -314,17 +335,19 @@ export class Game {
           dz = this.player.facing.z;
         }
         if (skillReq.id === 'q') this.tryUseQ(now, dx, dz);
-        else this.tryUseE(now, dx, dz);
+        else if (skillReq.id === 'e') this.tryUseE(now, dx, dz);
+        else this.tryUseC(now, dx, dz);
       }
     } else if (now >= this.respawnAt) {
       this.player.respawn();
     }
 
     if (!this.player.alive && this.playerWasAlive) {
-      this.respawnAt = now + PLAYER_RESPAWN_MS;
+      this.respawnAt = now + this.getRespawnDelayMs(this.player.level, now);
     }
     this.playerWasAlive = this.player.alive;
 
+    this.bot.respawnDelayMs = this.getRespawnDelayMs(this.bot.level, now);
     this.bot.update(delta, now, this.registry, this.projectiles, this.colliders);
     this.updateMinions(delta, now);
 
@@ -417,6 +440,27 @@ export class Game {
     this.lastEAt = now;
   }
 
+  private tryUseC(now: number, dirX: number, dirZ: number): void {
+    if (now - this.lastCAt < SKILL_C_COOLDOWN_MS) return;
+    this.player.faceDirection(dirX, dirZ);
+    const origin = this.player.position;
+    const target = new THREE.Vector3(
+      origin.x + dirX * SKILL_C_RANGE,
+      origin.y,
+      origin.z + dirZ * SKILL_C_RANGE,
+    );
+    this.projectiles.spawn(origin, target, now, {
+      team: this.player.team,
+      damage: this.player.skillCDamage,
+      kind: 'control',
+      effect: { stun: { durationMs: SKILL_C_STUN_DURATION_MS } },
+      owner: this.player,
+      maxDistance: SKILL_C_RANGE,
+      fromPlayer: true,
+    });
+    this.lastCAt = now;
+  }
+
   private spinCrystals(delta: number): void {
     const crystals = this.scene.userData.crystals as THREE.Mesh[] | undefined;
     if (!crystals) return;
@@ -456,5 +500,14 @@ export class Game {
       minion.dispose();
       this.minions.splice(i, 1);
     }
+  }
+
+  private getRespawnDelayMs(level: number, now: number): number {
+    const matchMinutes = Math.floor(this.getMatchElapsedMs(now) / 60000);
+    const delay =
+      PLAYER_RESPAWN_MS +
+      (level - 1) * RESPAWN_LEVEL_PENALTY_MS +
+      matchMinutes * RESPAWN_MATCH_MINUTE_PENALTY_MS;
+    return Math.min(RESPAWN_MAX_MS, delay);
   }
 }

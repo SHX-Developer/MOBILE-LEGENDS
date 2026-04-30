@@ -28,6 +28,7 @@ export class Base implements Unit {
   hp = BASE_MAX_HP;
   alive = true;
   slowUntil = 0;
+  stunnedUntil = 0;
   readonly position: THREE.Vector3;
 
   onDestroyed?: () => void;

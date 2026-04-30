@@ -23,6 +23,7 @@ export class MinionObject implements Unit {
   hp = MINION_MAX_HP;
   alive = true;
   slowUntil = 0;
+  stunnedUntil = 0;
   deadAt = 0;
 
   private readonly healthBar: HealthBar;
@@ -58,6 +59,7 @@ export class MinionObject implements Unit {
     objective: Unit | null,
   ): void {
     if (!this.alive) return;
+    if (this.stunnedUntil > now) return;
 
     const target = registry.findNearestEnemy(this.team, this.position, MINION_ATTACK_RANGE, [
       'minion',

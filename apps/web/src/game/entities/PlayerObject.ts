@@ -12,13 +12,14 @@ import {
   PLAYER_RADIUS,
   PLAYER_SPEED_3D,
   SKILL_E_DAMAGE,
+  SKILL_C_DAMAGE,
   SKILL_Q_DAMAGE,
 } from '../constants.js';
 import type { Unit, Team } from '../combat/Unit.js';
 import { HealthBar } from '../combat/HealthBar.js';
 
 /**
- * Layla — markswoman. Built so that her gun points along the local +Z axis,
+ * Layla — markswoman. Built so that her bow points along the local +Z axis,
  * which matches the rotation formula in update(): atan2(input.x, input.z).
  */
 export class PlayerObject implements Unit {
@@ -31,6 +32,7 @@ export class PlayerObject implements Unit {
   hp = PLAYER_MAX_HP;
   alive = true;
   slowUntil = 0;
+  stunnedUntil = 0;
   level = 1;
   xp = 0;
 
@@ -45,7 +47,7 @@ export class PlayerObject implements Unit {
     this.group.position.copy(spawn);
     this.healthBar.group.position.set(0, 3, 0);
     this.group.add(this.healthBar.group);
-    this.healthBar.setLevel(this.level);
+    this.refreshLevelBadge();
 
     this.rangeRing = new THREE.Mesh(
       new THREE.RingGeometry(PLAYER_ATTACK_RANGE - 0.35, PLAYER_ATTACK_RANGE, 64),
@@ -94,8 +96,16 @@ export class PlayerObject implements Unit {
     return SKILL_E_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6);
   }
 
+  get skillCDamage(): number {
+    return SKILL_C_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4);
+  }
+
   update(input: { x: number; z: number }, deltaSec: number, now: number): void {
     if (!this.alive) return;
+    if (this.stunnedUntil > now) {
+      this.velocity.set(0, 0, 0);
+      return;
+    }
     const speed = this.slowUntil > now ? PLAYER_SPEED_3D * 0.5 : PLAYER_SPEED_3D;
     const len = Math.hypot(input.x, input.z);
     if (len > 0) {
@@ -146,9 +156,9 @@ export class PlayerObject implements Unit {
       const hpGain = this.maxHp - oldMaxHp;
       this.hp = Math.min(this.maxHp, this.hp + hpGain);
       this.healthBar.setRatio(this.hp / this.maxHp);
-      this.healthBar.setLevel(this.level);
     }
     if (this.level >= HERO_MAX_LEVEL) this.xp = 0;
+    this.refreshLevelBadge();
   }
 
   private die(): void {
@@ -160,6 +170,7 @@ export class PlayerObject implements Unit {
     this.hp = this.maxHp;
     this.alive = true;
     this.slowUntil = 0;
+    this.stunnedUntil = 0;
     this.group.position.copy(this.spawn);
     this.group.visible = true;
     this.velocity.set(0, 0, 0);
@@ -168,6 +179,11 @@ export class PlayerObject implements Unit {
 
   private xpToNext(): number {
     return Math.round(HERO_BASE_XP_TO_LEVEL * HERO_XP_LEVEL_GROWTH ** (this.level - 1));
+  }
+
+  private refreshLevelBadge(): void {
+    const progress = this.level >= HERO_MAX_LEVEL ? 1 : this.xp / this.xpToNext();
+    this.healthBar.setLevel(this.level, progress);
   }
 
   private buildLayla(): void {
@@ -180,16 +196,17 @@ export class PlayerObject implements Unit {
       metalness: 0.4,
     });
     const hair = new THREE.MeshStandardMaterial({ color: 0xf6e3a8, roughness: 0.7 });
-    const gunMat = new THREE.MeshStandardMaterial({
+    const bowMat = new THREE.MeshStandardMaterial({
       color: 0x2a2a36,
       roughness: 0.4,
       metalness: 0.7,
     });
-    const gunAccent = new THREE.MeshStandardMaterial({
+    const bowAccent = new THREE.MeshStandardMaterial({
       color: 0xd6a93a,
       roughness: 0.4,
       metalness: 0.6,
     });
+    const stringMat = new THREE.MeshStandardMaterial({ color: 0xf4ead5, roughness: 0.5 });
 
     const legGeom = new THREE.CylinderGeometry(0.18, 0.18, 0.9, 12);
     for (const x of [-0.2, 0.2]) {
@@ -250,18 +267,36 @@ export class PlayerObject implements Unit {
     ribbon.position.y = 2.5;
     this.group.add(ribbon);
 
-    const gun = new THREE.Group();
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.95), gunMat);
-    barrel.position.z = 0.4;
-    gun.add(barrel);
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.32, 0.18), gunMat);
-    grip.position.set(0, -0.18, 0);
-    gun.add(grip);
-    const accent = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.4), gunAccent);
-    accent.position.set(0, 0.12, 0.55);
-    gun.add(accent);
-    gun.position.set(0.45, 1.25, 0.55);
-    gun.castShadow = true;
-    this.group.add(gun);
+    const bow = buildBow(bowMat, bowAccent, stringMat);
+    bow.position.set(0.45, 1.42, 0.42);
+    bow.rotation.z = -Math.PI / 18;
+    this.group.add(bow);
   }
+}
+
+function buildBow(
+  bowMat: THREE.Material,
+  arrowMat: THREE.Material,
+  stringMat: THREE.Material,
+): THREE.Group {
+  const bow = new THREE.Group();
+  const arc = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.035, 8, 28), bowMat);
+  arc.scale.set(0.55, 1.25, 1);
+  arc.castShadow = true;
+  bow.add(arc);
+
+  const string = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.14, 6), stringMat);
+  string.position.z = -0.08;
+  bow.add(string);
+
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.85, 6), arrowMat);
+  shaft.rotation.x = Math.PI / 2;
+  shaft.position.z = 0.28;
+  bow.add(shaft);
+
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.18, 8), arrowMat);
+  tip.rotation.x = Math.PI / 2;
+  tip.position.z = 0.78;
+  bow.add(tip);
+  return bow;
 }

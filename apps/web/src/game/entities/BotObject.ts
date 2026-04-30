@@ -39,8 +39,10 @@ export class BotObject implements Unit {
   hp = BOT_MAX_HP;
   alive = true;
   slowUntil = 0;
+  stunnedUntil = 0;
   level = 1;
   xp = 0;
+  respawnDelayMs = BOT_RESPAWN_MS;
 
   private readonly spawn: THREE.Vector3;
   private readonly healthBar = new HealthBar(2.4, 0.22, 0xff5050, true);
@@ -53,7 +55,7 @@ export class BotObject implements Unit {
     this.group.position.copy(spawn);
     this.healthBar.group.position.set(0, 3, 0);
     this.group.add(this.healthBar.group);
-    this.healthBar.setLevel(this.level);
+    this.refreshLevelBadge();
   }
 
   get position(): THREE.Vector3 {
@@ -86,6 +88,7 @@ export class BotObject implements Unit {
       if (now >= this.respawnAt) this.respawn();
       return;
     }
+    if (this.stunnedUntil > now) return;
 
     const slowed = this.slowUntil > now;
     const speed = slowed ? BOT_SPEED_3D * 0.5 : BOT_SPEED_3D;
@@ -151,21 +154,22 @@ export class BotObject implements Unit {
       this.level += 1;
       this.hp = Math.min(this.maxHp, this.hp + (this.maxHp - oldMaxHp));
       this.healthBar.setRatio(this.hp / this.maxHp);
-      this.healthBar.setLevel(this.level);
     }
     if (this.level >= HERO_MAX_LEVEL) this.xp = 0;
+    this.refreshLevelBadge();
   }
 
   private die(): void {
     this.alive = false;
     this.group.visible = false;
-    this.respawnAt = performance.now() + BOT_RESPAWN_MS;
+    this.respawnAt = performance.now() + this.respawnDelayMs;
   }
 
   private respawn(): void {
     this.hp = this.maxHp;
     this.alive = true;
     this.slowUntil = 0;
+    this.stunnedUntil = 0;
     this.group.position.copy(this.spawn);
     this.group.visible = true;
     this.healthBar.setRatio(1);
@@ -173,6 +177,11 @@ export class BotObject implements Unit {
 
   private xpToNext(): number {
     return Math.round(HERO_BASE_XP_TO_LEVEL * HERO_XP_LEVEL_GROWTH ** (this.level - 1));
+  }
+
+  private refreshLevelBadge(): void {
+    const progress = this.level >= HERO_MAX_LEVEL ? 1 : this.xp / this.xpToNext();
+    this.healthBar.setLevel(this.level, progress);
   }
 
   private moveToward(target: THREE.Vector3, dt: number, speed: number): void {
@@ -196,6 +205,12 @@ export class BotObject implements Unit {
       roughness: 0.4,
       metalness: 0.4,
     });
+    const bowDark = new THREE.MeshStandardMaterial({
+      color: 0x331414,
+      roughness: 0.45,
+      metalness: 0.5,
+    });
+    const stringMat = new THREE.MeshStandardMaterial({ color: 0xf1dac2, roughness: 0.5 });
 
     const legGeom = new THREE.CylinderGeometry(0.2, 0.2, 0.9, 12);
     for (const x of [-0.22, 0.22]) {
@@ -236,5 +251,37 @@ export class BotObject implements Unit {
     const helmTip = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), accent);
     helmTip.position.y = 2.78;
     this.group.add(helmTip);
+
+    const bow = buildBow(bowDark, accent, stringMat);
+    bow.position.set(0.58, 1.42, 0.38);
+    bow.rotation.z = -Math.PI / 18;
+    this.group.add(bow);
   }
+}
+
+function buildBow(
+  bowMat: THREE.Material,
+  arrowMat: THREE.Material,
+  stringMat: THREE.Material,
+): THREE.Group {
+  const bow = new THREE.Group();
+  const arc = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.035, 8, 28), bowMat);
+  arc.scale.set(0.55, 1.25, 1);
+  arc.castShadow = true;
+  bow.add(arc);
+
+  const string = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.1, 6), stringMat);
+  string.position.z = -0.08;
+  bow.add(string);
+
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.78, 6), arrowMat);
+  shaft.rotation.x = Math.PI / 2;
+  shaft.position.z = 0.25;
+  bow.add(shaft);
+
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.18, 8), arrowMat);
+  tip.rotation.x = Math.PI / 2;
+  tip.position.z = 0.7;
+  bow.add(tip);
+  return bow;
 }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type SkillId = 'q' | 'e';
+export type SkillId = 'q' | 'e' | 'c';
 
 export interface SkillRequest {
   id: SkillId;
@@ -77,7 +77,7 @@ export class InputController {
     this.keys.add(key);
     // Keyboard skills fire instantly along the player's current facing.
     // (The mobile UI uses requestSkill with a manually-aimed direction.)
-    if (key === 'q' || key === 'e') {
+    if (key === 'q' || key === 'e' || key === 'c') {
       this.pendingSkill = { id: key as SkillId, dirX: 0, dirZ: 0 };
     }
   };

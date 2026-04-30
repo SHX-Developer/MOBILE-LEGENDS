@@ -20,6 +20,7 @@ export interface Unit {
   hp: number;
   alive: boolean;
   slowUntil: number;
+  stunnedUntil: number;
   takeDamage(amount: number): void;
   grantXp?(amount: number): void;
 }

@@ -8,14 +8,17 @@ import {
 import type { Team, Unit } from '../combat/Unit.js';
 import type { UnitRegistry } from '../combat/UnitRegistry.js';
 
-export type ProjectileKind = 'basic' | 'heavy' | 'slow';
+export type ProjectileKind = 'basic' | 'heavy' | 'slow' | 'meteor' | 'control';
 
 export interface ProjectileSpec {
   team: Team;
   damage: number;
   kind?: ProjectileKind;
   /** Status effect applied to whatever the projectile hits. */
-  effect?: { slow?: { factor: number; durationMs: number } };
+  effect?: {
+    slow?: { factor: number; durationMs: number };
+    stun?: { durationMs: number };
+  };
   /** Auto attacks pass a target so the shot follows and cannot miss. */
   target?: Unit;
   owner?: Unit;
@@ -27,7 +30,7 @@ export interface ProjectileSpec {
 }
 
 interface Projectile {
-  mesh: THREE.Mesh;
+  mesh: THREE.Object3D;
   velocity: THREE.Vector3;
   spawnedAt: number;
   team: Team;
@@ -42,8 +45,7 @@ interface Projectile {
 }
 
 interface Variant {
-  geom: THREE.BufferGeometry;
-  mat: THREE.MeshStandardMaterial;
+  create: () => THREE.Object3D;
 }
 
 export class ProjectileManager {
@@ -55,33 +57,21 @@ export class ProjectileManager {
   private readonly variants: Record<ProjectileKind, Variant>;
 
   constructor(private readonly scene: THREE.Scene) {
-    const basicGeom = new THREE.ConeGeometry(0.28, 1.1, 12);
-    basicGeom.rotateX(Math.PI / 2);
-
     this.variants = {
       basic: {
-        geom: basicGeom,
-        mat: new THREE.MeshStandardMaterial({
-          color: 0xffd166,
-          emissive: 0xffae42,
-          emissiveIntensity: 0.8,
-        }),
+        create: createArrowProjectile,
       },
       heavy: {
-        geom: new THREE.SphereGeometry(0.6, 12, 12),
-        mat: new THREE.MeshStandardMaterial({
-          color: 0xff6e40,
-          emissive: 0xff3a1f,
-          emissiveIntensity: 1.0,
-        }),
+        create: () => createOrbProjectile(0.6, 0xff6e40, 0xff3a1f),
       },
       slow: {
-        geom: new THREE.SphereGeometry(0.42, 12, 12),
-        mat: new THREE.MeshStandardMaterial({
-          color: 0x66ddff,
-          emissive: 0x33aaff,
-          emissiveIntensity: 0.9,
-        }),
+        create: () => createOrbProjectile(0.42, 0x66ddff, 0x33aaff),
+      },
+      control: {
+        create: () => createOrbProjectile(0.46, 0xb56cff, 0x7434ff),
+      },
+      meteor: {
+        create: createMeteorProjectile,
       },
     };
   }
@@ -99,7 +89,7 @@ export class ProjectileManager {
     dir.normalize().multiplyScalar(speed);
 
     const variant = this.variants[spec.kind ?? 'basic'];
-    const mesh = new THREE.Mesh(variant.geom, variant.mat);
+    const mesh = variant.create();
     mesh.position.copy(origin);
     mesh.position.y = 1.4;
     mesh.rotation.y = Math.atan2(dir.x, dir.z);
@@ -174,6 +164,10 @@ export class ProjectileManager {
       const until = now + p.effect.slow.durationMs;
       if (until > unit.slowUntil) unit.slowUntil = until;
     }
+    if (p.effect?.stun) {
+      const until = now + p.effect.stun.durationMs;
+      if (until > unit.stunnedUntil) unit.stunnedUntil = until;
+    }
     if (wasAlive && !unit.alive && p.owner?.kind === 'hero') {
       p.owner.grantXp?.(unit.xpReward);
     }
@@ -184,4 +178,72 @@ export class ProjectileManager {
     this.scene.remove(this.projectiles[index].mesh);
     this.projectiles.splice(index, 1);
   }
+}
+
+function createArrowProjectile(): THREE.Object3D {
+  const arrow = new THREE.Group();
+  const shaftMat = new THREE.MeshStandardMaterial({
+    color: 0xd9b56d,
+    roughness: 0.55,
+    metalness: 0.15,
+  });
+  const tipMat = new THREE.MeshStandardMaterial({
+    color: 0xf8f0dc,
+    emissive: 0xffcf5a,
+    emissiveIntensity: 0.35,
+    roughness: 0.35,
+    metalness: 0.6,
+  });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.2, 8), shaftMat);
+  shaft.rotation.x = Math.PI / 2;
+  arrow.add(shaft);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.34, 10), tipMat);
+  tip.rotation.x = Math.PI / 2;
+  tip.position.z = 0.76;
+  arrow.add(tip);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.22, 8), shaftMat);
+  tail.rotation.x = -Math.PI / 2;
+  tail.position.z = -0.68;
+  arrow.add(tail);
+  return arrow;
+}
+
+function createOrbProjectile(radius: number, color: number, emissive: number): THREE.Object3D {
+  return new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 12, 12),
+    new THREE.MeshStandardMaterial({
+      color,
+      emissive,
+      emissiveIntensity: 1.0,
+    }),
+  );
+}
+
+function createMeteorProjectile(): THREE.Object3D {
+  const meteor = new THREE.Group();
+  const core = new THREE.Mesh(
+    new THREE.DodecahedronGeometry(0.65, 0),
+    new THREE.MeshStandardMaterial({
+      color: 0xff7a2f,
+      emissive: 0xff3300,
+      emissiveIntensity: 1.25,
+      roughness: 0.85,
+      flatShading: true,
+    }),
+  );
+  meteor.add(core);
+  const tail = new THREE.Mesh(
+    new THREE.ConeGeometry(0.38, 1.1, 12),
+    new THREE.MeshStandardMaterial({
+      color: 0xffc34d,
+      emissive: 0xff6a00,
+      emissiveIntensity: 0.9,
+      transparent: true,
+      opacity: 0.82,
+    }),
+  );
+  tail.rotation.x = -Math.PI / 2;
+  tail.position.z = -0.72;
+  meteor.add(tail);
+  return meteor;
 }

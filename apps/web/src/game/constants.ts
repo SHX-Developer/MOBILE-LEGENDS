@@ -19,6 +19,7 @@ export const PLAYER_SPEED_3D = 6.4;
 // Projectiles
 export const PROJECTILE_SPEED_3D = 28;
 export const BASIC_PROJECTILE_SPEED_3D = 44;
+export const TOWER_PROJECTILE_SPEED_3D = 20;
 export const PROJECTILE_LIFETIME_MS = 1500;
 export const PROJECTILE_RADIUS = 0.4;
 
@@ -28,6 +29,9 @@ export const PLAYER_ATTACK_DAMAGE = 50;
 export const PLAYER_ATTACK_RANGE = 12;
 export const PLAYER_ATTACK_COOLDOWN_MS = 480;
 export const PLAYER_RESPAWN_MS = 6000;
+export const RESPAWN_LEVEL_PENALTY_MS = 900;
+export const RESPAWN_MATCH_MINUTE_PENALTY_MS = 700;
+export const RESPAWN_MAX_MS = 32000;
 export const HERO_MAX_LEVEL = 10;
 export const HERO_HP_PER_LEVEL = 70;
 export const HERO_DAMAGE_PER_LEVEL = 10;
@@ -44,7 +48,7 @@ export const TOWER_RED_Z = -22;
 export const TOWER_MAX_HP = 1000;
 export const TOWER_DAMAGE = 40;
 export const TOWER_ATTACK_RANGE = 14;
-export const TOWER_ATTACK_COOLDOWN_MS = 850;
+export const TOWER_ATTACK_COOLDOWN_MS = 1500;
 
 // Bases — opposite corners of the map. Lane runs along the (+x,−z) ↔ (−x,+z)
 // anti-diagonal; player (blue) base sits at the (−x,+z) corner so it shows
@@ -79,6 +83,10 @@ export const SKILL_E_COOLDOWN_MS = 8000;
 export const SKILL_E_RANGE = 14;
 export const SKILL_E_SLOW_FACTOR = 0.5;
 export const SKILL_E_SLOW_DURATION_MS = 2000;
+export const SKILL_C_DAMAGE = 20;
+export const SKILL_C_COOLDOWN_MS = 10000;
+export const SKILL_C_RANGE = 13;
+export const SKILL_C_STUN_DURATION_MS = 1000;
 
 // Minions
 export const MINION_WAVE_INTERVAL_MS = 14000;
