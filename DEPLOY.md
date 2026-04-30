@@ -160,3 +160,14 @@ The second call should return `{"ok":true,"uptime":...}`.
 Push to `main` → in Dokploy click **Deploy** (or enable **Auto Deploy** in
 the General tab to redeploy on every push). BuildKit cache + the layered
 pnpm install keep rebuilds in the seconds range when only source changed.
+
+To avoid a short public 404 window during redeploys:
+
+- Keep the `web` healthcheck enabled from `compose.dokploy.yml`; it verifies
+  nginx is already serving `/healthz`.
+- In Dokploy, enable zero-downtime / rolling deploy for the Compose service
+  when the option is available.
+- If Dokploy supports scaling Compose services, run at least 2 `web` replicas
+  so Traefik always has an old healthy container while the new one starts.
+- `index.html` is served with `no-store` so Telegram/WebView does not keep an
+  old HTML shell that points to deleted Vite hashed assets.

@@ -61,6 +61,12 @@ services:
         - type=local,src=.docker-cache/web
       cache_to:
         - type=local,dest=.docker-cache/web,mode=max
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
 
   caddy:
     <<: [*restart, *logging]

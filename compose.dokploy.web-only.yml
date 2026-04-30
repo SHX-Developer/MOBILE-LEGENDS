@@ -17,6 +17,12 @@ services:
         VITE_API_URL: /api
     expose:
       - "80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
     networks:
       - dokploy-network
     logging:
