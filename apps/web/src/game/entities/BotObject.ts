@@ -42,7 +42,7 @@ export class BotObject implements Unit {
     this.spawn = spawn.clone();
     this.buildVisual();
     this.group.position.copy(spawn);
-    this.healthBar.group.position.set(-3, 2.5, 0);
+    this.healthBar.group.position.set(-1, 2.5, 0);
     this.group.add(this.healthBar.group);
   }
 
@@ -56,7 +56,7 @@ export class BotObject implements Unit {
     const yaw = this.group.rotation.y;
     const cos = Math.cos(yaw);
     const sin = Math.sin(yaw);
-    this.healthBar.group.position.set(-3 * cos, 2.5, -3 * sin);
+    this.healthBar.group.position.set(-1 * cos, 2.5, -1 * sin);
     this.healthBar.billboard(camera);
   }
 
