@@ -19,6 +19,7 @@ export class AuthService {
   ) {}
 
   async authenticate(initData: string): Promise<TelegramAuthResponse> {
+    console.log('[auth] raw initData:', initData);
     const tgUser = this.verifyAndExtractUser(initData);
     const { user, isNew } = await this.users.findOrCreate(String(tgUser.id));
     return { user: this.users.toPublic(user), isNew };
