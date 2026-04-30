@@ -31,32 +31,33 @@ export const PLAYER_RESPAWN_MS = 6000;
 // Towers — placed midway between each base and centre, on the diagonal.
 export const TOWER_RADIUS = 1.6;
 export const TOWER_HEIGHT = 5;
-export const TOWER_BLUE_X = 22;
-export const TOWER_BLUE_Z = -22;
-export const TOWER_RED_X = -22;
-export const TOWER_RED_Z = 22;
+export const TOWER_BLUE_X = -22;
+export const TOWER_BLUE_Z = 22;
+export const TOWER_RED_X = 22;
+export const TOWER_RED_Z = -22;
 export const TOWER_MAX_HP = 1000;
 export const TOWER_DAMAGE = 40;
 export const TOWER_ATTACK_RANGE = 14;
 export const TOWER_ATTACK_COOLDOWN_MS = 1100;
 
 // Bases — opposite corners of the map. Lane runs along the (+x,−z) ↔ (−x,+z)
-// anti-diagonal so the player base lands at "phone bottom-left" in landscape.
+// anti-diagonal; player (blue) base sits at the (−x,+z) corner so it shows
+// up at "phone bottom-left" in landscape view.
 export const BASE_RADIUS = 5;
-export const BASE_BLUE_X = HALF_W - 14;
-export const BASE_BLUE_Z = -HALF_H + 14;
-export const BASE_RED_X = -HALF_W + 14;
-export const BASE_RED_Z = HALF_H - 14;
+export const BASE_BLUE_X = -HALF_W + 14;
+export const BASE_BLUE_Z = HALF_H - 14;
+export const BASE_RED_X = HALF_W - 14;
+export const BASE_RED_Z = -HALF_H + 14;
 export const BASE_MAX_HP = 1500;
 export const BASE_HIT_RADIUS = 5;
 
 // Spawn points — just in front of each base, on the lane diagonal.
 const SPAWN_OFFSET = 6;
 const DIAG = Math.SQRT1_2; // 1/sqrt(2)
-export const SPAWN_BLUE_X = BASE_BLUE_X - SPAWN_OFFSET * DIAG;
-export const SPAWN_BLUE_Z = BASE_BLUE_Z + SPAWN_OFFSET * DIAG;
-export const SPAWN_RED_X = BASE_RED_X + SPAWN_OFFSET * DIAG;
-export const SPAWN_RED_Z = BASE_RED_Z - SPAWN_OFFSET * DIAG;
+export const SPAWN_BLUE_X = BASE_BLUE_X + SPAWN_OFFSET * DIAG;
+export const SPAWN_BLUE_Z = BASE_BLUE_Z - SPAWN_OFFSET * DIAG;
+export const SPAWN_RED_X = BASE_RED_X - SPAWN_OFFSET * DIAG;
+export const SPAWN_RED_Z = BASE_RED_Z + SPAWN_OFFSET * DIAG;
 
 // Skills
 export const SKILL_Q_DAMAGE = 130;
