@@ -5,8 +5,6 @@ import {
   HALF_W,
   HALF_H,
   LANE_WIDTH,
-  LANE_LENGTH,
-  LANE_ANGLE_RAD,
   COLOR_GROUND,
   COLOR_LANE,
   COLOR_WALL,
@@ -23,6 +21,7 @@ import {
   SPAWN_RED_X,
   SPAWN_RED_Z,
   SPAWN_ZONE_RADIUS,
+  LANE_PATHS,
 } from '../constants.js';
 import { buildBases, Base } from './Bases.js';
 import { buildTowers, Tower } from './Towers.js';
@@ -85,36 +84,57 @@ function addStripe(
   scene.add(m);
 }
 
+/**
+ * Build all three lanes (top / mid / bot). Each lane is drawn as a series
+ * of straight rectangles between waypoints, with a circular cap at every
+ * bend so the corners look smooth instead of mitred. Mid is a straight
+ * diagonal; top hugs the (-x, ...) wall before bending right; bot hugs
+ * the (..., +z) wall before bending up.
+ */
 function buildLane(scene: THREE.Scene): void {
-  const geom = new THREE.PlaneGeometry(LANE_LENGTH, LANE_WIDTH);
-  const mat = new THREE.MeshStandardMaterial({ color: COLOR_LANE, roughness: 0.9 });
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.rotation.x = -Math.PI / 2;
-  // Rotate the long axis onto the (+x,+z) ↔ (-x,-z) diagonal.
-  mesh.rotation.z = LANE_ANGLE_RAD;
-  mesh.position.y = 0.02;
-  scene.add(mesh);
+  const laneMat = new THREE.MeshStandardMaterial({ color: COLOR_LANE, roughness: 0.9 });
+  const startPt: readonly [number, number] = [BASE_BLUE_X, BASE_BLUE_Z];
+  const endPt: readonly [number, number] = [BASE_RED_X, BASE_RED_Z];
+  drawLanePolyline(scene, laneMat, [startPt, ...LANE_PATHS.top.blue, endPt]);
+  drawLanePolyline(scene, laneMat, [startPt, ...LANE_PATHS.mid.blue, endPt]);
+  drawLanePolyline(scene, laneMat, [startPt, ...LANE_PATHS.bot.blue, endPt]);
+}
 
-  // Tile markers along the lane every ~10 units — moving feels like progress.
-  const step = 10;
-  const half = LANE_LENGTH / 2 - 6;
-  const dirX = Math.cos(LANE_ANGLE_RAD);
-  const dirZ = -Math.sin(LANE_ANGLE_RAD);
-  for (let s = -half; s <= half; s += step) {
-    const m = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.2, 0.5),
-      new THREE.MeshBasicMaterial({
-        color: 0x8a5a25,
-        transparent: true,
-        opacity: 0.55,
-        depthWrite: false,
-      }),
+function drawLanePolyline(
+  scene: THREE.Scene,
+  mat: THREE.Material,
+  pts: ReadonlyArray<readonly [number, number]>,
+): void {
+  const half = LANE_WIDTH / 2;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, az] = pts[i];
+    const [bx, bz] = pts[i + 1];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.01) continue;
+    const segment = new THREE.Mesh(new THREE.PlaneGeometry(len + LANE_WIDTH * 0.4, LANE_WIDTH), mat);
+    segment.rotation.x = -Math.PI / 2;
+    // Rotate the segment so its +X aligns with (dx, dz). atan2(dz, dx) for
+    // ground-plane yaw, but the plane's normal points up so we negate.
+    segment.rotation.z = -Math.atan2(dz, dx);
+    segment.position.set((ax + bx) / 2, 0.02, (az + bz) / 2);
+    scene.add(segment);
+    // Disc cap at every joint so bends merge cleanly.
+    const cap = new THREE.Mesh(
+      new THREE.CircleGeometry(half, 28),
+      mat,
     );
-    m.rotation.x = -Math.PI / 2;
-    m.rotation.z = LANE_ANGLE_RAD + Math.PI / 2;
-    m.position.set(dirX * s, 0.03, dirZ * s);
-    scene.add(m);
+    cap.rotation.x = -Math.PI / 2;
+    cap.position.set(ax, 0.022, az);
+    scene.add(cap);
   }
+  // Final cap at the last point.
+  const last = pts[pts.length - 1];
+  const cap = new THREE.Mesh(new THREE.CircleGeometry(LANE_WIDTH / 2, 28), mat);
+  cap.rotation.x = -Math.PI / 2;
+  cap.position.set(last[0], 0.022, last[1]);
+  scene.add(cap);
 }
 
 function buildPerimeterWalls(scene: THREE.Scene, colliders: Colliders): void {

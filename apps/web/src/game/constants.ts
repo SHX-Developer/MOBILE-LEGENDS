@@ -39,17 +39,73 @@ export const HERO_BASE_XP_TO_LEVEL = 90;
 export const HERO_XP_LEVEL_GROWTH = 1.45;
 export const HERO_BASE_REGEN_PER_SEC = 85;
 
-// Towers — placed midway between each base and centre, on the diagonal.
+// Towers — 1 per lane per team. Mid sits on the centre diagonal; Top
+// runs along the (-x, ...) wall side and Bot along the (..., +z) wall.
 export const TOWER_RADIUS = 1.6;
 export const TOWER_HEIGHT = 5;
-export const TOWER_BLUE_X = -22;
-export const TOWER_BLUE_Z = 22;
-export const TOWER_RED_X = 22;
-export const TOWER_RED_Z = -22;
+// Mid lane towers (existing diagonal).
+export const TOWER_BLUE_MID_X = -22;
+export const TOWER_BLUE_MID_Z = 22;
+export const TOWER_RED_MID_X = 22;
+export const TOWER_RED_MID_Z = -22;
+// Top lane: blue base → goes up along x=-46 → bends right along z=-46.
+// Blue tower defends the vertical leg, red defends the horizontal leg.
+export const TOWER_BLUE_TOP_X = -44;
+export const TOWER_BLUE_TOP_Z = -8;
+export const TOWER_RED_TOP_X = 8;
+export const TOWER_RED_TOP_Z = -44;
+// Bot lane: blue base → goes right along z=+46 → bends up along x=+46.
+export const TOWER_BLUE_BOT_X = -8;
+export const TOWER_BLUE_BOT_Z = 44;
+export const TOWER_RED_BOT_X = 44;
+export const TOWER_RED_BOT_Z = 8;
 export const TOWER_MAX_HP = 1000;
 export const TOWER_DAMAGE = 40;
 export const TOWER_ATTACK_RANGE = 14;
 export const TOWER_ATTACK_COOLDOWN_MS = 1500;
+
+// Backwards-compat single-tower aliases (kept while older code paths
+// reference TOWER_BLUE_X / TOWER_RED_X — point them at the mid towers).
+export const TOWER_BLUE_X = TOWER_BLUE_MID_X;
+export const TOWER_BLUE_Z = TOWER_BLUE_MID_Z;
+export const TOWER_RED_X = TOWER_RED_MID_X;
+export const TOWER_RED_Z = TOWER_RED_MID_Z;
+
+// Lane waypoints — a minion spawned for `team` walks the path[team] in
+// order, attacking anything in range as it goes. Last waypoint is the
+// enemy base. Coordinates are 3-tuples [x, z] in world space.
+export type LaneId = 'top' | 'mid' | 'bot';
+type LanePath = ReadonlyArray<readonly [number, number]>;
+export const LANE_PATHS: Record<LaneId, { blue: LanePath; red: LanePath }> = {
+  top: {
+    blue: [
+      [-44, 0],
+      [-44, -44],
+      [44, -44],
+    ],
+    red: [
+      [44, -44],
+      [-44, -44],
+      [-44, 44],
+    ],
+  },
+  mid: {
+    blue: [[0, 0], [44, -44]],
+    red: [[0, 0], [-44, 44]],
+  },
+  bot: {
+    blue: [
+      [0, 44],
+      [44, 44],
+      [44, -44],
+    ],
+    red: [
+      [44, 0],
+      [44, 44],
+      [-44, 44],
+    ],
+  },
+};
 
 // Bases — opposite corners of the map. Lane runs along the (+x,−z) ↔ (−x,+z)
 // anti-diagonal; player (blue) base sits at the (−x,+z) corner so it shows

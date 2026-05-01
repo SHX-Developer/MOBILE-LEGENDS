@@ -32,6 +32,7 @@ import {
   SPAWN_BLUE_Z,
   SPAWN_RED_X,
   SPAWN_RED_Z,
+  LANE_PATHS,
 } from './constants.js';
 import { buildMap } from './world/MapBuilder.js';
 import type { Colliders } from './world/Colliders.js';
@@ -144,10 +145,21 @@ export class Game {
     this.registry.add(this.bot);
     for (const t of this.towers) this.registry.add(t);
 
-    // Bases are shielded by their tower: only join the registry (and become
-    // hittable) once the matching same-side tower falls.
-    this.towers[0].onDestroyed = () => this.registry.add(this.bases[0]);
-    this.towers[1].onDestroyed = () => this.registry.add(this.bases[1]);
+    // Bases are shielded by their team's towers — once all three towers on
+    // a side fall, the base joins the registry and becomes targetable.
+    // Towers are ordered [blueTop, blueMid, blueBot, redTop, redMid, redBot].
+    const exposeBaseIfReady = (team: Team) => {
+      const teamTowers = team === 'blue'
+        ? [this.towers[0], this.towers[1], this.towers[2]]
+        : [this.towers[3], this.towers[4], this.towers[5]];
+      if (teamTowers.every((t) => !t.alive)) {
+        this.registry.add(team === 'blue' ? this.bases[0] : this.bases[1]);
+      }
+    };
+    for (let i = 0; i < this.towers.length; i++) {
+      const team: Team = i < 3 ? 'blue' : 'red';
+      this.towers[i].onDestroyed = () => exposeBaseIfReady(team);
+    }
 
     // Match end via base destruction is offline-only. Online uses
     // server-driven kill score so client base sims can drift cosmetically
@@ -925,20 +937,21 @@ export class Game {
 
   private spawnMinionWave(now: number): void {
     this.lastMinionWaveAt = now;
-    const blueSpawn = new THREE.Vector3(SPAWN_BLUE_X - 2.2, 0, SPAWN_BLUE_Z + 2.2);
-    const redSpawn = new THREE.Vector3(SPAWN_RED_X + 2.2, 0, SPAWN_RED_Z - 2.2);
     const variants: MinionVariant[] = ['melee', 'ranged', 'tank'];
-    for (let i = 0; i < variants.length; i++) {
-      const config = MINION_CONFIGS[variants[i]];
-      this.minions.push(
-        ...[
-          new MinionObject(this.scene, 'blue', blueSpawn, i, config),
-          new MinionObject(this.scene, 'red', redSpawn, i, config),
-        ].map((m) => {
-          this.registry.add(m);
-          return m;
-        }),
-      );
+    const blueBaseSpawn = new THREE.Vector3(SPAWN_BLUE_X, 0, SPAWN_BLUE_Z);
+    const redBaseSpawn = new THREE.Vector3(SPAWN_RED_X, 0, SPAWN_RED_Z);
+    const lanes: Array<keyof typeof LANE_PATHS> = ['top', 'mid', 'bot'];
+    for (const lane of lanes) {
+      const bluePath = LANE_PATHS[lane].blue;
+      const redPath = LANE_PATHS[lane].red;
+      for (let i = 0; i < variants.length; i++) {
+        const config = MINION_CONFIGS[variants[i]];
+        const blue = new MinionObject(this.scene, 'blue', blueBaseSpawn, i, config, bluePath);
+        const red = new MinionObject(this.scene, 'red', redBaseSpawn, i, config, redPath);
+        this.minions.push(blue, red);
+        this.registry.add(blue);
+        this.registry.add(red);
+      }
     }
   }
 
@@ -950,8 +963,9 @@ export class Game {
   }
 
   private getMinionObjective(team: Team): Unit | null {
-    if (team === 'blue') return this.towers[1].alive ? this.towers[1] : this.bases[1];
-    return this.towers[0].alive ? this.towers[0] : this.bases[0];
+    // Final objective is always the enemy base — towers in between get
+    // engaged automatically by findNearestEnemy as the minion walks past.
+    return team === 'blue' ? this.bases[1] : this.bases[0];
   }
 
   private cleanupMinions(now: number): void {

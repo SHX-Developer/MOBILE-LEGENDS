@@ -2,10 +2,18 @@ import * as THREE from 'three';
 import {
   TOWER_RADIUS,
   TOWER_HEIGHT,
-  TOWER_BLUE_X,
-  TOWER_BLUE_Z,
-  TOWER_RED_X,
-  TOWER_RED_Z,
+  TOWER_BLUE_TOP_X,
+  TOWER_BLUE_TOP_Z,
+  TOWER_BLUE_MID_X,
+  TOWER_BLUE_MID_Z,
+  TOWER_BLUE_BOT_X,
+  TOWER_BLUE_BOT_Z,
+  TOWER_RED_TOP_X,
+  TOWER_RED_TOP_Z,
+  TOWER_RED_MID_X,
+  TOWER_RED_MID_Z,
+  TOWER_RED_BOT_X,
+  TOWER_RED_BOT_Z,
   TOWER_MAX_HP,
   TOWER_DAMAGE,
   TOWER_ATTACK_RANGE,
@@ -223,9 +231,21 @@ function buildRangeRing(range: number, color: number, opacity: number): THREE.Me
   return ring;
 }
 
+export type TowerLane = 'top' | 'mid' | 'bot';
+export interface LaneTower { tower: Tower; lane: TowerLane }
+
+/**
+ * Build six towers — one per lane per team. Returned in a flat array
+ * ordered [blueTop, blueMid, blueBot, redTop, redMid, redBot]. Use the
+ * matching `buildTowersByLane` helper if you want them keyed.
+ */
 export function buildTowers(scene: THREE.Scene, colliders: Colliders): Tower[] {
   return [
-    new Tower(scene, TOWER_BLUE_X, TOWER_BLUE_Z, 'blue', COLOR_TOWER_BLUE, colliders),
-    new Tower(scene, TOWER_RED_X, TOWER_RED_Z, 'red', COLOR_TOWER_RED, colliders),
+    new Tower(scene, TOWER_BLUE_TOP_X, TOWER_BLUE_TOP_Z, 'blue', COLOR_TOWER_BLUE, colliders),
+    new Tower(scene, TOWER_BLUE_MID_X, TOWER_BLUE_MID_Z, 'blue', COLOR_TOWER_BLUE, colliders),
+    new Tower(scene, TOWER_BLUE_BOT_X, TOWER_BLUE_BOT_Z, 'blue', COLOR_TOWER_BLUE, colliders),
+    new Tower(scene, TOWER_RED_TOP_X, TOWER_RED_TOP_Z, 'red', COLOR_TOWER_RED, colliders),
+    new Tower(scene, TOWER_RED_MID_X, TOWER_RED_MID_Z, 'red', COLOR_TOWER_RED, colliders),
+    new Tower(scene, TOWER_RED_BOT_X, TOWER_RED_BOT_Z, 'red', COLOR_TOWER_RED, colliders),
   ];
 }

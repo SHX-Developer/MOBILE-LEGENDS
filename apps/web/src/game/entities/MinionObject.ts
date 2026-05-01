@@ -88,12 +88,19 @@ export class MinionObject implements Unit {
   private leftArm?: THREE.Object3D;
   private rightArm?: THREE.Object3D;
 
+  /** Lane waypoints for the minion to follow. The path is consumed in
+   *  order; once exhausted the caller-provided objective takes over (so
+   *  the minion finishes by chewing on the enemy base). */
+  private path: ReadonlyArray<readonly [number, number]> = [];
+  private pathIdx = 0;
+
   constructor(
     private readonly scene: THREE.Scene,
     readonly team: Team,
     spawn: THREE.Vector3,
     index: number,
     config: MinionConfig,
+    path: ReadonlyArray<readonly [number, number]> = [],
   ) {
     this.config = config;
     this.variant = config.variant;
@@ -101,8 +108,11 @@ export class MinionObject implements Unit {
     this.hp = config.maxHp;
     this.xpReward = config.xpReward;
     this.radius = config.radius;
+    this.path = path;
     this.group.position.copy(spawn);
-    this.group.position.x += (index - 1) * 1.4;
+    // Stagger spawn so siblings in the same wave don't pile on top of each other.
+    const lateral = (index - 1) * 1.4;
+    this.group.position.x += lateral;
     this.healthBar = new HealthBar(1.45, 0.16, team === 'blue' ? 0x64d8ff : 0xff7171);
     this.healthBar.group.position.set(0, 1.9 * config.scale + 0.4, 0);
     this.group.add(this.healthBar.group);
@@ -151,6 +161,19 @@ export class MinionObject implements Unit {
       return;
     }
 
+    // Walk the waypoint path first; once exhausted, fall back to chewing
+    // whatever objective the caller picked (usually the enemy base).
+    const waypoint = this.currentWaypoint();
+    if (waypoint) {
+      const [wx, wz] = waypoint;
+      const wpVec = TMP_VEC.set(wx, 0, wz);
+      this.moveToward(wpVec, deltaSec, colliders);
+      this.animateGait(this.config.speed, deltaSec);
+      const dx = wx - this.position.x;
+      const dz = wz - this.position.z;
+      if (dx * dx + dz * dz < 9) this.pathIdx += 1;
+      return;
+    }
     if (objective?.alive) {
       this.moveToward(objective.position, deltaSec, colliders);
       this.animateGait(this.config.speed, deltaSec);
@@ -162,6 +185,10 @@ export class MinionObject implements Unit {
   billboardHealthBar(camera: THREE.Camera): void {
     if (!this.alive) return;
     this.healthBar.billboard(camera);
+  }
+
+  private currentWaypoint(): readonly [number, number] | null {
+    return this.pathIdx < this.path.length ? this.path[this.pathIdx] : null;
   }
 
   takeDamage(amount: number): void {
@@ -355,3 +382,5 @@ export class MinionObject implements Unit {
 function distTo(ax: number, az: number, bx: number, bz: number): number {
   return Math.hypot(bx - ax, bz - az);
 }
+
+const TMP_VEC = new THREE.Vector3();
