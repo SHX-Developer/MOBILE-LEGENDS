@@ -8,6 +8,8 @@ import {
   TOWER_ATTACK_RANGE,
   TOWER_ATTACK_COOLDOWN_MS,
   TOWER_PROJECTILE_SPEED_3D,
+  TOWER_HERO_FOCUS_STACK_BONUS,
+  TOWER_HERO_FOCUS_STACK_CAP,
   COLOR_TOWER_BLUE,
   COLOR_TOWER_RED,
 } from '../constants.js';
@@ -46,6 +48,10 @@ export class Tower implements Unit {
   private attackPulseUntil = 0;
   private dyingAt = 0;
   private debris: Array<{ mesh: THREE.Mesh; vx: number; vy: number; vz: number; spawnedAt: number }> = [];
+  /** Hero currently focused; consecutive shots ramp damage. Reset whenever the
+   *  tower picks any other target (incl. losing line of sight to the hero). */
+  private focusedHero: Unit | null = null;
+  private heroFocusStacks = 0;
 
   constructor(
     scene: THREE.Scene,
@@ -156,14 +162,40 @@ export class Tower implements Unit {
     if (!this.alive) return;
     this.animateIdle(now);
     if (this.stunnedUntil > now) return;
-    if (now - this.lastAttackAt < TOWER_ATTACK_COOLDOWN_MS) return;
+    if (now - this.lastAttackAt < TOWER_ATTACK_COOLDOWN_MS) {
+      // Drop hero focus the moment the hero leaves range, even between shots.
+      if (this.focusedHero && !this.heroInRange(this.focusedHero)) {
+        this.focusedHero = null;
+        this.heroFocusStacks = 0;
+      }
+      return;
+    }
     const target = registry.findNearestEnemy(this.team, this.position, TOWER_ATTACK_RANGE, [
       'minion',
       'hero',
       'structure',
     ]);
-    if (!target) return;
+    if (!target) {
+      this.focusedHero = null;
+      this.heroFocusStacks = 0;
+      return;
+    }
     this.faceTarget(target.position);
+
+    let damage = TOWER_DAMAGE;
+    if (target.kind === 'hero') {
+      if (this.focusedHero !== target) {
+        this.focusedHero = target;
+        this.heroFocusStacks = 0;
+      }
+      this.heroFocusStacks = Math.min(this.heroFocusStacks + 1, TOWER_HERO_FOCUS_STACK_CAP);
+      damage = TOWER_DAMAGE * (1 + (this.heroFocusStacks - 1) * TOWER_HERO_FOCUS_STACK_BONUS);
+    } else {
+      // Tower picked a different target — hero is no longer the priority, drop stacks.
+      this.focusedHero = null;
+      this.heroFocusStacks = 0;
+    }
+
     // Muzzle flash from the tip of the tower so the shot reads as fired.
     projectiles.spawnMuzzleFlash(
       new THREE.Vector3(this.position.x, this.tipY - 1, this.position.z),
@@ -171,7 +203,7 @@ export class Tower implements Unit {
     );
     projectiles.spawn(this.position, target.position, now, {
       team: this.team,
-      damage: TOWER_DAMAGE,
+      damage,
       kind: 'meteor',
       speed: TOWER_PROJECTILE_SPEED_3D,
       target,
@@ -179,6 +211,13 @@ export class Tower implements Unit {
     });
     this.lastAttackAt = now;
     this.attackPulseUntil = now + 320;
+  }
+
+  private heroInRange(hero: Unit): boolean {
+    if (!hero.alive) return false;
+    const dx = hero.position.x - this.position.x;
+    const dz = hero.position.z - this.position.z;
+    return dx * dx + dz * dz <= TOWER_ATTACK_RANGE * TOWER_ATTACK_RANGE;
   }
 
   takeDamage(amount: number): void {

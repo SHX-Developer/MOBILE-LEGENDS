@@ -38,7 +38,7 @@ export class PlayerObject implements Unit {
 
   private velocity = new THREE.Vector3();
   private readonly spawn: THREE.Vector3;
-  private readonly healthBar = new HealthBar(2.4, 0.22, 0x44ff66, true);
+  private readonly healthBar = new HealthBar(2.4, 0.22, 0x44ff66, true, true);
   private readonly rangeRing: THREE.Mesh;
   private cloakMat!: THREE.MeshStandardMaterial;
   private cloakLightMat!: THREE.MeshStandardMaterial;
@@ -60,6 +60,7 @@ export class PlayerObject implements Unit {
     this.healthBar.group.position.set(0, 3, 0);
     this.group.add(this.healthBar.group);
     this.refreshLevelBadge();
+    this.healthBar.setHp(this.hp, this.maxHp);
 
     this.rangeRing = new THREE.Mesh(
       new THREE.RingGeometry(PLAYER_ATTACK_RANGE - 0.35, PLAYER_ATTACK_RANGE, 64),
@@ -220,6 +221,7 @@ export class PlayerObject implements Unit {
     if (!this.alive) return;
     this.hp = Math.max(0, this.hp - amount);
     this.healthBar.setRatio(this.hp / this.maxHp);
+    this.healthBar.setHp(this.hp, this.maxHp);
     if (this.hp <= 0) this.die();
   }
 
@@ -227,6 +229,7 @@ export class PlayerObject implements Unit {
     if (!this.alive || amount <= 0 || this.hp >= this.maxHp) return;
     this.hp = Math.min(this.maxHp, this.hp + amount);
     this.healthBar.setRatio(this.hp / this.maxHp);
+    this.healthBar.setHp(this.hp, this.maxHp);
   }
 
   grantXp(amount: number): void {
@@ -239,6 +242,7 @@ export class PlayerObject implements Unit {
       const hpGain = this.maxHp - oldMaxHp;
       this.hp = Math.min(this.maxHp, this.hp + hpGain);
       this.healthBar.setRatio(this.hp / this.maxHp);
+      this.healthBar.setHp(this.hp, this.maxHp);
     }
     if (this.level >= HERO_MAX_LEVEL) this.xp = 0;
     this.refreshLevelBadge();
@@ -279,6 +283,7 @@ export class PlayerObject implements Unit {
     this.healthBar.group.visible = true;
     this.velocity.set(0, 0, 0);
     this.healthBar.setRatio(1);
+    this.healthBar.setHp(this.hp, this.maxHp);
   }
 
   applyServerState(state: {
@@ -304,6 +309,7 @@ export class PlayerObject implements Unit {
       this.facing.set(state.facingX, 0, state.facingZ);
     }
     this.healthBar.setRatio(state.maxHp > 0 ? state.hp / state.maxHp : 0);
+    this.healthBar.setHp(state.hp, state.maxHp);
     this.healthBar.setLevel(state.level, state.xpToNext > 0 ? state.xp / state.xpToNext : 1);
   }
 

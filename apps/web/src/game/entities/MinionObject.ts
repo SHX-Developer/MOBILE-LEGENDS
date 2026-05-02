@@ -42,7 +42,7 @@ export const MINION_CONFIGS: Record<MinionVariant, MinionConfig> = {
     variant: 'ranged',
     maxHp: 110,
     damage: 14,
-    attackRange: 11.5,
+    attackRange: 7.5,
     attackCooldownMs: 1100,
     speed: 3.6,
     radius: 0.55,
@@ -129,9 +129,10 @@ export class MinionObject implements Unit {
       const lateral = (index - 1) * 1.4;
       this.group.position.x += lateral;
     }
-    this.healthBar = new HealthBar(1.45, 0.16, team === 'blue' ? 0x64d8ff : 0xff7171);
+    this.healthBar = new HealthBar(1.45, 0.16, team === 'blue' ? 0x64d8ff : 0xff7171, false, true);
     this.healthBar.group.position.set(0, 1.9 * config.scale + 0.4, 0);
     this.group.add(this.healthBar.group);
+    this.healthBar.setHp(this.hp, this.maxHp);
     this.buildVisual(team === 'blue' ? 0x4f9dff : 0xff5f5f);
     scene.add(this.group);
   }
@@ -214,6 +215,7 @@ export class MinionObject implements Unit {
     if (!this.alive) return;
     this.hp = Math.max(0, this.hp - amount);
     this.healthBar.setRatio(this.hp / this.maxHp);
+    this.healthBar.setHp(this.hp, this.maxHp);
     if (this.hp <= 0) this.die();
   }
 

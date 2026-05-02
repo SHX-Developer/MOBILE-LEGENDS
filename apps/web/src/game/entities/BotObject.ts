@@ -62,7 +62,7 @@ export class BotObject implements Unit {
   respawnDelayMs = BOT_RESPAWN_MS;
 
   private readonly spawn: THREE.Vector3;
-  private readonly healthBar = new HealthBar(2.4, 0.22, 0xff5050, true);
+  private readonly healthBar = new HealthBar(2.4, 0.22, 0xff5050, true, true);
   private respawnAt = 0;
   private lastAttackAt = -Infinity;
   private lastQAt = -Infinity;
@@ -82,6 +82,7 @@ export class BotObject implements Unit {
     this.healthBar.group.position.set(0, 3, 0);
     this.group.add(this.healthBar.group);
     this.refreshLevelBadge();
+    this.healthBar.setHp(this.hp, this.maxHp);
   }
 
   get position(): THREE.Vector3 {
@@ -144,6 +145,7 @@ export class BotObject implements Unit {
         this.position.copy(this.spawn);
         this.hp = this.maxHp;
         this.healthBar.setRatio(1);
+        this.healthBar.setHp(this.hp, this.maxHp);
         this.recallStartedAt = 0;
       }
       return;
@@ -162,6 +164,7 @@ export class BotObject implements Unit {
       if (sdx * sdx + sdz * sdz < 9) {
         this.hp = Math.min(this.maxHp, this.hp + BOT_REGEN_PER_SEC * deltaSec);
         this.healthBar.setRatio(this.hp / this.maxHp);
+        this.healthBar.setHp(this.hp, this.maxHp);
       }
       colliders.resolve(this.position, this.radius);
       return;
@@ -263,6 +266,7 @@ export class BotObject implements Unit {
     if (!this.alive) return;
     this.hp = Math.max(0, this.hp - amount);
     this.healthBar.setRatio(this.hp / this.maxHp);
+    this.healthBar.setHp(this.hp, this.maxHp);
     if (this.hp <= 0) this.die();
   }
 
@@ -270,6 +274,7 @@ export class BotObject implements Unit {
     if (!this.alive || amount <= 0 || this.hp >= this.maxHp) return;
     this.hp = Math.min(this.maxHp, this.hp + amount);
     this.healthBar.setRatio(this.hp / this.maxHp);
+    this.healthBar.setHp(this.hp, this.maxHp);
   }
 
   grantXp(amount: number): void {
@@ -281,6 +286,7 @@ export class BotObject implements Unit {
       this.level += 1;
       this.hp = Math.min(this.maxHp, this.hp + (this.maxHp - oldMaxHp));
       this.healthBar.setRatio(this.hp / this.maxHp);
+      this.healthBar.setHp(this.hp, this.maxHp);
     }
     if (this.level >= HERO_MAX_LEVEL) this.xp = 0;
     this.refreshLevelBadge();
@@ -304,6 +310,7 @@ export class BotObject implements Unit {
     this.group.visible = true;
     this.healthBar.group.visible = true;
     this.healthBar.setRatio(1);
+    this.healthBar.setHp(this.hp, this.maxHp);
   }
 
   applyServerState(state: {
@@ -328,6 +335,7 @@ export class BotObject implements Unit {
       this.group.rotation.y = Math.atan2(state.facingX, state.facingZ);
     }
     this.healthBar.setRatio(state.maxHp > 0 ? state.hp / state.maxHp : 0);
+    this.healthBar.setHp(state.hp, state.maxHp);
     this.healthBar.setLevel(state.level, state.xpToNext > 0 ? state.xp / state.xpToNext : 1);
   }
 

@@ -123,7 +123,7 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
         {/* Invisible safety nets around the controls — empty taps inside
             these zones don't reach the camera-pan listener on the canvas. */}
         <ControlZone left={130} bottom={24} width={210} height={210} />
-        <ControlZone right={20} bottom={20} width={300} height={260} />
+        <ControlZone right={20} bottom={20} width={300} height={350} />
         <BottomCenterZone />
 
         <Joystick onChange={onJoystickChange} />
@@ -136,7 +136,7 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           subtitle="POWER"
           accent="#ff7a3d"
           right={28}
-          bottom={210}
+          bottom={272}
           size={86}
           totalMs={10000}
           getGame={getGame}
@@ -146,8 +146,8 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label=""
           subtitle="SLOW"
           accent="#4ec9ff"
-          right={170}
-          bottom={186}
+          right={232}
+          bottom={70}
           size={86}
           totalMs={3000}
           getGame={getGame}
@@ -157,8 +157,8 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label=""
           subtitle="STUN"
           accent="#b56cff"
-          right={232}
-          bottom={70}
+          right={170}
+          bottom={186}
           size={86}
           totalMs={5000}
           getGame={getGame}

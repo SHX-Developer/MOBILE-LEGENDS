@@ -11,6 +11,8 @@ import {
   BASE_RED_Z,
   BASE_REGEN_RADIUS,
   HERO_BASE_REGEN_PER_SEC,
+  HERO_TOWER_NO_MINION_DAMAGE_FACTOR,
+  HERO_TOWER_MINION_AGGRO_RADIUS,
   RESPAWN_LEVEL_PENALTY_MS,
   RESPAWN_MATCH_MINUTE_PENALTY_MS,
   RESPAWN_MAX_MS,
@@ -712,14 +714,35 @@ export class Game {
     this.player.triggerAttackPose(now);
     this.projectiles.spawnMuzzleFlash(this.player.position, this.player.facing);
     Sounds.attack();
+    let damage = this.player.attackDamage;
+    // Anti-dive: hitting a tower without an allied minion soaking aggro
+    // nearby makes the hero's auto-attack chip damage only.
+    if (this.isTower(target) && !this.alliedMinionNearTower(target)) {
+      damage *= HERO_TOWER_NO_MINION_DAMAGE_FACTOR;
+    }
     this.projectiles.spawn(this.player.position, target.position, now, {
       team: this.player.team,
-      damage: this.player.attackDamage,
+      damage,
       target,
       owner: this.player,
       fromPlayer: true,
     });
     this.lastAttackAt = now;
+  }
+
+  private isTower(unit: Unit): boolean {
+    return unit.kind === 'structure' && this.towers.includes(unit as Tower);
+  }
+
+  private alliedMinionNearTower(tower: Unit): boolean {
+    const r2 = HERO_TOWER_MINION_AGGRO_RADIUS * HERO_TOWER_MINION_AGGRO_RADIUS;
+    for (const m of this.minions) {
+      if (!m.alive || m.team !== this.player.team) continue;
+      const dx = m.position.x - tower.position.x;
+      const dz = m.position.z - tower.position.z;
+      if (dx * dx + dz * dz <= r2) return true;
+    }
+    return false;
   }
 
   private runOnlineFrame(

@@ -88,9 +88,20 @@ export const TOWER_RED_MID_Z = S(-22);
 export const TOWER_RED_BOT_X = S(48);
 export const TOWER_RED_BOT_Z = S(-12);
 export const TOWER_MAX_HP = 1000;
-export const TOWER_DAMAGE = 40;
+export const TOWER_DAMAGE = 65;
 export const TOWER_ATTACK_RANGE = 11;
 export const TOWER_ATTACK_COOLDOWN_MS = 1100;
+/** Tower escalation: each consecutive shot at the SAME hero adds this much
+ *  bonus damage (multiplicative). Stacks reset the moment the hero leaves
+ *  range or the tower picks a different target. */
+export const TOWER_HERO_FOCUS_STACK_BONUS = 0.35;
+export const TOWER_HERO_FOCUS_STACK_CAP = 5;
+/** Hero auto-attacks against towers without an allied minion nearby are
+ *  reduced to this fraction (anti-dive). */
+export const HERO_TOWER_NO_MINION_DAMAGE_FACTOR = 0.25;
+/** Distance from the tower within which an allied minion shields the hero
+ *  from the no-minion damage penalty. */
+export const HERO_TOWER_MINION_AGGRO_RADIUS = 9;
 
 // Backwards-compat single-tower aliases (kept while older code paths
 // reference TOWER_BLUE_X / TOWER_RED_X — point them at the mid towers).

@@ -19,8 +19,12 @@ export class HealthBar {
   private readonly levelTexture?: THREE.CanvasTexture;
   private readonly levelCanvas?: HTMLCanvasElement;
   private readonly levelCtx?: CanvasRenderingContext2D;
+  private readonly hpTexture?: THREE.CanvasTexture;
+  private readonly hpCanvas?: HTMLCanvasElement;
+  private readonly hpCtx?: CanvasRenderingContext2D;
+  private lastHpText = '';
 
-  constructor(longAxis: number, shortAxis: number, color: number, showLevel = false) {
+  constructor(longAxis: number, shortAxis: number, color: number, showLevel = false, showHp = false) {
     const padding = 0.05;
 
     const bg = new THREE.Mesh(
@@ -80,11 +84,64 @@ export class HealthBar {
       this.group.add(level);
       this.setLevel(1, 0);
     }
+
+    if (showHp) {
+      this.hpCanvas = document.createElement('canvas');
+      this.hpCanvas.width = 256;
+      this.hpCanvas.height = 80;
+      const ctx = this.hpCanvas.getContext('2d');
+      if (!ctx) throw new Error('2D canvas is required for health bar HP labels');
+      this.hpCtx = ctx;
+      this.hpTexture = new THREE.CanvasTexture(this.hpCanvas);
+      this.hpTexture.generateMipmaps = false;
+      this.hpTexture.minFilter = THREE.LinearFilter;
+      this.hpTexture.magFilter = THREE.LinearFilter;
+      const hpW = longAxis * 0.95;
+      const hpH = hpW * (this.hpCanvas.height / this.hpCanvas.width);
+      const hpPlane = new THREE.Mesh(
+        new THREE.PlaneGeometry(hpW, hpH),
+        new THREE.MeshBasicMaterial({
+          map: this.hpTexture,
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        }),
+      );
+      hpPlane.position.set(0, shortAxis / 2 + hpH / 2 + 0.05, 0.02);
+      hpPlane.renderOrder = 10001;
+      this.group.add(hpPlane);
+      this.setHp(1, 1);
+    }
   }
 
   setRatio(r: number): void {
     const ratio = r < 0 ? 0 : r > 1 ? 1 : r;
     this.fg.scale.x = Math.max(ratio, 0.0001);
+  }
+
+  setHp(current: number, max: number): void {
+    if (!this.hpCtx || !this.hpCanvas || !this.hpTexture) return;
+    const cur = Math.max(0, Math.ceil(current));
+    const mx = Math.max(1, Math.ceil(max));
+    const text = `${cur}/${mx}`;
+    if (text === this.lastHpText) return;
+    this.lastHpText = text;
+    const ctx = this.hpCtx;
+    const w = this.hpCanvas.width;
+    const h = this.hpCanvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = '900 56px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.92)';
+    ctx.strokeText(text, w / 2, h / 2 + 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, w / 2, h / 2 + 2);
+    this.hpTexture.needsUpdate = true;
   }
 
   private lastLevel = -1;
