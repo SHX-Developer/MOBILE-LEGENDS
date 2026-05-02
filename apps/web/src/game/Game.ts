@@ -145,20 +145,16 @@ export class Game {
     this.registry.add(this.bot);
     for (const t of this.towers) this.registry.add(t);
 
-    // Bases are shielded by their team's towers — once all three towers on
-    // a side fall, the base joins the registry and becomes targetable.
-    // Towers are ordered [blueTop, blueMid, blueBot, redTop, redMid, redBot].
+    // Bases are shielded by their team's towers. With three turrets on each
+    // lane, the core opens only after all nine allied towers are gone.
     const exposeBaseIfReady = (team: Team) => {
-      const teamTowers = team === 'blue'
-        ? [this.towers[0], this.towers[1], this.towers[2]]
-        : [this.towers[3], this.towers[4], this.towers[5]];
+      const teamTowers = this.towers.filter((tower) => tower.team === team);
       if (teamTowers.every((t) => !t.alive)) {
         this.registry.add(team === 'blue' ? this.bases[0] : this.bases[1]);
       }
     };
-    for (let i = 0; i < this.towers.length; i++) {
-      const team: Team = i < 3 ? 'blue' : 'red';
-      this.towers[i].onDestroyed = () => exposeBaseIfReady(team);
+    for (const tower of this.towers) {
+      tower.onDestroyed = () => exposeBaseIfReady(tower.team);
     }
 
     // Match end via base destruction is offline-only. Online uses

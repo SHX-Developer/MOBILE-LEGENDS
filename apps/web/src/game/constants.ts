@@ -39,23 +39,52 @@ export const HERO_BASE_XP_TO_LEVEL = 90;
 export const HERO_XP_LEVEL_GROWTH = 1.45;
 export const HERO_BASE_REGEN_PER_SEC = 85;
 
-// Towers — 1 per lane per team. Coordinates follow the Mobile Legends-style
-// three-lane island: blue bottom-left, red top-right, top along left/top,
-// bot along bottom/right, mid through the river.
+// Towers — 3 per lane per team, like Mobile Legends: inner near base,
+// middle around the lane centre, outer near the first lane clash.
 export const TOWER_RADIUS = 1.6;
 export const TOWER_HEIGHT = 5;
-export const TOWER_BLUE_MID_X = -24;
-export const TOWER_BLUE_MID_Z = 24;
-export const TOWER_RED_MID_X = 24;
-export const TOWER_RED_MID_Z = -24;
+export type TowerTeam = 'blue' | 'red';
+export type TowerLaneId = 'top' | 'mid' | 'bot';
+export type TowerTier = 'inner' | 'middle' | 'outer';
+export interface TowerSpec {
+  team: TowerTeam;
+  lane: TowerLaneId;
+  tier: TowerTier;
+  x: number;
+  z: number;
+}
+export const TOWER_LAYOUT: readonly TowerSpec[] = [
+  { team: 'blue', lane: 'top', tier: 'inner', x: -48, z: 34 },
+  { team: 'blue', lane: 'top', tier: 'middle', x: -48, z: 12 },
+  { team: 'blue', lane: 'top', tier: 'outer', x: -48, z: -16 },
+  { team: 'blue', lane: 'mid', tier: 'inner', x: -34, z: 34 },
+  { team: 'blue', lane: 'mid', tier: 'middle', x: -22, z: 22 },
+  { team: 'blue', lane: 'mid', tier: 'outer', x: -10, z: 10 },
+  { team: 'blue', lane: 'bot', tier: 'inner', x: -34, z: 48 },
+  { team: 'blue', lane: 'bot', tier: 'middle', x: -12, z: 48 },
+  { team: 'blue', lane: 'bot', tier: 'outer', x: 16, z: 48 },
+  { team: 'red', lane: 'top', tier: 'outer', x: -16, z: -48 },
+  { team: 'red', lane: 'top', tier: 'middle', x: 12, z: -48 },
+  { team: 'red', lane: 'top', tier: 'inner', x: 34, z: -48 },
+  { team: 'red', lane: 'mid', tier: 'outer', x: 10, z: -10 },
+  { team: 'red', lane: 'mid', tier: 'middle', x: 22, z: -22 },
+  { team: 'red', lane: 'mid', tier: 'inner', x: 34, z: -34 },
+  { team: 'red', lane: 'bot', tier: 'outer', x: 48, z: 16 },
+  { team: 'red', lane: 'bot', tier: 'middle', x: 48, z: -12 },
+  { team: 'red', lane: 'bot', tier: 'inner', x: 48, z: -34 },
+];
 export const TOWER_BLUE_TOP_X = -48;
-export const TOWER_BLUE_TOP_Z = 22;
-export const TOWER_RED_TOP_X = 22;
-export const TOWER_RED_TOP_Z = -48;
-export const TOWER_BLUE_BOT_X = -22;
+export const TOWER_BLUE_TOP_Z = 12;
+export const TOWER_BLUE_MID_X = -22;
+export const TOWER_BLUE_MID_Z = 22;
+export const TOWER_BLUE_BOT_X = -12;
 export const TOWER_BLUE_BOT_Z = 48;
+export const TOWER_RED_TOP_X = 12;
+export const TOWER_RED_TOP_Z = -48;
+export const TOWER_RED_MID_X = 22;
+export const TOWER_RED_MID_Z = -22;
 export const TOWER_RED_BOT_X = 48;
-export const TOWER_RED_BOT_Z = -22;
+export const TOWER_RED_BOT_Z = -12;
 export const TOWER_MAX_HP = 1000;
 export const TOWER_DAMAGE = 40;
 export const TOWER_ATTACK_RANGE = 14;

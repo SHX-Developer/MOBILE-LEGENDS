@@ -5,7 +5,6 @@ import {
   HALF_W,
   HALF_H,
   LANE_WIDTH,
-  COLOR_LANE,
   COLOR_WALL,
   COLOR_TREE_TRUNK,
   COLOR_TREE_LEAVES,
@@ -20,18 +19,7 @@ import {
   SPAWN_RED_X,
   SPAWN_RED_Z,
   SPAWN_ZONE_RADIUS,
-  TOWER_BLUE_TOP_X,
-  TOWER_BLUE_TOP_Z,
-  TOWER_BLUE_MID_X,
-  TOWER_BLUE_MID_Z,
-  TOWER_BLUE_BOT_X,
-  TOWER_BLUE_BOT_Z,
-  TOWER_RED_TOP_X,
-  TOWER_RED_TOP_Z,
-  TOWER_RED_MID_X,
-  TOWER_RED_MID_Z,
-  TOWER_RED_BOT_X,
-  TOWER_RED_BOT_Z,
+  TOWER_LAYOUT,
   LANE_PATHS,
 } from '../constants.js';
 import { buildBases, Base } from './Bases.js';
@@ -48,14 +36,7 @@ export interface MapEntities {
 
 const BLUE_BASE: Point = [BASE_BLUE_X, BASE_BLUE_Z];
 const RED_BASE: Point = [BASE_RED_X, BASE_RED_Z];
-const TOWER_POINTS: ReadonlyArray<Point> = [
-  [TOWER_BLUE_TOP_X, TOWER_BLUE_TOP_Z],
-  [TOWER_BLUE_MID_X, TOWER_BLUE_MID_Z],
-  [TOWER_BLUE_BOT_X, TOWER_BLUE_BOT_Z],
-  [TOWER_RED_TOP_X, TOWER_RED_TOP_Z],
-  [TOWER_RED_MID_X, TOWER_RED_MID_Z],
-  [TOWER_RED_BOT_X, TOWER_RED_BOT_Z],
-];
+const TOWER_POINTS: ReadonlyArray<Point> = TOWER_LAYOUT.map((tower) => [tower.x, tower.z]);
 const LANE_POLYLINES: ReadonlyArray<ReadonlyArray<Point>> = [
   [BLUE_BASE, ...LANE_PATHS.top.blue, RED_BASE],
   [BLUE_BASE, ...LANE_PATHS.mid.blue, RED_BASE],
@@ -66,8 +47,6 @@ export function buildMap(scene: THREE.Scene): MapEntities {
   const colliders = new Colliders();
   buildGround(scene);
   buildIslandEdges(scene);
-  buildRiver(scene);
-  buildLanes(scene);
   buildPerimeterWalls(scene, colliders);
   buildSpawnZones(scene);
   const bases = buildBases(scene, colliders);
@@ -173,13 +152,6 @@ function createBattlefieldTexture(): THREE.CanvasTexture {
   ] as Array<[number, number, number, number]>) {
     fillEllipse(x, z, rx, rz, '#26523e', 0.22);
   }
-
-  const river: Point[] = [[-50, -17], [-33, -7], [-20, 11], [-5, 21], [11, 14], [25, -4], [48, -18]];
-  strokePath(river, 142, '#1e5967', 0.36, true);
-  strokePath(river, 92, '#2f9eaa', 0.78, true);
-  strokePath(river, 28, '#68d0cc', 0.24, true);
-  fillEllipse(-24, -9, 9, 7, '#61c4c4', 0.7);
-  fillEllipse(24, 9, 9, 7, '#61c4c4', 0.7);
 
   const laneShapes = [
     [BLUE_BASE, [-50, 30], [-50, -34], [-34, -50], [30, -50], RED_BASE],
@@ -351,134 +323,6 @@ function buildIslandEdges(scene: THREE.Scene): void {
   }
 }
 
-function buildLanes(scene: THREE.Scene): void {
-  const edgeMat = new THREE.MeshStandardMaterial({
-    color: 0xa88d5f,
-    transparent: true,
-    opacity: 0.32,
-    roughness: 0.96,
-    depthWrite: false,
-  });
-  const laneMat = new THREE.MeshStandardMaterial({
-    color: COLOR_LANE,
-    transparent: true,
-    opacity: 0.42,
-    roughness: 0.9,
-    depthWrite: false,
-  });
-  const grooveMat = new THREE.MeshBasicMaterial({
-    color: 0xf2d99a,
-    transparent: true,
-    opacity: 0.2,
-    depthWrite: false,
-  });
-
-  for (const pts of LANE_POLYLINES) {
-    drawLanePolyline(scene, edgeMat, pts, LANE_WIDTH + 2.2, 0.024);
-    drawLanePolyline(scene, laneMat, pts, LANE_WIDTH, 0.03);
-    drawLanePolyline(scene, grooveMat, pts, 1.3, 0.052);
-  }
-}
-
-function drawLanePolyline(
-  scene: THREE.Scene,
-  mat: THREE.Material,
-  pts: ReadonlyArray<Point>,
-  width: number,
-  y: number,
-): void {
-  const half = width / 2;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [ax, az] = pts[i];
-    const [bx, bz] = pts[i + 1];
-    const dx = bx - ax;
-    const dz = bz - az;
-    const len = Math.hypot(dx, dz);
-    if (len < 0.01) continue;
-    const segment = new THREE.Mesh(new THREE.PlaneGeometry(len + width * 0.55, width), mat);
-    segment.rotation.x = -Math.PI / 2;
-    segment.rotation.z = -Math.atan2(dz, dx);
-    segment.position.set((ax + bx) / 2, y, (az + bz) / 2);
-    scene.add(segment);
-
-    const cap = new THREE.Mesh(new THREE.CircleGeometry(half, 40), mat);
-    cap.rotation.x = -Math.PI / 2;
-    cap.position.set(ax, y + 0.002, az);
-    scene.add(cap);
-  }
-
-  const last = pts[pts.length - 1];
-  const cap = new THREE.Mesh(new THREE.CircleGeometry(half, 40), mat);
-  cap.rotation.x = -Math.PI / 2;
-  cap.position.set(last[0], y + 0.002, last[1]);
-  scene.add(cap);
-}
-
-function buildRiver(scene: THREE.Scene): void {
-  const waterMat = new THREE.MeshStandardMaterial({
-    color: 0x2f99a6,
-    transparent: true,
-    opacity: 0.64,
-    roughness: 0.2,
-    metalness: 0.08,
-  });
-  const deepMat = new THREE.MeshBasicMaterial({
-    color: 0x1d6775,
-    transparent: true,
-    opacity: 0.28,
-    depthWrite: false,
-  });
-  const river: Point[] = [
-    [-42, -12],
-    [-30, -4],
-    [-18, 12],
-    [-4, 19],
-    [10, 12],
-    [22, -4],
-    [40, -16],
-  ];
-  drawWaterPolyline(scene, deepMat, river, 13, 0.031);
-  drawWaterPolyline(scene, waterMat, river, 9.5, 0.04);
-  addPool(scene, -24, -10, 10, 0x43b4c1);
-  addPool(scene, 24, 10, 10, 0x43b4c1);
-  addPool(scene, 0, 0, 7, 0x2b8994);
-}
-
-function drawWaterPolyline(
-  scene: THREE.Scene,
-  mat: THREE.Material,
-  pts: ReadonlyArray<Point>,
-  width: number,
-  y: number,
-): void {
-  const half = width / 2;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [ax, az] = pts[i];
-    const [bx, bz] = pts[i + 1];
-    const len = Math.hypot(bx - ax, bz - az);
-    const segment = new THREE.Mesh(new THREE.PlaneGeometry(len + width * 0.35, width), mat);
-    segment.rotation.x = -Math.PI / 2;
-    segment.rotation.z = -Math.atan2(bz - az, bx - ax);
-    segment.position.set((ax + bx) / 2, y, (az + bz) / 2);
-    scene.add(segment);
-
-    const cap = new THREE.Mesh(new THREE.CircleGeometry(half, 40), mat);
-    cap.rotation.x = -Math.PI / 2;
-    cap.position.set(ax, y + 0.001, az);
-    scene.add(cap);
-  }
-}
-
-function addPool(scene: THREE.Scene, x: number, z: number, r: number, color: number): void {
-  const pool = new THREE.Mesh(
-    new THREE.CircleGeometry(r, 48),
-    new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.54, roughness: 0.18 }),
-  );
-  pool.rotation.x = -Math.PI / 2;
-  pool.position.set(x, 0.043, z);
-  scene.add(pool);
-}
-
 function buildPerimeterWalls(scene: THREE.Scene, colliders: Colliders): void {
   const mat = new THREE.MeshStandardMaterial({ color: COLOR_WALL, roughness: 0.9 });
   const capMat = new THREE.MeshStandardMaterial({ color: 0xc1ab8a, roughness: 0.85 });
@@ -577,8 +421,7 @@ function addSpawnZone(
 }
 
 function buildJungleWalls(scene: THREE.Scene, colliders: Colliders): void {
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x65706b, roughness: 0.95, flatShading: true });
-  const capMat = new THREE.MeshStandardMaterial({ color: 0x8c948b, roughness: 0.9 });
+  const ridgeMat = new THREE.MeshStandardMaterial({ color: 0x74796f, roughness: 0.98, flatShading: true });
 
   const chains: Point[][] = [
     [[-39, 12], [-34, 5], [-32, -3], [-35, -12]],
@@ -595,7 +438,7 @@ function buildJungleWalls(scene: THREE.Scene, colliders: Colliders): void {
     [[5, -20], [-4, -22], [-13, -17]],
   ];
 
-  for (const chain of chains) buildWallChain(scene, colliders, wallMat, capMat, chain);
+  for (const chain of chains) buildWallChain(scene, colliders, ridgeMat, chain);
 
   buildMountainCluster(scene, colliders, -42, -38, 0x8f8b7f, 1.25);
   buildMountainCluster(scene, colliders, 42, 38, 0x8f8b7f, 1.25);
@@ -610,28 +453,56 @@ function buildJungleWalls(scene: THREE.Scene, colliders: Colliders): void {
 function buildWallChain(
   scene: THREE.Scene,
   colliders: Colliders,
-  wallMat: THREE.Material,
-  capMat: THREE.Material,
+  ridgeMat: THREE.Material,
   pts: ReadonlyArray<Point>,
 ): void {
   for (let i = 0; i < pts.length; i++) {
     const [x, z] = pts[i];
     if (nearLane(x, z, 2.8) || nearReservedZone(x, z)) continue;
-    const scale = i % 2 === 0 ? 1 : 0.88;
-    const block = new THREE.Mesh(
-      new THREE.BoxGeometry(2.5 * scale, 1.35 + scale * 0.3, 2.2 * scale),
-      wallMat,
+    const next = pts[Math.min(i + 1, pts.length - 1)];
+    const prev = pts[Math.max(i - 1, 0)];
+    const angle = Math.atan2(next[1] - prev[1], next[0] - prev[0]);
+    const scale = 0.9 + (i % 3) * 0.13;
+    const boulder = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(1.55 * scale, 0),
+      ridgeMat,
     );
-    block.position.set(x, 0.75, z);
-    block.rotation.y = ((i % 3) - 1) * 0.3;
-    block.castShadow = true;
-    scene.add(block);
+    boulder.position.set(x, 0.9 * scale, z);
+    boulder.scale.set(1.45, 0.82, 0.92);
+    boulder.rotation.set(0.18 * (i % 2), -angle, 0.08 * ((i % 3) - 1));
+    boulder.castShadow = true;
+    scene.add(boulder);
 
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(2.8 * scale, 0.16, 2.5 * scale), capMat);
-    cap.position.set(x, 1.52, z);
-    cap.rotation.y = block.rotation.y;
-    scene.add(cap);
-    colliders.addCircle(x, z, 1.25 * scale);
+    const peak = new THREE.Mesh(
+      new THREE.ConeGeometry(0.82 * scale, 1.8 * scale, 7),
+      ridgeMat,
+    );
+    peak.position.set(
+      x + Math.cos(angle + Math.PI / 2) * 0.65,
+      1.65 * scale,
+      z + Math.sin(angle + Math.PI / 2) * 0.65,
+    );
+    peak.rotation.y = -angle + (i % 2 ? 0.25 : -0.2);
+    peak.castShadow = true;
+    scene.add(peak);
+
+    if (i < pts.length - 1) {
+      const [nx, nz] = pts[i + 1];
+      const mx = (x + nx) / 2;
+      const mz = (z + nz) / 2;
+      if (!nearLane(mx, mz, 2.4) && !nearReservedZone(mx, mz)) {
+        const link = new THREE.Mesh(
+          new THREE.DodecahedronGeometry(1.15 * scale, 0),
+          ridgeMat,
+        );
+        link.position.set(mx, 0.62 * scale, mz);
+        link.scale.set(1.7, 0.55, 0.72);
+        link.rotation.y = -angle;
+        link.castShadow = true;
+        scene.add(link);
+      }
+    }
+    colliders.addCircle(x, z, 1.45 * scale);
   }
 }
 

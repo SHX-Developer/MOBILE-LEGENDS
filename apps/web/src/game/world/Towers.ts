@@ -2,18 +2,7 @@ import * as THREE from 'three';
 import {
   TOWER_RADIUS,
   TOWER_HEIGHT,
-  TOWER_BLUE_TOP_X,
-  TOWER_BLUE_TOP_Z,
-  TOWER_BLUE_MID_X,
-  TOWER_BLUE_MID_Z,
-  TOWER_BLUE_BOT_X,
-  TOWER_BLUE_BOT_Z,
-  TOWER_RED_TOP_X,
-  TOWER_RED_TOP_Z,
-  TOWER_RED_MID_X,
-  TOWER_RED_MID_Z,
-  TOWER_RED_BOT_X,
-  TOWER_RED_BOT_Z,
+  TOWER_LAYOUT,
   TOWER_MAX_HP,
   TOWER_DAMAGE,
   TOWER_ATTACK_RANGE,
@@ -50,7 +39,11 @@ export class Tower implements Unit {
   private readonly scene: THREE.Scene;
   private readonly tipY: number;
   private readonly color: number;
+  private readonly head: THREE.Mesh;
+  private readonly core: THREE.Mesh;
+  private readonly glow: THREE.PointLight;
   private lastAttackAt = -Infinity;
+  private attackPulseUntil = 0;
   private dyingAt = 0;
   private debris: Array<{ mesh: THREE.Mesh; vx: number; vy: number; vz: number; spawnedAt: number }> = [];
 
@@ -67,33 +60,80 @@ export class Tower implements Unit {
     this.colliders = colliders;
     this.scene = scene;
     this.color = color;
-    this.tipY = 1 + TOWER_HEIGHT + 1.6;
+    this.tipY = 1.2 + TOWER_HEIGHT + 1.55;
     this.group = new THREE.Group();
+    this.group.position.set(x, 0, z);
 
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x8b877a, roughness: 0.88, metalness: 0.05 });
+    const trimMat = new THREE.MeshStandardMaterial({ color, roughness: 0.42, metalness: 0.18 });
+    const coreMat = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.85,
+      roughness: 0.24,
+      metalness: 0.55,
+    });
 
     const base = new THREE.Mesh(
-      new THREE.CylinderGeometry(TOWER_RADIUS * 1.4, TOWER_RADIUS * 1.6, 1, 16),
-      mat,
+      new THREE.CylinderGeometry(TOWER_RADIUS * 1.85, TOWER_RADIUS * 2.15, 0.65, 24),
+      stoneMat,
     );
-    base.position.set(x, 0.5, z);
+    base.position.set(0, 0.32, 0);
     this.group.add(base);
 
-    const shaft = new THREE.Mesh(
-      new THREE.CylinderGeometry(TOWER_RADIUS, TOWER_RADIUS * 1.2, TOWER_HEIGHT, 16),
-      mat,
+    const plinth = new THREE.Mesh(
+      new THREE.CylinderGeometry(TOWER_RADIUS * 1.35, TOWER_RADIUS * 1.65, 0.55, 24),
+      trimMat,
     );
-    shaft.position.set(x, 1 + TOWER_HEIGHT / 2, z);
+    plinth.position.set(0, 0.92, 0);
+    plinth.castShadow = true;
+    this.group.add(plinth);
+
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(TOWER_RADIUS * 0.78, TOWER_RADIUS * 1.08, TOWER_HEIGHT, 18),
+      stoneMat,
+    );
+    shaft.position.set(0, 1.2 + TOWER_HEIGHT / 2, 0);
     shaft.castShadow = true;
     this.group.add(shaft);
 
+    const bandY = [2.3, 4.2, 5.8];
+    for (const y of bandY) {
+      const band = new THREE.Mesh(
+        new THREE.CylinderGeometry(TOWER_RADIUS * 0.98, TOWER_RADIUS * 1.04, 0.18, 18),
+        trimMat,
+      );
+      band.position.set(0, y, 0);
+      band.castShadow = true;
+      this.group.add(band);
+    }
+
     const cap = new THREE.Mesh(
-      new THREE.ConeGeometry(TOWER_RADIUS * 1.3, 1.6, 16),
-      mat,
+      new THREE.ConeGeometry(TOWER_RADIUS * 1.35, 1.35, 18),
+      trimMat,
     );
-    cap.position.set(x, 1 + TOWER_HEIGHT + 0.8, z);
+    cap.position.set(0, 1.2 + TOWER_HEIGHT + 0.68, 0);
     cap.castShadow = true;
     this.group.add(cap);
+
+    this.head = new THREE.Mesh(
+      new THREE.OctahedronGeometry(TOWER_RADIUS * 0.62, 0),
+      coreMat,
+    );
+    this.head.position.set(0, 1.2 + TOWER_HEIGHT + 1.55, 0);
+    this.head.castShadow = true;
+    this.group.add(this.head);
+
+    this.core = new THREE.Mesh(
+      new THREE.SphereGeometry(TOWER_RADIUS * 0.28, 16, 10),
+      coreMat,
+    );
+    this.core.position.set(0, 1.2 + TOWER_HEIGHT + 0.15, 0);
+    this.group.add(this.core);
+
+    this.glow = new THREE.PointLight(color, 0.7, 9, 2.2);
+    this.glow.position.set(0, 1.2 + TOWER_HEIGHT + 1.15, 0);
+    this.group.add(this.glow);
 
     scene.add(this.group);
     this.collider = colliders.addCircle(x, z, this.radius);
@@ -114,6 +154,7 @@ export class Tower implements Unit {
       return;
     }
     if (!this.alive) return;
+    this.animateIdle(now);
     if (this.stunnedUntil > now) return;
     if (now - this.lastAttackAt < TOWER_ATTACK_COOLDOWN_MS) return;
     const target = registry.findNearestEnemy(this.team, this.position, TOWER_ATTACK_RANGE, [
@@ -122,6 +163,7 @@ export class Tower implements Unit {
       'structure',
     ]);
     if (!target) return;
+    this.faceTarget(target.position);
     // Muzzle flash from the tip of the tower so the shot reads as fired.
     projectiles.spawnMuzzleFlash(
       new THREE.Vector3(this.position.x, this.tipY - 1, this.position.z),
@@ -136,6 +178,7 @@ export class Tower implements Unit {
       owner: this,
     });
     this.lastAttackAt = now;
+    this.attackPulseUntil = now + 320;
   }
 
   takeDamage(amount: number): void {
@@ -193,6 +236,23 @@ export class Tower implements Unit {
     }
   }
 
+  private animateIdle(now: number): void {
+    const t = now * 0.001;
+    this.head.rotation.y = t * 1.4;
+    this.head.position.y = this.tipY + Math.sin(t * 2.4) * 0.12;
+    this.core.scale.setScalar(1 + Math.sin(t * 5) * 0.08);
+    const pulse = Math.max(0, 1 - (this.attackPulseUntil - now) / 320);
+    const attackBoost = now < this.attackPulseUntil ? 1.1 * (1 - pulse) : 0;
+    this.glow.intensity = 0.65 + Math.sin(t * 4.2) * 0.12 + attackBoost;
+  }
+
+  private faceTarget(target: THREE.Vector3): void {
+    const dx = target.x - this.position.x;
+    const dz = target.z - this.position.z;
+    if (Math.abs(dx) + Math.abs(dz) < 0.001) return;
+    this.group.rotation.y = Math.atan2(dx, dz) * 0.12;
+  }
+
   private spawnDebris(): void {
     const mat = new THREE.MeshStandardMaterial({ color: this.color, roughness: 0.85, flatShading: true });
     for (let i = 0; i < 14; i++) {
@@ -235,17 +295,16 @@ export type TowerLane = 'top' | 'mid' | 'bot';
 export interface LaneTower { tower: Tower; lane: TowerLane }
 
 /**
- * Build six towers — one per lane per team. Returned in a flat array
- * ordered [blueTop, blueMid, blueBot, redTop, redMid, redBot]. Use the
- * matching `buildTowersByLane` helper if you want them keyed.
+ * Build all lane towers from the shared layout. Order is blue towers first,
+ * then red towers, with three tiers per lane.
  */
 export function buildTowers(scene: THREE.Scene, colliders: Colliders): Tower[] {
-  return [
-    new Tower(scene, TOWER_BLUE_TOP_X, TOWER_BLUE_TOP_Z, 'blue', COLOR_TOWER_BLUE, colliders),
-    new Tower(scene, TOWER_BLUE_MID_X, TOWER_BLUE_MID_Z, 'blue', COLOR_TOWER_BLUE, colliders),
-    new Tower(scene, TOWER_BLUE_BOT_X, TOWER_BLUE_BOT_Z, 'blue', COLOR_TOWER_BLUE, colliders),
-    new Tower(scene, TOWER_RED_TOP_X, TOWER_RED_TOP_Z, 'red', COLOR_TOWER_RED, colliders),
-    new Tower(scene, TOWER_RED_MID_X, TOWER_RED_MID_Z, 'red', COLOR_TOWER_RED, colliders),
-    new Tower(scene, TOWER_RED_BOT_X, TOWER_RED_BOT_Z, 'red', COLOR_TOWER_RED, colliders),
-  ];
+  return TOWER_LAYOUT.map((spec) => new Tower(
+    scene,
+    spec.x,
+    spec.z,
+    spec.team,
+    spec.team === 'blue' ? COLOR_TOWER_BLUE : COLOR_TOWER_RED,
+    colliders,
+  ));
 }
