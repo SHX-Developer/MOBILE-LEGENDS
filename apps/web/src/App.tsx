@@ -5,13 +5,16 @@ import { MainMenu } from './ui/MainMenu.js';
 import { LandscapeStage } from './ui/LandscapeStage.js';
 import { useUserStore } from './store/userStore.js';
 import { authenticate } from './api/client.js';
+import type { HeroKind } from './game/constants.js';
 import {
   getTelegramInitData,
   initTelegramWebApp,
   lockLandscape,
 } from './telegram/webapp.js';
 
-type Screen = { kind: 'menu' } | { kind: 'playing'; mode: 'online' | 'offline' };
+type Screen =
+  | { kind: 'menu' }
+  | { kind: 'playing'; mode: 'online' | 'offline'; heroKind: HeroKind };
 
 export function App() {
   const { user, loading, error, setUser, setLoading, setError } = useUserStore();
@@ -48,12 +51,20 @@ export function App() {
   if (screen.kind === 'menu') {
     return (
       <Stage>
-        <MainMenu onPlay={(mode) => setScreen({ kind: 'playing', mode })} />
+        <MainMenu
+          onPlay={(mode, heroKind) => setScreen({ kind: 'playing', mode, heroKind })}
+        />
       </Stage>
     );
   }
   // The game canvas owns its own landscape rotation, so it isn't wrapped.
-  return <GameCanvas mode={screen.mode} onExit={() => setScreen({ kind: 'menu' })} />;
+  return (
+    <GameCanvas
+      mode={screen.mode}
+      heroKind={screen.heroKind}
+      onExit={() => setScreen({ kind: 'menu' })}
+    />
+  );
 }
 
 function Stage({ children }: { children: React.ReactNode }) {

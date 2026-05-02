@@ -102,6 +102,15 @@ export const HERO_TOWER_NO_MINION_DAMAGE_FACTOR = 0.25;
 /** Distance from the tower within which an allied minion shields the hero
  *  from the no-minion damage penalty. */
 export const HERO_TOWER_MINION_AGGRO_RADIUS = 9;
+/** Counter-aggro: every tower hit on the local player adds this much to the
+ *  player's outgoing damage multiplier (auto-attacks AND skills). Stacks
+ *  accumulate up to {@link PLAYER_TOWER_FOCUS_STACK_CAP} and reset
+ *  {@link PLAYER_TOWER_FOCUS_DECAY_MS} after the last tower hit. The point:
+ *  diving in punishes you, but if you survive each hit, you fight back
+ *  harder — the tower is helping you kill it. */
+export const PLAYER_TOWER_FOCUS_STACK_BONUS = 0.12;
+export const PLAYER_TOWER_FOCUS_STACK_CAP = 5;
+export const PLAYER_TOWER_FOCUS_DECAY_MS = 6000;
 
 // Backwards-compat single-tower aliases (kept while older code paths
 // reference TOWER_BLUE_X / TOWER_RED_X — point them at the mid towers).
@@ -207,6 +216,42 @@ export const HEAL_DURATION_MS = 3000;
 export const HEAL_COOLDOWN_MS = 22000;
 export const RECALL_CHANNEL_MS = 5000;
 export const RECALL_COOLDOWN_MS = 30000;
+
+// --- Heroes ---------------------------------------------------------------
+// The game now ships two heroes; the player picks one in offline mode and
+// the other rounds out the team.
+export type HeroKind = 'ranger' | 'mage';
+
+// Mage — fire archetype. Slightly squishier than the ranger but bigger
+// burst with AoE on the ult. Stats are independent of the ranger constants
+// so we can tune them in isolation.
+export const MAGE_MAX_HP = 460;
+export const MAGE_ATTACK_DAMAGE = 38;
+export const MAGE_ATTACK_RANGE = 8.5;
+export const MAGE_ATTACK_COOLDOWN_MS = 720;
+export const MAGE_SPEED_3D = 5.8;
+
+// Mage skills (огненная школа)
+// Q — fireball: heavy single-target damage.
+export const MAGE_Q_DAMAGE = 140;
+export const MAGE_Q_COOLDOWN_MS = 7000;
+export const MAGE_Q_RANGE = 14;
+
+// E — fire wall: a slowing flame line that ticks damage on contact.
+export const MAGE_E_DAMAGE = 70;
+export const MAGE_E_SLOW_FACTOR = 0.55;
+export const MAGE_E_SLOW_DURATION_MS = 2500;
+export const MAGE_E_COOLDOWN_MS = 8000;
+export const MAGE_E_RANGE = 12;
+
+// C — meteor: slow-falling chunk that crushes a primary target then
+// shockwaves the rest. The AoE damage is dealt to every enemy unit other
+// than the primary target within MAGE_C_AOE_RADIUS of the impact.
+export const MAGE_C_DAMAGE = 200;
+export const MAGE_C_AOE_RADIUS = 4.5;
+export const MAGE_C_AOE_DAMAGE = 120;
+export const MAGE_C_COOLDOWN_MS = 12000;
+export const MAGE_C_RANGE = 14;
 
 // Bot — tuned slightly weaker than the player so 1v1 feels fair.
 export const BOT_MAX_HP = 420;

@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { createGame, type Game } from '../game/index.js';
+import type { HeroKind } from '../game/constants.js';
 
 interface Frame {
   logicalW: number;
@@ -25,10 +26,11 @@ function computeFrame(): Frame {
 
 interface GameCanvasProps {
   mode: 'online' | 'offline';
+  heroKind?: HeroKind;
   onExit?: () => void;
 }
 
-export function GameCanvas({ mode, onExit }: GameCanvasProps) {
+export function GameCanvas({ mode, heroKind = 'ranger', onExit }: GameCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Game | null>(null);
   const [frame, setFrame] = useState<Frame>(() => computeFrame());
@@ -50,14 +52,14 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const game = createGame(containerRef.current, { mode });
+    const game = createGame(containerRef.current, { mode, heroKind });
     game.onMatchEnd = (winner) => setMatchEnd(winner);
     gameRef.current = game;
     return () => {
       game.destroy();
       gameRef.current = null;
     };
-  }, [gameKey, mode]);
+  }, [gameKey, mode, heroKind]);
 
   useEffect(() => {
     setMatchMs(0);
@@ -158,7 +160,7 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           subtitle="STUN"
           accent="#b56cff"
           right={170}
-          bottom={186}
+          bottom={120}
           size={86}
           totalMs={5000}
           getGame={getGame}

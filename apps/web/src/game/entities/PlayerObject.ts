@@ -1,35 +1,95 @@
 import * as THREE from 'three';
 import {
+  type HeroKind,
   HERO_BASE_XP_TO_LEVEL,
   HERO_DAMAGE_PER_LEVEL,
   HERO_HP_PER_LEVEL,
   HERO_KILL_XP_REWARD,
   HERO_MAX_LEVEL,
   HERO_XP_LEVEL_GROWTH,
+  MAGE_ATTACK_COOLDOWN_MS,
+  MAGE_ATTACK_DAMAGE,
+  MAGE_ATTACK_RANGE,
+  MAGE_C_AOE_DAMAGE,
+  MAGE_C_AOE_RADIUS,
+  MAGE_C_COOLDOWN_MS,
+  MAGE_C_DAMAGE,
+  MAGE_C_RANGE,
+  MAGE_E_COOLDOWN_MS,
+  MAGE_E_DAMAGE,
+  MAGE_E_RANGE,
+  MAGE_E_SLOW_DURATION_MS,
+  MAGE_E_SLOW_FACTOR,
+  MAGE_MAX_HP,
+  MAGE_Q_COOLDOWN_MS,
+  MAGE_Q_DAMAGE,
+  MAGE_Q_RANGE,
+  MAGE_SPEED_3D,
+  PLAYER_ATTACK_COOLDOWN_MS,
   PLAYER_ATTACK_DAMAGE,
   PLAYER_ATTACK_RANGE,
   PLAYER_MAX_HP,
   PLAYER_RADIUS,
   PLAYER_SPEED_3D,
-  SKILL_E_DAMAGE,
+  PLAYER_TOWER_FOCUS_DECAY_MS,
+  PLAYER_TOWER_FOCUS_STACK_BONUS,
+  PLAYER_TOWER_FOCUS_STACK_CAP,
+  SKILL_C_COOLDOWN_MS,
   SKILL_C_DAMAGE,
+  SKILL_C_RANGE,
+  SKILL_C_STUN_DURATION_MS,
+  SKILL_E_COOLDOWN_MS,
+  SKILL_E_DAMAGE,
+  SKILL_E_RANGE,
+  SKILL_E_SLOW_DURATION_MS,
+  SKILL_E_SLOW_FACTOR,
+  SKILL_Q_COOLDOWN_MS,
   SKILL_Q_DAMAGE,
+  SKILL_Q_RANGE,
 } from '../constants.js';
 import type { Unit, Team } from '../combat/Unit.js';
 import { HealthBar } from '../combat/HealthBar.js';
+import type { ProjectileKind } from './ProjectileManager.js';
 
 /**
- * Layla — markswoman. Built so that her bow points along the local +Z axis,
- * which matches the rotation formula in update(): atan2(input.x, input.z).
+ * Per-skill loadout. Lets `Game` cast Q/E/C uniformly without branching on
+ * the hero kind — the hero packages its own ranges, cooldowns, projectile
+ * kind and on-hit effect.
+ */
+export interface SkillConfig {
+  /** Damage at the hero's current level. Read fresh per cast. */
+  damage: number;
+  cooldownMs: number;
+  range: number;
+  projectileKind: ProjectileKind;
+  effect?: {
+    slow?: { factor: number; durationMs: number };
+    stun?: { durationMs: number };
+  };
+  /** Optional explosion radius around the impact point. */
+  aoeRadius?: number;
+  /** Damage dealt to other enemies inside the AoE radius. */
+  aoeDamage?: number;
+}
+
+/**
+ * Hero entity for the local player. Two archetypes ship today: the ranger
+ * (Layla — bow + skillshots) and the mage (fireball + meteor AoE). The
+ * archetype is fixed at construction; visual, stats, and skill loadout
+ * branch on `heroKind` from there.
+ *
+ * The body is built so the weapon points along the local +Z axis, which
+ * matches the rotation formula in update(): atan2(input.x, input.z).
  */
 export class PlayerObject implements Unit {
   readonly kind = 'hero';
+  readonly heroKind: HeroKind;
   readonly group = new THREE.Group();
   readonly facing = new THREE.Vector3(0, 0, 1);
   team: Team = 'blue';
   readonly radius = PLAYER_RADIUS;
   readonly xpReward = HERO_KILL_XP_REWARD;
-  hp = PLAYER_MAX_HP;
+  hp: number;
   alive = true;
   slowUntil = 0;
   stunnedUntil = 0;
@@ -40,6 +100,8 @@ export class PlayerObject implements Unit {
   private readonly spawn: THREE.Vector3;
   private readonly healthBar = new HealthBar(2.4, 0.22, 0x44ff66, true, true);
   private readonly rangeRing: THREE.Mesh;
+  // Outfit recolour points — set by setTeam() at runtime. Both heroes
+  // expose the same two materials so the team-swap path stays generic.
   private cloakMat!: THREE.MeshLambertMaterial;
   private cloakLightMat!: THREE.MeshLambertMaterial;
   /** While now < attackLockUntil the hero stops moving (stand-still on shoot). */
@@ -53,17 +115,28 @@ export class PlayerObject implements Unit {
   private bodyRoot?: THREE.Object3D;
   private deathStartedAt = 0;
 
-  constructor(spawn: THREE.Vector3) {
+  // Counter-aggro stacks: every tower hit on the player adds one stack, up
+  // to the cap. The bonus decays back to zero {@link PLAYER_TOWER_FOCUS_DECAY_MS}
+  // ms after the most recent hit (all-or-nothing, not per-stack — once the
+  // player escapes the tower for that long, the buff drops).
+  private towerFocusStacks = 0;
+  private towerFocusLastHitAt = 0;
+
+  constructor(spawn: THREE.Vector3, heroKind: HeroKind = 'ranger') {
+    this.heroKind = heroKind;
     this.spawn = spawn.clone();
-    this.buildMia();
+    if (heroKind === 'mage') this.buildMage();
+    else this.buildMia();
+    this.hp = this.maxHp;
     this.group.position.copy(spawn);
     this.healthBar.group.position.set(0, 3, 0);
     this.group.add(this.healthBar.group);
     this.refreshLevelBadge();
     this.healthBar.setHp(this.hp, this.maxHp);
 
+    const range = this.attackRange;
     this.rangeRing = new THREE.Mesh(
-      new THREE.RingGeometry(PLAYER_ATTACK_RANGE - 0.35, PLAYER_ATTACK_RANGE, 64),
+      new THREE.RingGeometry(range - 0.35, range, 64),
       new THREE.MeshBasicMaterial({
         color: 0x9fd8ff,
         transparent: true,
@@ -104,23 +177,108 @@ export class PlayerObject implements Unit {
   }
 
   get maxHp(): number {
-    return PLAYER_MAX_HP + (this.level - 1) * HERO_HP_PER_LEVEL;
+    const base = this.heroKind === 'mage' ? MAGE_MAX_HP : PLAYER_MAX_HP;
+    return base + (this.level - 1) * HERO_HP_PER_LEVEL;
   }
 
   get attackDamage(): number {
-    return PLAYER_ATTACK_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL;
+    const base = this.heroKind === 'mage' ? MAGE_ATTACK_DAMAGE : PLAYER_ATTACK_DAMAGE;
+    return base + (this.level - 1) * HERO_DAMAGE_PER_LEVEL;
   }
 
-  get skillQDamage(): number {
-    return SKILL_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.5;
+  get attackRange(): number {
+    return this.heroKind === 'mage' ? MAGE_ATTACK_RANGE : PLAYER_ATTACK_RANGE;
   }
 
-  get skillEDamage(): number {
-    return SKILL_E_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6);
+  get attackCooldownMs(): number {
+    return this.heroKind === 'mage' ? MAGE_ATTACK_COOLDOWN_MS : PLAYER_ATTACK_COOLDOWN_MS;
   }
 
-  get skillCDamage(): number {
-    return SKILL_C_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4);
+  get speed3D(): number {
+    return this.heroKind === 'mage' ? MAGE_SPEED_3D : PLAYER_SPEED_3D;
+  }
+
+  /** Auto-attack projectile cosmetic. Ranger: arrow, mage: small fire bolt. */
+  get autoAttackKind(): ProjectileKind {
+    return this.heroKind === 'mage' ? 'fire' : 'basic';
+  }
+
+  /** Q skill loadout — fresh per cast (damage scales with level). */
+  get skillQ(): SkillConfig {
+    if (this.heroKind === 'mage') {
+      return {
+        damage: MAGE_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.5,
+        cooldownMs: MAGE_Q_COOLDOWN_MS,
+        range: MAGE_Q_RANGE,
+        projectileKind: 'fire',
+      };
+    }
+    return {
+      damage: SKILL_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.5,
+      cooldownMs: SKILL_Q_COOLDOWN_MS,
+      range: SKILL_Q_RANGE,
+      projectileKind: 'heavy',
+    };
+  }
+
+  get skillE(): SkillConfig {
+    if (this.heroKind === 'mage') {
+      return {
+        damage: MAGE_E_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
+        cooldownMs: MAGE_E_COOLDOWN_MS,
+        range: MAGE_E_RANGE,
+        projectileKind: 'fire',
+        effect: { slow: { factor: MAGE_E_SLOW_FACTOR, durationMs: MAGE_E_SLOW_DURATION_MS } },
+      };
+    }
+    return {
+      damage: SKILL_E_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
+      cooldownMs: SKILL_E_COOLDOWN_MS,
+      range: SKILL_E_RANGE,
+      projectileKind: 'slow',
+      effect: { slow: { factor: SKILL_E_SLOW_FACTOR, durationMs: SKILL_E_SLOW_DURATION_MS } },
+    };
+  }
+
+  get skillC(): SkillConfig {
+    if (this.heroKind === 'mage') {
+      // Meteor — chunky direct hit + AoE shockwave to other enemies.
+      return {
+        damage: MAGE_C_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
+        cooldownMs: MAGE_C_COOLDOWN_MS,
+        range: MAGE_C_RANGE,
+        projectileKind: 'meteor',
+        aoeRadius: MAGE_C_AOE_RADIUS,
+        aoeDamage: MAGE_C_AOE_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
+      };
+    }
+    return {
+      damage: SKILL_C_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
+      cooldownMs: SKILL_C_COOLDOWN_MS,
+      range: SKILL_C_RANGE,
+      projectileKind: 'control',
+      effect: { stun: { durationMs: SKILL_C_STUN_DURATION_MS } },
+    };
+  }
+
+  /** Called by Game whenever a tower projectile lands on the player. */
+  notifyTowerHit(now: number): void {
+    if (now - this.towerFocusLastHitAt > PLAYER_TOWER_FOCUS_DECAY_MS) {
+      this.towerFocusStacks = 0;
+    }
+    this.towerFocusStacks = Math.min(PLAYER_TOWER_FOCUS_STACK_CAP, this.towerFocusStacks + 1);
+    this.towerFocusLastHitAt = now;
+  }
+
+  /** Active stack count after applying the decay window. */
+  getTowerFocusStacks(now = performance.now()): number {
+    if (now - this.towerFocusLastHitAt > PLAYER_TOWER_FOCUS_DECAY_MS) return 0;
+    return this.towerFocusStacks;
+  }
+
+  /** Multiply outgoing damage (autos + skills) by this at fire-time. */
+  outgoingDamageMultiplier(now = performance.now()): number {
+    return 1 + this.getTowerFocusStacks(now) * PLAYER_TOWER_FOCUS_STACK_BONUS;
   }
 
   update(input: { x: number; z: number }, deltaSec: number, now: number): void {
@@ -135,7 +293,8 @@ export class PlayerObject implements Unit {
     }
     // Lock movement during the attack windup so the shot reads as committed.
     const attacking = now < this.attackLockUntil;
-    const speed = this.slowUntil > now ? PLAYER_SPEED_3D * 0.5 : PLAYER_SPEED_3D;
+    const baseSpeed = this.speed3D;
+    const speed = this.slowUntil > now ? baseSpeed * 0.5 : baseSpeed;
     const len = Math.hypot(input.x, input.z);
     let targetVx = 0;
     let targetVz = 0;
@@ -494,6 +653,196 @@ export class PlayerObject implements Unit {
     bow.rotation.z = -Math.PI / 14;
     body.add(bow);
     this.bowGroup = bow;
+  }
+
+  /**
+   * Fire mage build. Hooded robe, glowing staff with an ember orb. Same
+   * skeleton as the ranger so the existing gait/draw animations keep working
+   * — only the silhouette and the held weapon differ. Materials cloakMat /
+   * cloakLightMat are still the recolour points used by setTeam().
+   */
+  private buildMage(): void {
+    // Palette — pale skin, deep crimson robe with ember-gold trim, dark
+    // hood. Setting cloak/cloakLight here keeps setTeam() universal.
+    const skin = new THREE.MeshLambertMaterial({ color: 0xf2d3b3 });
+    const cloak = new THREE.MeshLambertMaterial({ color: 0x4a1727 });
+    const cloakLight = new THREE.MeshLambertMaterial({ color: 0x7a2535 });
+    this.cloakMat = cloak;
+    this.cloakLightMat = cloakLight;
+    const robeUnder = new THREE.MeshLambertMaterial({ color: 0x1a1224 });
+    const trim = new THREE.MeshLambertMaterial({ color: 0xf3b75a });
+    const hood = new THREE.MeshLambertMaterial({ color: 0x230910 });
+    const bootMat = new THREE.MeshLambertMaterial({ color: 0x261410 });
+    const staffMat = new THREE.MeshLambertMaterial({ color: 0x2a1d18 });
+    const emberMat = new THREE.MeshLambertMaterial({
+      color: 0xffb240,
+      emissive: 0xff5520,
+      emissiveIntensity: 1.6,
+    });
+    const emberGlow = new THREE.MeshBasicMaterial({
+      color: 0xff7a2a,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    });
+
+    const body = new THREE.Group();
+    this.group.add(body);
+    this.bodyRoot = body;
+
+    // Legs — robe-covered, slightly chunkier than ranger so the silhouette
+    // reads as "robed mage" not "archer in tights".
+    const thighGeom = new THREE.CylinderGeometry(0.15, 0.14, 0.62, 10);
+    thighGeom.translate(0, -0.31, 0);
+    const calfGeom = new THREE.CylinderGeometry(0.13, 0.11, 0.55, 10);
+    calfGeom.translate(0, -0.28, 0);
+    for (const side of [-1, 1] as const) {
+      const hip = new THREE.Group();
+      hip.position.set(0.17 * side, 0.95, 0);
+      const thigh = new THREE.Mesh(thighGeom, robeUnder);
+      hip.add(thigh);
+      const calf = new THREE.Mesh(calfGeom, robeUnder);
+      calf.position.y = -0.62;
+      hip.add(calf);
+      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.16, 0.36), bootMat);
+      boot.position.set(0, -1.12, 0.05);
+      hip.add(boot);
+      body.add(hip);
+      if (side < 0) this.leftLeg = hip;
+      else this.rightLeg = hip;
+    }
+
+    // Long robe skirt — taller and wider than the archer's short skirt.
+    const robe = new THREE.Mesh(new THREE.ConeGeometry(0.62, 0.95, 18), cloak);
+    robe.position.y = 0.85;
+    body.add(robe);
+    // Lower hem trim — gold ring at the bottom of the robe.
+    const hem = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.03, 8, 28), trim);
+    hem.rotation.x = Math.PI / 2;
+    hem.position.y = 0.42;
+    body.add(hem);
+    // Belt with gold buckle.
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.06, 8, 22), trim);
+    belt.rotation.x = Math.PI / 2;
+    belt.position.y = 1.32;
+    body.add(belt);
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.06), trim);
+    buckle.position.set(0, 1.32, 0.36);
+    body.add(buckle);
+
+    // Torso — capsule, draped in cloak.
+    const torso = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.36, 0.46, 6, 12),
+      cloakLight,
+    );
+    torso.position.y = 1.62;
+    body.add(torso);
+    // Inner robe strip (front) — accent so the cloak reads as layered.
+    const accentStrip = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.18, 0.6),
+      trim,
+    );
+    accentStrip.position.set(0, 1.55, 0.37);
+    body.add(accentStrip);
+
+    // Arms with wide robe sleeves.
+    const upperArmGeom = new THREE.CylinderGeometry(0.11, 0.13, 0.5, 10);
+    upperArmGeom.translate(0, -0.25, 0);
+    const forearmGeom = new THREE.CylinderGeometry(0.09, 0.075, 0.42, 10);
+    forearmGeom.translate(0, -0.21, 0);
+    for (const side of [-1, 1] as const) {
+      const shoulder = new THREE.Group();
+      shoulder.position.set(0.4 * side, 1.85, 0);
+      const upper = new THREE.Mesh(upperArmGeom, cloak);
+      shoulder.add(upper);
+      const sleeveTrim = new THREE.Mesh(
+        new THREE.TorusGeometry(0.13, 0.018, 6, 16),
+        trim,
+      );
+      sleeveTrim.rotation.x = Math.PI / 2;
+      sleeveTrim.position.y = -0.5;
+      shoulder.add(sleeveTrim);
+      const forearm = new THREE.Mesh(forearmGeom, skin);
+      forearm.position.y = -0.5;
+      shoulder.add(forearm);
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), skin);
+      hand.position.y = -0.92;
+      shoulder.add(hand);
+      body.add(shoulder);
+      if (side < 0) this.leftArm = shoulder;
+      else this.rightArm = shoulder;
+    }
+
+    // Head — partly hidden by hood.
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 16), skin);
+    head.position.y = 2.18;
+    body.add(head);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff8a3a });
+    for (const ex of [-0.08, 0.08]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.026, 6, 6), eyeMat);
+      eye.position.set(ex, 2.18, 0.24);
+      body.add(eye);
+    }
+
+    // Hood — large cone over and behind the head.
+    const hoodMesh = new THREE.Mesh(
+      new THREE.ConeGeometry(0.42, 0.72, 14),
+      hood,
+    );
+    hoodMesh.position.set(0, 2.36, -0.06);
+    hoodMesh.rotation.x = -0.18;
+    body.add(hoodMesh);
+    // Hood inner trim — visible rim around the face opening.
+    const hoodRim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.27, 0.02, 6, 18),
+      trim,
+    );
+    hoodRim.rotation.x = Math.PI / 2;
+    hoodRim.position.set(0, 2.18, 0.18);
+    body.add(hoodRim);
+
+    // Staff held in the right hand. Long shaft with an ember orb floating
+    // at the top, wrapped by a translucent glow halo. The staff is parented
+    // directly to the body (not the arm) so the ranger's draw animation
+    // doesn't mangle it — magic casting doesn't need an arm windup.
+    const staff = new THREE.Group();
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.06, 1.95, 8),
+      staffMat,
+    );
+    shaft.position.y = 0.4;
+    staff.add(shaft);
+    const grip = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.07, 0.07, 0.18, 8),
+      trim,
+    );
+    grip.position.y = 0.85;
+    staff.add(grip);
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 14), emberMat);
+    orb.position.y = 1.55;
+    staff.add(orb);
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 14), emberGlow);
+    halo.position.y = 1.55;
+    staff.add(halo);
+    // Three jagged claws cradling the orb.
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      const claw = new THREE.Mesh(
+        new THREE.ConeGeometry(0.05, 0.32, 6),
+        staffMat,
+      );
+      claw.position.set(Math.cos(a) * 0.18, 1.42, Math.sin(a) * 0.18);
+      claw.rotation.z = -Math.cos(a) * 0.4;
+      claw.rotation.x = Math.sin(a) * 0.4;
+      staff.add(claw);
+    }
+    staff.position.set(0.55, 0.55, 0.18);
+    staff.rotation.z = -0.18;
+    body.add(staff);
+    // Reuse bowGroup as the "weapon group" so the existing windup squash
+    // (scale.x lerp on the bow) animates the staff harmlessly without any
+    // extra bookkeeping. Visually it just adds a subtle pulse on cast.
+    this.bowGroup = staff;
   }
 }
 

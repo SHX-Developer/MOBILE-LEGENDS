@@ -13,6 +13,11 @@ export class UnitRegistry {
     if (i >= 0) this.units.splice(i, 1);
   }
 
+  /** Read-only view of every registered unit (alive or otherwise). */
+  allUnits(): readonly Unit[] {
+    return this.units;
+  }
+
   /** Closest alive enemy of `team` within `maxRange` of `pos`, or null. */
   findNearestEnemy(
     team: Team,

@@ -8,7 +8,7 @@ import {
 import type { Team, Unit } from '../combat/Unit.js';
 import type { UnitRegistry } from '../combat/UnitRegistry.js';
 
-export type ProjectileKind = 'basic' | 'heavy' | 'slow' | 'meteor' | 'control';
+export type ProjectileKind = 'basic' | 'heavy' | 'slow' | 'meteor' | 'control' | 'fire';
 
 export interface ProjectileSpec {
   team: Team;
@@ -34,6 +34,13 @@ export interface ProjectileSpec {
    *  defer the floating damage number / haptic until the shot actually
    *  "lands", since the server already applied the real damage. */
   onArrive?: () => void;
+  /**
+   * If set, on impact every other enemy unit within `aoeRadius` of the hit
+   * point takes `aoeDamage`. The primary target receives the regular
+   * `damage` only — no double counting. Used for the mage's meteor.
+   */
+  aoeRadius?: number;
+  aoeDamage?: number;
 }
 
 interface Projectile {
@@ -52,6 +59,8 @@ interface Projectile {
   visualOnly: boolean;
   onArrive?: () => void;
   arrived: boolean;
+  aoeRadius?: number;
+  aoeDamage?: number;
 }
 
 interface Variant {
@@ -86,6 +95,10 @@ export class ProjectileManager {
       },
       meteor: {
         create: createMeteorProjectile,
+      },
+      fire: {
+        // FIRE — orange/yellow flame arrow for mage skillshots.
+        create: () => createSkillArrow(0xffa64a, 0xff5520, 1.15),
       },
     };
   }
@@ -126,6 +139,8 @@ export class ProjectileManager {
       visualOnly: spec.visualOnly === true,
       onArrive: spec.onArrive,
       arrived: false,
+      aoeRadius: spec.aoeRadius,
+      aoeDamage: spec.aoeDamage,
     });
   }
 
@@ -147,7 +162,7 @@ export class ProjectileManager {
           if (p.visualOnly) {
             this.fireOnArrive(p);
           } else {
-            this.hitUnit(p, p.target, now);
+            this.hitUnit(p, p.target, now, registry);
           }
           this.removeAt(i);
           continue;
@@ -165,7 +180,7 @@ export class ProjectileManager {
       if (!p.visualOnly) {
         const hit = registry.findHit(p.mesh.position, PROJECTILE_RADIUS, p.team);
         if (hit) {
-          this.hitUnit(p, hit, now);
+          this.hitUnit(p, hit, now, registry);
           this.removeAt(i);
           continue;
         }
@@ -186,7 +201,7 @@ export class ProjectileManager {
     p.onArrive?.();
   }
 
-  private hitUnit(p: Projectile, unit: Unit, now: number): void {
+  private hitUnit(p: Projectile, unit: Unit, now: number, registry: UnitRegistry): void {
     const wasAlive = unit.alive;
     const damage = Math.min(unit.hp, p.damage);
     unit.takeDamage(p.damage);
@@ -204,6 +219,31 @@ export class ProjectileManager {
     }
     if (p.fromPlayer) this.onPlayerHit?.();
     this.spawnHitBurst(unit.position, p.team);
+
+    // AoE shockwave — damage every other enemy of `p.team` within radius.
+    // Skips the primary target (already took the full hit) and stationary
+    // structures stay vulnerable too. XP from AoE kills also flows to the
+    // owning hero so meteor wipeouts feed the right player.
+    if (p.aoeRadius && p.aoeDamage && p.aoeDamage > 0) {
+      const r2 = p.aoeRadius * p.aoeRadius;
+      const cx = unit.position.x;
+      const cz = unit.position.z;
+      for (const other of registry.allUnits()) {
+        if (other === unit) continue;
+        if (!other.alive || other.team === p.team) continue;
+        const dx = other.position.x - cx;
+        const dz = other.position.z - cz;
+        if (dx * dx + dz * dz > r2) continue;
+        const wasOtherAlive = other.alive;
+        const otherDamage = Math.min(other.hp, p.aoeDamage);
+        other.takeDamage(p.aoeDamage);
+        if (otherDamage > 0) this.onDamage?.(other, otherDamage, p.owner);
+        if (wasOtherAlive && !other.alive && p.owner?.kind === 'hero') {
+          p.owner.grantXp?.(other.xpReward);
+        }
+        this.spawnHitBurst(other.position, p.team);
+      }
+    }
   }
 
   private removeAt(index: number): void {

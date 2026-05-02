@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  type HeroKind,
   BOT_ATTACK_COOLDOWN_MS,
   BOT_ATTACK_RANGE,
   BOT_DAMAGE,
@@ -12,12 +13,27 @@ import {
   BOT_VISION_RANGE,
   BASE_BLUE_X,
   BASE_BLUE_Z,
+  BASE_RED_X,
+  BASE_RED_Z,
   HERO_BASE_XP_TO_LEVEL,
   HERO_DAMAGE_PER_LEVEL,
   HERO_HP_PER_LEVEL,
   HERO_KILL_XP_REWARD,
   HERO_MAX_LEVEL,
   HERO_XP_LEVEL_GROWTH,
+  MAGE_C_AOE_DAMAGE,
+  MAGE_C_AOE_RADIUS,
+  MAGE_C_COOLDOWN_MS,
+  MAGE_C_DAMAGE,
+  MAGE_C_RANGE,
+  MAGE_E_COOLDOWN_MS,
+  MAGE_E_DAMAGE,
+  MAGE_E_RANGE,
+  MAGE_E_SLOW_DURATION_MS,
+  MAGE_E_SLOW_FACTOR,
+  MAGE_Q_COOLDOWN_MS,
+  MAGE_Q_DAMAGE,
+  MAGE_Q_RANGE,
   RECALL_CHANNEL_MS,
   SKILL_C_COOLDOWN_MS,
   SKILL_C_DAMAGE,
@@ -36,21 +52,27 @@ import type { Unit, Team } from '../combat/Unit.js';
 import type { UnitRegistry } from '../combat/UnitRegistry.js';
 import type { Colliders } from '../world/Colliders.js';
 import { HealthBar } from '../combat/HealthBar.js';
-import type { ProjectileManager } from './ProjectileManager.js';
+import type { ProjectileKind, ProjectileManager } from './ProjectileManager.js';
 
 const TMP_TARGET = new THREE.Vector3();
 
 /**
- * Red-team bot opponent. Naive FSM:
+ * AI hero. Originally just the red-team archer; now generalised to support
+ * either kind (ranger / mage) on either team. The state machine is the same
+ * regardless of kind — what differs is the projectile cosmetics and the
+ * skill numbers (range / cooldown / damage / on-hit effect).
+ *
+ * Naive FSM:
  *   • low HP → retreat to spawn, regen
  *   • enemy in vision and out of attack range → pursue
  *   • enemy in attack range → stop, fire on cooldown
- *   • no enemy in vision → walk toward map centre
+ *   • no enemy in vision → walk toward enemy base
  */
 export class BotObject implements Unit {
   readonly kind = 'hero';
+  readonly heroKind: HeroKind;
   readonly group = new THREE.Group();
-  team: Team = 'red';
+  team: Team;
   readonly radius = BOT_RADIUS;
   readonly xpReward = HERO_KILL_XP_REWARD;
   hp = BOT_MAX_HP;
@@ -62,7 +84,7 @@ export class BotObject implements Unit {
   respawnDelayMs = BOT_RESPAWN_MS;
 
   private readonly spawn: THREE.Vector3;
-  private readonly healthBar = new HealthBar(2.4, 0.22, 0xff5050, true, true);
+  private readonly healthBar: HealthBar;
   private respawnAt = 0;
   private lastAttackAt = -Infinity;
   private lastQAt = -Infinity;
@@ -75,9 +97,17 @@ export class BotObject implements Unit {
   private armorMat!: THREE.MeshLambertMaterial;
   private armorDarkMat!: THREE.MeshLambertMaterial;
 
-  constructor(spawn: THREE.Vector3) {
+  constructor(spawn: THREE.Vector3, heroKind: HeroKind = 'ranger', team: Team = 'red') {
+    this.heroKind = heroKind;
+    this.team = team;
     this.spawn = spawn.clone();
-    this.buildVisual();
+    // Bar colour: pick the team's signature so the player can tell ally
+    // bots from enemy bots at a glance even before the armour palette
+    // takes effect.
+    const barColor = team === 'blue' ? 0x44ff66 : 0xff5050;
+    this.healthBar = new HealthBar(2.4, 0.22, barColor, true, true);
+    if (heroKind === 'mage') this.buildMageVisual();
+    else this.buildArcherVisual();
     this.group.position.copy(spawn);
     this.healthBar.group.position.set(0, 3, 0);
     this.group.add(this.healthBar.group);
@@ -90,11 +120,19 @@ export class BotObject implements Unit {
   }
 
   get maxHp(): number {
-    return BOT_MAX_HP + (this.level - 1) * HERO_HP_PER_LEVEL;
+    // Mage trades a slice of HP for spell range/burst — same delta the
+    // player-side mage takes so 2v2 stays balanced.
+    const base = this.heroKind === 'mage' ? Math.round(BOT_MAX_HP * 0.92) : BOT_MAX_HP;
+    return base + (this.level - 1) * HERO_HP_PER_LEVEL;
   }
 
   get attackDamage(): number {
     return BOT_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL;
+  }
+
+  /** Auto-attack visual. Ranger fires arrows, mage flings small fire bolts. */
+  private get autoAttackKind(): ProjectileKind {
+    return this.heroKind === 'mage' ? 'fire' : 'basic';
   }
 
   billboardHealthBar(camera: THREE.Camera): void {
@@ -176,7 +214,12 @@ export class BotObject implements Unit {
       'structure',
     ]);
     if (!enemy) {
-      TMP_TARGET.set(BASE_BLUE_X, 0, BASE_BLUE_Z);
+      // Walk toward the enemy team's base. Blue bots push toward red base
+      // and vice versa — used to be hard-coded to blue base because the bot
+      // was always red.
+      const ex = this.team === 'red' ? BASE_BLUE_X : BASE_RED_X;
+      const ez = this.team === 'red' ? BASE_BLUE_Z : BASE_RED_Z;
+      TMP_TARGET.set(ex, 0, ez);
       this.moveToward(TMP_TARGET, deltaSec, speed, colliders);
       return;
     }
@@ -197,6 +240,7 @@ export class BotObject implements Unit {
         projectiles.spawn(this.position, enemy.position, now, {
           team: this.team,
           damage: this.attackDamage,
+          kind: this.autoAttackKind,
           target: enemy,
           owner: this,
         });
@@ -206,7 +250,9 @@ export class BotObject implements Unit {
   }
 
   /** Pick the longest-range skill currently available and fire toward `enemy`.
-   *  Returns true if a skill was cast (so the caller can skip the auto-attack). */
+   *  Returns true if a skill was cast (so the caller can skip the auto-attack).
+   *  Branches by heroKind so the mage bot uses fireballs and meteors instead
+   *  of the ranger's heavy/slow/stun loadout. */
   private tryCastSkill(
     enemy: { position: THREE.Vector3 },
     dist: number,
@@ -217,7 +263,16 @@ export class BotObject implements Unit {
     const dz = enemy.position.z - this.position.z;
     const len = Math.hypot(dx, dz);
     if (len < 1e-3) return false;
-    // Prefer the heavy nuke when it's in range and ready.
+    if (this.heroKind === 'mage') return this.tryCastMageSkill(enemy, dist, now, projectiles);
+    return this.tryCastRangerSkill(enemy, dist, now, projectiles);
+  }
+
+  private tryCastRangerSkill(
+    enemy: { position: THREE.Vector3 },
+    dist: number,
+    now: number,
+    projectiles: ProjectileManager,
+  ): boolean {
     if (dist <= SKILL_Q_RANGE && now - this.lastQAt >= SKILL_Q_COOLDOWN_MS) {
       const damage = SKILL_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.5;
       projectiles.spawn(this.position, enemy.position, now, {
@@ -231,7 +286,6 @@ export class BotObject implements Unit {
       this.lastQAt = now;
       return true;
     }
-    // Stun first if the player is close — chains nicely with auto-attacks.
     if (dist <= SKILL_C_RANGE && now - this.lastCAt >= SKILL_C_COOLDOWN_MS) {
       projectiles.spawn(this.position, enemy.position, now, {
         team: this.team,
@@ -245,7 +299,6 @@ export class BotObject implements Unit {
       this.lastCAt = now;
       return true;
     }
-    // Slow on retreat / kite.
     if (dist <= SKILL_E_RANGE && now - this.lastEAt >= SKILL_E_COOLDOWN_MS) {
       projectiles.spawn(this.position, enemy.position, now, {
         team: this.team,
@@ -254,6 +307,61 @@ export class BotObject implements Unit {
         effect: { slow: { factor: SKILL_E_SLOW_FACTOR, durationMs: SKILL_E_SLOW_DURATION_MS } },
         owner: this,
         maxDistance: SKILL_E_RANGE,
+        target: enemy as never,
+      });
+      this.lastEAt = now;
+      return true;
+    }
+    return false;
+  }
+
+  private tryCastMageSkill(
+    enemy: { position: THREE.Vector3 },
+    dist: number,
+    now: number,
+    projectiles: ProjectileManager,
+  ): boolean {
+    // Meteor first — biggest threat with AoE, makes the mage scary.
+    if (dist <= MAGE_C_RANGE && now - this.lastCAt >= MAGE_C_COOLDOWN_MS) {
+      const damage = MAGE_C_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6);
+      const aoeDamage = MAGE_C_AOE_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4);
+      projectiles.spawn(this.position, enemy.position, now, {
+        team: this.team,
+        damage,
+        kind: 'meteor',
+        owner: this,
+        maxDistance: MAGE_C_RANGE,
+        target: enemy as never,
+        aoeRadius: MAGE_C_AOE_RADIUS,
+        aoeDamage,
+      });
+      this.lastCAt = now;
+      return true;
+    }
+    // Q fireball — clean burst when it lines up.
+    if (dist <= MAGE_Q_RANGE && now - this.lastQAt >= MAGE_Q_COOLDOWN_MS) {
+      const damage = MAGE_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.5;
+      projectiles.spawn(this.position, enemy.position, now, {
+        team: this.team,
+        damage,
+        kind: 'fire',
+        owner: this,
+        maxDistance: MAGE_Q_RANGE,
+        target: enemy as never,
+      });
+      this.lastQAt = now;
+      return true;
+    }
+    // Fire-wall — slows and chips the target.
+    if (dist <= MAGE_E_RANGE && now - this.lastEAt >= MAGE_E_COOLDOWN_MS) {
+      const damage = MAGE_E_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6);
+      projectiles.spawn(this.position, enemy.position, now, {
+        team: this.team,
+        damage,
+        kind: 'fire',
+        effect: { slow: { factor: MAGE_E_SLOW_FACTOR, durationMs: MAGE_E_SLOW_DURATION_MS } },
+        owner: this,
+        maxDistance: MAGE_E_RANGE,
         target: enemy as never,
       });
       this.lastEAt = now;
@@ -401,10 +509,13 @@ export class BotObject implements Unit {
     return best;
   }
 
-  private buildVisual(): void {
+  private buildArcherVisual(): void {
     const skin = new THREE.MeshLambertMaterial({ color: 0xe6c5a0 });
-    const armor = new THREE.MeshLambertMaterial({ color: 0xc73c3c });
-    const armorDark = new THREE.MeshLambertMaterial({ color: 0x6a1717 });
+    // Team-coloured "armor" for the AI archer. Blue ally bots get a navy
+    // palette so the player can read the team at a glance.
+    const isBlue = this.team === 'blue';
+    const armor = new THREE.MeshLambertMaterial({ color: isBlue ? 0x2a4f8a : 0xc73c3c });
+    const armorDark = new THREE.MeshLambertMaterial({ color: isBlue ? 0x172846 : 0x6a1717 });
     this.armorMat = armor;
     this.armorDarkMat = armorDark;
     const accent = new THREE.MeshLambertMaterial({
@@ -459,6 +570,143 @@ export class BotObject implements Unit {
     bow.position.set(0.58, 1.42, 0.38);
     bow.rotation.z = -Math.PI / 18;
     this.group.add(bow);
+  }
+
+  /**
+   * Mage AI build — distinct silhouette so the player can read the threat
+   * (robe + hood + ember staff). Team palette decides the robe colour.
+   */
+  private buildMageVisual(): void {
+    const skin = new THREE.MeshLambertMaterial({ color: 0xeec7a8 });
+    const isBlue = this.team === 'blue';
+    // For the mage, use the same armorMat fields to drive setTeam() — they
+    // map to the robe primary / dark colours rather than to literal armor.
+    const robe = new THREE.MeshLambertMaterial({ color: isBlue ? 0x2c3a78 : 0x4a1727 });
+    const robeDark = new THREE.MeshLambertMaterial({ color: isBlue ? 0x141a3a : 0x230910 });
+    this.armorMat = robe;
+    this.armorDarkMat = robeDark;
+    const trim = new THREE.MeshLambertMaterial({ color: 0xf3b75a });
+    const hoodMat = new THREE.MeshLambertMaterial({ color: 0x150a18 });
+    const staffMat = new THREE.MeshLambertMaterial({ color: 0x2a1d18 });
+    const emberMat = new THREE.MeshLambertMaterial({
+      color: 0xffb240,
+      emissive: 0xff5520,
+      emissiveIntensity: 1.6,
+    });
+    const emberGlow = new THREE.MeshBasicMaterial({
+      color: 0xff7a2a,
+      transparent: true,
+      opacity: 0.5,
+      depthWrite: false,
+    });
+
+    // Legs hidden under a long robe — only the boots peek out.
+    const legGeom = new THREE.CylinderGeometry(0.18, 0.18, 0.5, 10);
+    for (const x of [-0.22, 0.22]) {
+      const leg = new THREE.Mesh(legGeom, robeDark);
+      leg.position.set(x, 0.25, 0);
+      this.group.add(leg);
+    }
+
+    // Long robe — wide cone covering the legs.
+    const robeMesh = new THREE.Mesh(new THREE.ConeGeometry(0.65, 1.4, 16), robe);
+    robeMesh.position.y = 0.7;
+    this.group.add(robeMesh);
+    // Hem trim.
+    const hem = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.04, 8, 28), trim);
+    hem.rotation.x = Math.PI / 2;
+    hem.position.y = 0.05;
+    this.group.add(hem);
+
+    // Cloaked torso.
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.46, 0.55, 6, 12), robe);
+    torso.position.y = 1.6;
+    this.group.add(torso);
+
+    // Belt with buckle.
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.06, 8, 22), trim);
+    belt.rotation.x = Math.PI / 2;
+    belt.position.y = 1.32;
+    this.group.add(belt);
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.07), trim);
+    buckle.position.set(0, 1.32, 0.42);
+    this.group.add(buckle);
+
+    // Wide-sleeved arms.
+    const sleeveGeom = new THREE.CylinderGeometry(0.16, 0.18, 0.7, 10);
+    for (const x of [-0.55, 0.55]) {
+      const sleeve = new THREE.Mesh(sleeveGeom, robe);
+      sleeve.position.set(x, 1.55, 0);
+      this.group.add(sleeve);
+      const sleeveTrim = new THREE.Mesh(
+        new THREE.TorusGeometry(0.18, 0.02, 6, 16),
+        trim,
+      );
+      sleeveTrim.rotation.x = Math.PI / 2;
+      sleeveTrim.position.set(x, 1.22, 0);
+      this.group.add(sleeveTrim);
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 8), skin);
+      hand.position.set(x, 1.12, 0);
+      this.group.add(hand);
+    }
+
+    // Head + hood.
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 14), skin);
+    head.position.y = 2.18;
+    this.group.add(head);
+    const hood = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.85, 14), hoodMat);
+    hood.position.set(0, 2.4, -0.08);
+    hood.rotation.x = -0.18;
+    this.group.add(hood);
+    const hoodRim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.32, 0.024, 6, 18),
+      trim,
+    );
+    hoodRim.rotation.x = Math.PI / 2;
+    hoodRim.position.set(0, 2.18, 0.18);
+    this.group.add(hoodRim);
+    // Sinister glowing eyes — reads as a mage from far away.
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff8a3a });
+    for (const ex of [-0.1, 0.1]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 6), eyeMat);
+      eye.position.set(ex, 2.18, 0.27);
+      this.group.add(eye);
+    }
+
+    // Staff with ember orb.
+    const staff = new THREE.Group();
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.07, 2.2, 8),
+      staffMat,
+    );
+    shaft.position.y = 0.4;
+    staff.add(shaft);
+    const grip = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.08, 0.08, 0.18, 8),
+      trim,
+    );
+    grip.position.y = 0.85;
+    staff.add(grip);
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 14), emberMat);
+    orb.position.y = 1.65;
+    staff.add(orb);
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.36, 14, 14), emberGlow);
+    halo.position.y = 1.65;
+    staff.add(halo);
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      const claw = new THREE.Mesh(
+        new THREE.ConeGeometry(0.05, 0.32, 6),
+        staffMat,
+      );
+      claw.position.set(Math.cos(a) * 0.2, 1.5, Math.sin(a) * 0.2);
+      claw.rotation.z = -Math.cos(a) * 0.4;
+      claw.rotation.x = Math.sin(a) * 0.4;
+      staff.add(claw);
+    }
+    staff.position.set(0.65, 0.5, 0.2);
+    staff.rotation.z = -0.18;
+    this.group.add(staff);
   }
 }
 

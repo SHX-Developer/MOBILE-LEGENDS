@@ -129,7 +129,17 @@ export class MinionObject implements Unit {
       const lateral = (index - 1) * 1.4;
       this.group.position.x += lateral;
     }
-    this.healthBar = new HealthBar(1.45, 0.16, team === 'blue' ? 0x64d8ff : 0xff7171, false, true);
+    // Minion bar is short — pass hpScale > 1 so the digits sit on a noticeably
+    // wider/taller plate than the bar itself, otherwise they're hard to read
+    // at the tactical zoom.
+    this.healthBar = new HealthBar(
+      1.45,
+      0.16,
+      team === 'blue' ? 0x64d8ff : 0xff7171,
+      false,
+      true,
+      2.0,
+    );
     this.healthBar.group.position.set(0, 1.9 * config.scale + 0.4, 0);
     this.group.add(this.healthBar.group);
     this.healthBar.setHp(this.hp, this.maxHp);

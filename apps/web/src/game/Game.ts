@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import type { MatchCombatEvent, MatchPlayerSnapshot, MatchSnapshot } from '@ml/shared';
 import {
-  PLAYER_ATTACK_COOLDOWN_MS,
-  PLAYER_ATTACK_RANGE,
+  type HeroKind,
   PLAYER_RADIUS,
   PLAYER_RESPAWN_MS,
   BASE_BLUE_X,
@@ -22,15 +21,6 @@ import {
   RECALL_CHANNEL_MS,
   RECALL_COOLDOWN_MS,
   MINION_WAVE_INTERVAL_MS,
-  SKILL_E_COOLDOWN_MS,
-  SKILL_E_RANGE,
-  SKILL_E_SLOW_DURATION_MS,
-  SKILL_E_SLOW_FACTOR,
-  SKILL_C_COOLDOWN_MS,
-  SKILL_C_RANGE,
-  SKILL_C_STUN_DURATION_MS,
-  SKILL_Q_COOLDOWN_MS,
-  SKILL_Q_RANGE,
   SPAWN_BLUE_X,
   SPAWN_BLUE_Z,
   SPAWN_RED_X,
@@ -60,6 +50,10 @@ export type GameMode = 'online' | 'offline';
 
 export interface GameOptions {
   mode: GameMode;
+  /** Hero archetype the local player wants to play. Defaults to ranger. The
+   *  online mode currently always plays as ranger because the server only
+   *  knows the one hero — this option is honoured only in offline mode. */
+  heroKind?: HeroKind;
 }
 
 interface AimState {
@@ -78,7 +72,10 @@ export class Game {
   private rig: CameraRig;
   private input: InputController;
   private player: PlayerObject;
-  private bot: BotObject;
+  /** Allied AI hero in offline 2v2; null in online or when the player goes solo. */
+  private allyBot: BotObject | null = null;
+  /** Enemy AI heroes. Online has 1 (the opponent); offline has 2 (mage + ranger). */
+  private enemyBots: BotObject[] = [];
   private minions: MinionObject[] = [];
   private projectiles: ProjectileManager;
   private floatingText: FloatingTextManager;
@@ -114,10 +111,12 @@ export class Game {
   private lastMinionWaveAt = -Infinity;
 
   private aimIndicator: THREE.Mesh;
+  // Initial range placeholders are zero — startAim() refreshes them from the
+  // hero's current SkillConfig (different per heroKind).
   private aim: Record<SkillId, AimState> = {
-    q: { active: false, dirX: 0, dirZ: 1, range: SKILL_Q_RANGE },
-    e: { active: false, dirX: 0, dirZ: 1, range: SKILL_E_RANGE },
-    c: { active: false, dirX: 0, dirZ: 1, range: SKILL_C_RANGE },
+    q: { active: false, dirX: 0, dirZ: 1, range: 0 },
+    e: { active: false, dirX: 0, dirZ: 1, range: 0 },
+    c: { active: false, dirX: 0, dirZ: 1, range: 0 },
   };
 
   private readonly mode: GameMode;
@@ -157,14 +156,59 @@ export class Game {
     this.towers = map.towers;
     this.bases = map.bases;
 
-    this.player = new PlayerObject(new THREE.Vector3(SPAWN_BLUE_X, 0, SPAWN_BLUE_Z));
+    // Online keeps to ranger — server doesn't know about the mage yet. The
+    // offline mode honours the player's pick and assembles a 2v2 around it.
+    const playerHeroKind: HeroKind = this.mode === 'online' ? 'ranger' : (opts.heroKind ?? 'ranger');
+    this.player = new PlayerObject(
+      new THREE.Vector3(SPAWN_BLUE_X, 0, SPAWN_BLUE_Z),
+      playerHeroKind,
+    );
     this.scene.add(this.player.group);
-
-    this.bot = new BotObject(new THREE.Vector3(SPAWN_RED_X, 0, SPAWN_RED_Z));
-    this.scene.add(this.bot.group);
-
     this.registry.add(this.player);
-    this.registry.add(this.bot);
+
+    // Spawn AI heroes per mode.
+    //  • online: one enemy on red, no ally (server hosts the opponent).
+    //  • offline: 2v2. Ally is the OPPOSITE archetype to the player so the
+    //    team always fields one mage + one ranger; enemies are always mage
+    //    + ranger so the matchup mirrors. Spawn points fan out from the
+    //    base spawn so the two heroes don't overlap on frame zero.
+    if (this.mode === 'online') {
+      const enemy = new BotObject(
+        new THREE.Vector3(SPAWN_RED_X, 0, SPAWN_RED_Z),
+        'ranger',
+        'red',
+      );
+      this.scene.add(enemy.group);
+      this.registry.add(enemy);
+      this.enemyBots = [enemy];
+    } else {
+      const allyKind: HeroKind = playerHeroKind === 'mage' ? 'ranger' : 'mage';
+      const ally = new BotObject(
+        new THREE.Vector3(SPAWN_BLUE_X + 2.4, 0, SPAWN_BLUE_Z - 2.4),
+        allyKind,
+        'blue',
+      );
+      this.scene.add(ally.group);
+      this.registry.add(ally);
+      this.allyBot = ally;
+
+      const enemyMage = new BotObject(
+        new THREE.Vector3(SPAWN_RED_X, 0, SPAWN_RED_Z),
+        'mage',
+        'red',
+      );
+      const enemyRanger = new BotObject(
+        new THREE.Vector3(SPAWN_RED_X - 2.4, 0, SPAWN_RED_Z + 2.4),
+        'ranger',
+        'red',
+      );
+      this.scene.add(enemyMage.group);
+      this.scene.add(enemyRanger.group);
+      this.registry.add(enemyMage);
+      this.registry.add(enemyRanger);
+      this.enemyBots = [enemyMage, enemyRanger];
+    }
+
     for (const t of this.towers) this.registry.add(t);
     for (const b of this.bases) this.registry.add(b);
 
@@ -184,6 +228,13 @@ export class Game {
     this.floatingText = new FloatingTextManager(this.scene);
     this.projectiles.onDamage = (target, amount, owner) => {
       this.floatingText.spawnDamage(target.position, amount, target.team, owner?.team);
+      // Tower-focus stack: every time a tower projectile lands on the local
+      // player, the player's outgoing damage multiplier ticks up. Bases
+      // intentionally don't count — they're game-ending defenders, not the
+      // dive-zone we want to reward fighting back from.
+      if (target === this.player && owner && this.towers.includes(owner as Tower)) {
+        this.player.notifyTowerHit(performance.now());
+      }
     };
     this.lastPlayerHp = this.player.hp;
     this.online.onMatchEnd = (winner) => {
@@ -268,7 +319,11 @@ export class Game {
   startAim(skill: SkillId): void {
     const a = this.aim[skill];
     a.active = true;
-    a.range = skill === 'q' ? SKILL_Q_RANGE : skill === 'e' ? SKILL_E_RANGE : SKILL_C_RANGE;
+    a.range = (
+      skill === 'q' ? this.player.skillQ.range
+        : skill === 'e' ? this.player.skillE.range
+          : this.player.skillC.range
+    );
 
     // Prefer heroes for the initial auto-snap; minions and towers only get
     // picked if no hero is around. Without the priority a stray ranged
@@ -302,33 +357,10 @@ export class Game {
     if (!a.active) return;
     const len = Math.hypot(dirX, dirZ);
     if (len < 0.001) return;
-    let nx = dirX / len;
-    let nz = dirZ / len;
-    // Magnetic aim — when the finger direction is within a generous cone
-    // (~25° half-angle, cos 0.91) of an enemy in cast range, snap to that
-    // enemy's exact direction. Hero > minion > structure priority means a
-    // hero peeking through minions is the natural target. The cone is
-    // intentionally wide: skill-shots in a MOBA should feel like they want
-    // to hit, not punish sub-pixel finger movement.
-    const enemy = this.registry.findAimAssist(
-      this.player.team,
-      this.player.position,
-      nx,
-      nz,
-      a.range * 1.15,
-      0.91,
-    );
-    if (enemy) {
-      const ex = enemy.position.x - this.player.position.x;
-      const ez = enemy.position.z - this.player.position.z;
-      const elen = Math.hypot(ex, ez);
-      if (elen > 1e-3) {
-        nx = ex / elen;
-        nz = ez / elen;
-      }
-    }
-    a.dirX = nx;
-    a.dirZ = nz;
+    // Pure finger direction — no magnetic snap. The player wants full manual
+    // control over the cast angle.
+    a.dirX = dirX / len;
+    a.dirZ = dirZ / len;
     this.refreshAimIndicator();
   }
 
@@ -450,13 +482,13 @@ export class Game {
   /** Plain tap on a skill button — auto-aim to nearest enemy in skill range
    *  and cast immediately, no aim UI. */
   castAuto(skill: SkillId): void {
-    const range = skill === 'q' ? SKILL_Q_RANGE : skill === 'e' ? SKILL_E_RANGE : SKILL_C_RANGE;
+    const cfg = skill === 'q' ? this.player.skillQ : skill === 'e' ? this.player.skillE : this.player.skillC;
     let dirX = this.player.facing.x || 0;
     let dirZ = this.player.facing.z || 1;
     const enemy = this.registry.findNearestEnemy(
       this.player.team,
       this.player.position,
-      range,
+      cfg.range,
       ['hero', 'minion', 'structure'],
     );
     if (enemy) {
@@ -470,13 +502,8 @@ export class Game {
     }
     const now = performance.now();
     if (this.mode === 'online') {
-      const ready =
-        skill === 'q'
-          ? now - this.lastQAt >= SKILL_Q_COOLDOWN_MS
-          : skill === 'e'
-            ? now - this.lastEAt >= SKILL_E_COOLDOWN_MS
-            : now - this.lastCAt >= SKILL_C_COOLDOWN_MS;
-      if (!ready) return;
+      const lastAt = skill === 'q' ? this.lastQAt : skill === 'e' ? this.lastEAt : this.lastCAt;
+      if (now - lastAt < cfg.cooldownMs) return;
       this.online.skill(skill, dirX, dirZ);
       if (skill === 'q') this.lastQAt = now;
       else if (skill === 'e') this.lastEAt = now;
@@ -498,16 +525,16 @@ export class Game {
   }
 
   getAttackCooldownLeft(now = performance.now()): number {
-    return Math.max(0, PLAYER_ATTACK_COOLDOWN_MS - (now - this.lastAttackAt));
+    return Math.max(0, this.player.attackCooldownMs - (now - this.lastAttackAt));
   }
   getQCooldownLeft(now = performance.now()): number {
-    return Math.max(0, SKILL_Q_COOLDOWN_MS - (now - this.lastQAt));
+    return Math.max(0, this.player.skillQ.cooldownMs - (now - this.lastQAt));
   }
   getECooldownLeft(now = performance.now()): number {
-    return Math.max(0, SKILL_E_COOLDOWN_MS - (now - this.lastEAt));
+    return Math.max(0, this.player.skillE.cooldownMs - (now - this.lastEAt));
   }
   getCCooldownLeft(now = performance.now()): number {
-    return Math.max(0, SKILL_C_COOLDOWN_MS - (now - this.lastCAt));
+    return Math.max(0, this.player.skillC.cooldownMs - (now - this.lastCAt));
   }
   getMatchElapsedMs(now = performance.now()): number {
     return Math.max(0, now - this.matchStartedAt);
@@ -682,8 +709,14 @@ export class Game {
       this.player.respawn();
     }
 
-    this.bot.respawnDelayMs = this.getRespawnDelayMs(this.bot.level, now);
-    this.bot.update(delta, now, this.registry, this.projectiles, this.colliders);
+    if (this.allyBot) {
+      this.allyBot.respawnDelayMs = this.getRespawnDelayMs(this.allyBot.level, now);
+      this.allyBot.update(delta, now, this.registry, this.projectiles, this.colliders);
+    }
+    for (const enemy of this.enemyBots) {
+      enemy.respawnDelayMs = this.getRespawnDelayMs(enemy.level, now);
+      enemy.update(delta, now, this.registry, this.projectiles, this.colliders);
+    }
     this.healHeroesAtBase(delta);
     this.tickHeal(now);
     this.updateMinions(delta, now);
@@ -720,7 +753,8 @@ export class Game {
 
     const cam = this.rig.camera;
     this.player.billboardHealthBar(cam);
-    this.bot.billboardHealthBar(cam);
+    if (this.allyBot) this.allyBot.billboardHealthBar(cam);
+    for (const enemy of this.enemyBots) enemy.billboardHealthBar(cam);
     for (const m of this.minions) m.billboardHealthBar(cam);
     for (const t of this.towers) t.billboardHealthBar(cam);
     for (const b of this.bases) b.billboardHealthBar(cam);
@@ -743,11 +777,11 @@ export class Game {
 
   private fireAtNearest(now: number, kinds: Array<'minion' | 'hero' | 'structure'>): void {
     if (!this.player.alive) return;
-    if (now - this.lastAttackAt < PLAYER_ATTACK_COOLDOWN_MS) return;
+    if (now - this.lastAttackAt < this.player.attackCooldownMs) return;
     const target = this.registry.findNearestEnemy(
       this.player.team,
       this.player.position,
-      PLAYER_ATTACK_RANGE,
+      this.player.attackRange,
       kinds,
     );
     if (!target) return;
@@ -755,7 +789,11 @@ export class Game {
     this.player.triggerAttackPose(now);
     this.projectiles.spawnMuzzleFlash(this.player.position, this.player.facing);
     Sounds.attack();
-    let damage = this.player.attackDamage;
+    // Counter-aggro buff multiplies outgoing damage for every recent tower
+    // hit on the player. Apply BEFORE the anti-dive penalty so the penalty
+    // multiplies the buffed value (the buff still helps but doesn't bypass
+    // the no-minion penalty).
+    let damage = this.player.attackDamage * this.player.outgoingDamageMultiplier(now);
     // Anti-dive: hitting a tower without an allied minion soaking aggro
     // nearby makes the hero's auto-attack chip damage only.
     if (this.isTower(target) && !this.alliedMinionNearTower(target)) {
@@ -764,6 +802,7 @@ export class Game {
     this.projectiles.spawn(this.player.position, target.position, now, {
       team: this.player.team,
       damage,
+      kind: this.player.autoAttackKind,
       target,
       owner: this.player,
       fromPlayer: true,
@@ -794,7 +833,7 @@ export class Game {
   ): void {
     this.applyOnlineTeamColorsOnce();
     // Drive cooldown UI on the client; the server enforces too.
-    if (wantsAttack && now - this.lastAttackAt >= PLAYER_ATTACK_COOLDOWN_MS) {
+    if (wantsAttack && now - this.lastAttackAt >= this.player.attackCooldownMs) {
       this.online.attack();
       this.player.triggerAttackPose(now);
       this.lastAttackAt = now;
@@ -806,13 +845,13 @@ export class Game {
         dx = this.player.facing.x;
         dz = this.player.facing.z;
       }
-      const ready =
-        skillReq.id === 'q'
-          ? now - this.lastQAt >= SKILL_Q_COOLDOWN_MS
-          : skillReq.id === 'e'
-            ? now - this.lastEAt >= SKILL_E_COOLDOWN_MS
-            : now - this.lastCAt >= SKILL_C_COOLDOWN_MS;
-      if (ready) {
+      const cfg = skillReq.id === 'q'
+        ? this.player.skillQ
+        : skillReq.id === 'e' ? this.player.skillE : this.player.skillC;
+      const lastAt = skillReq.id === 'q'
+        ? this.lastQAt
+        : skillReq.id === 'e' ? this.lastEAt : this.lastCAt;
+      if (now - lastAt >= cfg.cooldownMs) {
         this.online.skill(skillReq.id, dx, dz);
         if (skillReq.id === 'q') this.lastQAt = now;
         else if (skillReq.id === 'e') this.lastEAt = now;
@@ -840,7 +879,7 @@ export class Game {
 
     const cam = this.rig.camera;
     this.player.billboardHealthBar(cam);
-    this.bot.billboardHealthBar(cam);
+    for (const enemy of this.enemyBots) enemy.billboardHealthBar(cam);
     for (const t of this.towers) t.billboardHealthBar(cam);
     for (const b of this.bases) b.billboardHealthBar(cam);
 
@@ -854,7 +893,7 @@ export class Game {
     if (!myTeam) return;
     const enemyTeam: Team = myTeam === 'blue' ? 'red' : 'blue';
     this.player.setTeam(myTeam);
-    this.bot.setTeam(enemyTeam);
+    if (this.enemyBots[0]) this.enemyBots[0].setTeam(enemyTeam);
     this.appliedOnlineTeam = true;
   }
 
@@ -880,7 +919,7 @@ export class Game {
       this.player.applyServerState(own);
       this.lastPlayerHp = own.hp;
     }
-    if (enemy) this.bot.applyServerState(enemy);
+    if (enemy && this.enemyBots[0]) this.enemyBots[0].applyServerState(enemy);
   }
 
   private getOnlineOwnSnapshot(): MatchPlayerSnapshot | null {
@@ -915,7 +954,7 @@ export class Game {
     const ownId = this.online.getPlayerId();
     if (playerId === ownId) return this.player;
     const snapshot = this.online.getSnapshot();
-    if (snapshot?.players.some((p) => p.id === playerId)) return this.bot;
+    if (snapshot?.players.some((p) => p.id === playerId)) return this.enemyBots[0] ?? null;
     return null;
   }
 
@@ -951,69 +990,53 @@ export class Game {
     });
   }
 
-  private tryUseQ(now: number, dirX: number, dirZ: number): void {
-    if (now - this.lastQAt < SKILL_Q_COOLDOWN_MS) return;
+  private tryUseSkill(
+    now: number,
+    dirX: number,
+    dirZ: number,
+    cfg: import('./entities/PlayerObject.js').SkillConfig,
+    soundId: 'q' | 'e' | 'c',
+    lastAt: number,
+  ): number {
+    // Returns the new lastAt timestamp on success, or `lastAt` unchanged on
+    // cooldown. The hero's skill loadout (range, cooldown, projectile kind,
+    // status effect, AoE radius) all come from the SkillConfig — keeps this
+    // path agnostic of which hero is casting.
+    if (now - lastAt < cfg.cooldownMs) return lastAt;
     this.player.faceDirection(dirX, dirZ);
     const origin = this.player.position;
     const target = new THREE.Vector3(
-      origin.x + dirX * SKILL_Q_RANGE,
+      origin.x + dirX * cfg.range,
       origin.y,
-      origin.z + dirZ * SKILL_Q_RANGE,
+      origin.z + dirZ * cfg.range,
     );
     this.projectiles.spawn(origin, target, now, {
       team: this.player.team,
-      damage: this.player.skillQDamage,
-      kind: 'heavy',
+      damage: cfg.damage * this.player.outgoingDamageMultiplier(now),
+      kind: cfg.projectileKind,
+      effect: cfg.effect,
+      aoeRadius: cfg.aoeRadius,
+      aoeDamage: cfg.aoeDamage !== undefined
+        ? cfg.aoeDamage * this.player.outgoingDamageMultiplier(now)
+        : undefined,
       owner: this.player,
-      maxDistance: SKILL_Q_RANGE,
+      maxDistance: cfg.range,
       fromPlayer: true,
     });
-    Sounds.skill('q');
-    this.lastQAt = now;
+    Sounds.skill(soundId);
+    return now;
+  }
+
+  private tryUseQ(now: number, dirX: number, dirZ: number): void {
+    this.lastQAt = this.tryUseSkill(now, dirX, dirZ, this.player.skillQ, 'q', this.lastQAt);
   }
 
   private tryUseE(now: number, dirX: number, dirZ: number): void {
-    if (now - this.lastEAt < SKILL_E_COOLDOWN_MS) return;
-    this.player.faceDirection(dirX, dirZ);
-    const origin = this.player.position;
-    const target = new THREE.Vector3(
-      origin.x + dirX * SKILL_E_RANGE,
-      origin.y,
-      origin.z + dirZ * SKILL_E_RANGE,
-    );
-    this.projectiles.spawn(origin, target, now, {
-      team: this.player.team,
-      damage: this.player.skillEDamage,
-      kind: 'slow',
-      effect: { slow: { factor: SKILL_E_SLOW_FACTOR, durationMs: SKILL_E_SLOW_DURATION_MS } },
-      owner: this.player,
-      maxDistance: SKILL_E_RANGE,
-      fromPlayer: true,
-    });
-    Sounds.skill('e');
-    this.lastEAt = now;
+    this.lastEAt = this.tryUseSkill(now, dirX, dirZ, this.player.skillE, 'e', this.lastEAt);
   }
 
   private tryUseC(now: number, dirX: number, dirZ: number): void {
-    if (now - this.lastCAt < SKILL_C_COOLDOWN_MS) return;
-    this.player.faceDirection(dirX, dirZ);
-    const origin = this.player.position;
-    const target = new THREE.Vector3(
-      origin.x + dirX * SKILL_C_RANGE,
-      origin.y,
-      origin.z + dirZ * SKILL_C_RANGE,
-    );
-    this.projectiles.spawn(origin, target, now, {
-      team: this.player.team,
-      damage: this.player.skillCDamage,
-      kind: 'control',
-      effect: { stun: { durationMs: SKILL_C_STUN_DURATION_MS } },
-      owner: this.player,
-      maxDistance: SKILL_C_RANGE,
-      fromPlayer: true,
-    });
-    Sounds.skill('c');
-    this.lastCAt = now;
+    this.lastCAt = this.tryUseSkill(now, dirX, dirZ, this.player.skillC, 'c', this.lastCAt);
   }
 
   private spinCrystals(delta: number): void {
@@ -1067,11 +1090,17 @@ export class Game {
 
   private healHeroesAtBase(delta: number): void {
     const heal = HERO_BASE_REGEN_PER_SEC * delta;
-    if (isNear(this.player.position, BASE_BLUE_X, BASE_BLUE_Z, BASE_REGEN_RADIUS)) {
-      this.player.heal(heal);
-    }
-    if (isNear(this.bot.position, BASE_RED_X, BASE_RED_Z, BASE_REGEN_RADIUS)) {
-      this.bot.heal(heal);
+    // Every alive hero (player + ally + enemy bots) regens while standing
+    // inside its own team's base. Picking the base by team keeps online
+    // mode (where the player can be on red) working without a special case.
+    const heroes: Array<PlayerObject | BotObject> = [this.player];
+    if (this.allyBot) heroes.push(this.allyBot);
+    for (const enemy of this.enemyBots) heroes.push(enemy);
+    for (const hero of heroes) {
+      const isBlue = hero.team === 'blue';
+      const bx = isBlue ? BASE_BLUE_X : BASE_RED_X;
+      const bz = isBlue ? BASE_BLUE_Z : BASE_RED_Z;
+      if (isNear(hero.position, bx, bz, BASE_REGEN_RADIUS)) hero.heal(heal);
     }
   }
 

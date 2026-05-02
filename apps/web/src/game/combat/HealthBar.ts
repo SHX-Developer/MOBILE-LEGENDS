@@ -31,7 +31,19 @@ export class HealthBar {
   private readonly hpCtx?: CanvasRenderingContext2D;
   private lastHpText = '';
 
-  constructor(longAxis: number, shortAxis: number, color: number, showLevel = false, showHp = false) {
+  constructor(
+    longAxis: number,
+    shortAxis: number,
+    color: number,
+    showLevel = false,
+    showHp = false,
+    /**
+     * Multiplier for the HP-number plate dimensions. Heroes share size with
+     * the bar (default 1.0). Minions pass >1 so their digits read large
+     * relative to the tiny minion bar — otherwise they're a smear at distance.
+     */
+    hpScale = 1,
+  ) {
     const padding = 0.05;
 
     const bg = new THREE.Mesh(
@@ -112,8 +124,9 @@ export class HealthBar {
       this.hpTexture.magFilter = THREE.LinearFilter;
       this.hpTexture.anisotropy = HealthBar.maxAnisotropy;
       // Bigger HP plate — extends a little past the bar's edges so the
-      // digits read clearly even at the closer tactical zoom.
-      const hpW = longAxis * 1.25;
+      // digits read clearly even at the closer tactical zoom. `hpScale`
+      // lets entities with skinny bars (minions) push the plate even larger.
+      const hpW = longAxis * 1.25 * hpScale;
       const hpH = hpW * (this.hpCanvas.height / this.hpCanvas.width) * 1.2;
       const hpPlane = new THREE.Mesh(
         new THREE.PlaneGeometry(hpW, hpH),
