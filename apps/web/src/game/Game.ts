@@ -49,6 +49,7 @@ import { CameraRig } from './CameraRig.js';
 import { InputController } from './InputController.js';
 import { UnitRegistry } from './combat/UnitRegistry.js';
 import { FloatingTextManager } from './combat/FloatingTextManager.js';
+import { HealthBar } from './combat/HealthBar.js';
 import type { Team, Unit } from './combat/Unit.js';
 import { Haptics } from './haptics.js';
 import { Sounds } from './Sounds.js';
@@ -125,11 +126,21 @@ export class Game {
     this.mode = opts.mode;
     const { clientWidth, clientHeight } = container;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(1);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // Capping at 2 keeps mid-range mobile GPUs honest while still giving
+    // retina-class screens enough pixels to keep distant minions and HP
+    // numbers crisp at the wider tactical zoom.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(clientWidth, clientHeight);
     this.renderer.shadowMap.enabled = false;
     container.appendChild(this.renderer.domElement);
+
+    // Share the device's max anisotropy with the canvas-text textures so
+    // HP labels and damage numbers stay readable when the camera pulls
+    // back. Set before any HealthBar/FloatingText is created below.
+    const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
+    HealthBar.maxAnisotropy = maxAniso;
+    FloatingTextManager.maxAnisotropy = maxAniso;
 
     this.scene.background = new THREE.Color(0x223044);
     this.scene.fog = new THREE.Fog(0x223044, 120, 220);

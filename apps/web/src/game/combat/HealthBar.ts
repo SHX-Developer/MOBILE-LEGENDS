@@ -14,6 +14,13 @@ const _parentInv = new THREE.Quaternion();
  * shrinks toward phone-left as HP drops (drains from the right).
  */
 export class HealthBar {
+  /**
+   * Set once on game boot from `renderer.capabilities.getMaxAnisotropy()`.
+   * Applied to the level/HP canvas textures so the labels stay readable
+   * when the camera zooms out and the bars shrink to a few screen pixels.
+   */
+  static maxAnisotropy = 1;
+
   readonly group = new THREE.Group();
   private readonly fg: THREE.Mesh;
   private readonly levelTexture?: THREE.CanvasTexture;
@@ -60,15 +67,19 @@ export class HealthBar {
 
     if (showLevel) {
       this.levelCanvas = document.createElement('canvas');
-      this.levelCanvas.width = 256;
-      this.levelCanvas.height = 256;
+      // Power-of-two size required for trilinear mipmapping on WebGL1.
+      this.levelCanvas.width = 512;
+      this.levelCanvas.height = 512;
       const ctx = this.levelCanvas.getContext('2d');
       if (!ctx) throw new Error('2D canvas is required for health bar level labels');
       this.levelCtx = ctx;
       this.levelTexture = new THREE.CanvasTexture(this.levelCanvas);
-      this.levelTexture.generateMipmaps = false;
-      this.levelTexture.minFilter = THREE.LinearFilter;
+      // Mipmaps + anisotropy keep the level digit and ring crisp at any
+      // zoom level instead of shimmering when downscaled.
+      this.levelTexture.generateMipmaps = true;
+      this.levelTexture.minFilter = THREE.LinearMipmapLinearFilter;
       this.levelTexture.magFilter = THREE.LinearFilter;
+      this.levelTexture.anisotropy = HealthBar.maxAnisotropy;
       const level = new THREE.Mesh(
         new THREE.PlaneGeometry(1.18, 1.18),
         new THREE.MeshBasicMaterial({
@@ -87,15 +98,19 @@ export class HealthBar {
 
     if (showHp) {
       this.hpCanvas = document.createElement('canvas');
-      this.hpCanvas.width = 256;
-      this.hpCanvas.height = 80;
+      // Power-of-two for mipmaps. 4:1 aspect keeps the existing layout but
+      // doubles the source resolution so the HP digits survive downscale
+      // when the camera is far.
+      this.hpCanvas.width = 512;
+      this.hpCanvas.height = 128;
       const ctx = this.hpCanvas.getContext('2d');
       if (!ctx) throw new Error('2D canvas is required for health bar HP labels');
       this.hpCtx = ctx;
       this.hpTexture = new THREE.CanvasTexture(this.hpCanvas);
-      this.hpTexture.generateMipmaps = false;
-      this.hpTexture.minFilter = THREE.LinearFilter;
+      this.hpTexture.generateMipmaps = true;
+      this.hpTexture.minFilter = THREE.LinearMipmapLinearFilter;
       this.hpTexture.magFilter = THREE.LinearFilter;
+      this.hpTexture.anisotropy = HealthBar.maxAnisotropy;
       const hpW = longAxis * 0.95;
       const hpH = hpW * (this.hpCanvas.height / this.hpCanvas.width);
       const hpPlane = new THREE.Mesh(
@@ -131,12 +146,16 @@ export class HealthBar {
     const w = this.hpCanvas.width;
     const h = this.hpCanvas.height;
     ctx.clearRect(0, 0, w, h);
-    ctx.font = '900 56px Arial, sans-serif';
+    // Sizes are derived from canvas height so they stay correct if we ever
+    // change the source resolution again.
+    const fontPx = Math.round(h * 0.7);
+    const stroke = Math.round(h * 0.125);
+    ctx.font = `900 ${fontPx}px Arial, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
     ctx.miterLimit = 2;
-    ctx.lineWidth = 10;
+    ctx.lineWidth = stroke;
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.92)';
     ctx.strokeText(text, w / 2, h / 2 + 2);
     ctx.fillStyle = '#ffffff';
@@ -148,27 +167,32 @@ export class HealthBar {
   private lastProgress = -1;
   setLevel(level: number, progress = 0): void {
     if (!this.levelCtx || !this.levelCanvas || !this.levelTexture) return;
-    // The level badge is a 256×256 canvas with arc/text strokes — redrawing
-    // it every frame and re-uploading to the GPU was the dominant cost in
-    // online play. Skip when neither value changed meaningfully.
+    // The level badge canvas is a power-of-two square with arc/text strokes
+    // — redrawing it every frame and re-uploading to the GPU was the
+    // dominant cost in online play. Skip when neither value changed
+    // meaningfully.
     if (level === this.lastLevel && Math.abs(progress - this.lastProgress) < 0.01) return;
     this.lastLevel = level;
     this.lastProgress = progress;
     const ctx = this.levelCtx;
-    ctx.clearRect(0, 0, this.levelCanvas.width, this.levelCanvas.height);
+    const size = this.levelCanvas.width;
+    ctx.clearRect(0, 0, size, size);
 
-    const cx = 128;
-    const cy = 128;
-    const radius = 77;
+    // All sizes are expressed as fractions of the canvas dimension so the
+    // badge keeps the same proportions if the source resolution changes.
+    const cx = size / 2;
+    const cy = size / 2;
+    const radius = size * 0.30;
+    const ringRadius = radius + size * 0.07;
     ctx.fillStyle = 'rgba(7, 10, 16, 0.98)';
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.lineWidth = 13;
+    ctx.lineWidth = size * 0.051;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
     ctx.beginPath();
-    ctx.arc(cx, cy, radius + 18, 0, Math.PI * 2);
+    ctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
     ctx.stroke();
 
     const pct = Math.max(0, Math.min(progress, 1));
@@ -176,20 +200,21 @@ export class HealthBar {
       ctx.strokeStyle = '#ffd852';
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.arc(cx, cy, radius + 18, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
+      ctx.arc(cx, cy, ringRadius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
       ctx.stroke();
       ctx.lineCap = 'butt';
     }
 
-    ctx.lineWidth = 8;
+    ctx.lineWidth = size * 0.031;
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = `900 ${level >= 10 ? 108 : 132}px Arial, sans-serif`;
+    const fontPx = Math.round(size * (level >= 10 ? 0.422 : 0.516));
+    ctx.font = `900 ${fontPx}px Arial, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.strokeText(String(level), cx, cy + 4);
-    ctx.fillText(String(level), cx, cy + 4);
+    ctx.strokeText(String(level), cx, cy + size * 0.016);
+    ctx.fillText(String(level), cx, cy + size * 0.016);
     this.levelTexture.needsUpdate = true;
   }
 

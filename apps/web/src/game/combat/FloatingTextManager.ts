@@ -9,6 +9,14 @@ interface FloatingText {
 }
 
 export class FloatingTextManager {
+  /**
+   * Set once on game boot from `renderer.capabilities.getMaxAnisotropy()`.
+   * Without this the damage numbers turn into a smeary blur whenever the
+   * camera pulls back, because each sprite shrinks well below its source
+   * texture size.
+   */
+  static maxAnisotropy = 1;
+
   private readonly items: FloatingText[] = [];
 
   constructor(private readonly scene: THREE.Scene) {}
@@ -67,19 +75,31 @@ export class FloatingTextManager {
 
 function makeTextTexture(text: string, color: string): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = 192;
-  canvas.height = 96;
+  // Power-of-two and 2:1 aspect — matches the sprite scale (2.3 × 1.15) and
+  // gives mipmaps a clean source. The previous 192×96 was non-PoT so WebGL1
+  // silently disabled mipmaps, which is what made distant numbers ugly.
+  canvas.width = 512;
+  canvas.height = 256;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('2D canvas is required for floating damage text');
 
-  ctx.font = '900 48px system-ui, sans-serif';
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  ctx.font = '900 128px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.lineWidth = 8;
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+  ctx.lineWidth = 22;
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
-  ctx.strokeText(text, 96, 48);
+  ctx.strokeText(text, cx, cy);
   ctx.fillStyle = color;
-  ctx.fillText(text, 96, 48);
+  ctx.fillText(text, cx, cy);
 
-  return new THREE.CanvasTexture(canvas);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = FloatingTextManager.maxAnisotropy;
+  return texture;
 }
