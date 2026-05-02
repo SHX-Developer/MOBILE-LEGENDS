@@ -12,6 +12,42 @@ interface Frame {
 type Team = 'blue' | 'red';
 type SkillId = 'q' | 'e' | 'c';
 
+interface SkillProfile {
+  /** Short name shown on the button face. */
+  subtitle: string;
+  /** Border / fill accent colour. Differs per skill so the player can recognise
+   *  each button at a glance even after a quick UI change. */
+  accent: string;
+  /** Total cooldown the progress ring fills against. Must match the matching
+   *  cooldown in the hero's SkillConfig — otherwise the ring desyncs from
+   *  the actual cast availability. */
+  totalMs: number;
+}
+
+/**
+ * Per-hero skill button presentation. The position of each button is fixed
+ * (the user wants a consistent layout across heroes), but the labels, colour
+ * accents, and cooldown ring totals branch per archetype:
+ *
+ *   ranger — Q POWER (heavy), E SLOW (cyan), C STUN (purple)
+ *   mage   — Q ОГОНЬ (fireball), E СТЕНА (flame wave), C МЕТЕОР (AoE)
+ *
+ * Keep these numbers in sync with the matching MAGE_*_COOLDOWN_MS / SKILL_*
+ * constants — the ring is purely cosmetic and won't gate the actual cast.
+ */
+const SKILL_PROFILES: Record<HeroKind, Record<SkillId, SkillProfile>> = {
+  ranger: {
+    q: { subtitle: 'POWER', accent: '#ff7a3d', totalMs: 10000 },
+    e: { subtitle: 'SLOW', accent: '#4ec9ff', totalMs: 3000 },
+    c: { subtitle: 'STUN', accent: '#b56cff', totalMs: 5000 },
+  },
+  mage: {
+    q: { subtitle: 'ОГОНЬ', accent: '#ff5a18', totalMs: 7000 },
+    e: { subtitle: 'СТЕНА', accent: '#ff9a3a', totalMs: 8000 },
+    c: { subtitle: 'МЕТЕОР', accent: '#ffd852', totalMs: 12000 },
+  },
+};
+
 function computeFrame(): Frame {
   const vpW = window.innerWidth;
   const vpH = window.innerHeight;
@@ -125,44 +161,54 @@ export function GameCanvas({ mode, heroKind = 'ranger', onExit }: GameCanvasProp
         {/* Invisible safety nets around the controls — empty taps inside
             these zones don't reach the camera-pan listener on the canvas. */}
         <ControlZone left={130} bottom={24} width={210} height={210} />
-        <ControlZone right={20} bottom={20} width={300} height={350} />
+        {/* Right-side absorber covers the skill column (which now climbs to
+            ~bottom=412), MINION, TOWER and FIRE. */}
+        <ControlZone right={20} bottom={20} width={310} height={420} />
         <BottomCenterZone />
 
         <Joystick onChange={onJoystickChange} />
         <FireButton onPress={onFirePress} onRelease={onFireRelease} />
-        {/* Three skills wrap around FIRE (which sits in the corner). Q above,
-            E top-left diagonal, C straight left — like a fan. */}
+        {/* Skills sit in a tidy vertical column directly above TOWER, fanning
+            outward from the action area:
+              • Q (1st) — same row as MINION, immediately to its left and
+                directly above TOWER. The "left of MINION" anchor.
+              • E (2nd) — one slot up. Geometrically between MINION and
+                TOWER along the column.
+              • C (3rd) — top of the column. The "above TOWER" anchor.
+            Labels, accent colours, and cooldown durations come from the
+            per-hero SKILL_PROFILES so the mage's three buttons read
+            differently from the ranger's. */}
         <SkillButton
           id="q"
           label=""
-          subtitle="POWER"
-          accent="#ff7a3d"
-          right={28}
-          bottom={272}
-          size={86}
-          totalMs={10000}
+          subtitle={SKILL_PROFILES[heroKind].q.subtitle}
+          accent={SKILL_PROFILES[heroKind].q.accent}
+          right={148}
+          bottom={148}
+          size={80}
+          totalMs={SKILL_PROFILES[heroKind].q.totalMs}
           getGame={getGame}
         />
         <SkillButton
           id="e"
           label=""
-          subtitle="SLOW"
-          accent="#4ec9ff"
-          right={232}
-          bottom={70}
-          size={86}
-          totalMs={3000}
+          subtitle={SKILL_PROFILES[heroKind].e.subtitle}
+          accent={SKILL_PROFILES[heroKind].e.accent}
+          right={148}
+          bottom={240}
+          size={80}
+          totalMs={SKILL_PROFILES[heroKind].e.totalMs}
           getGame={getGame}
         />
         <SkillButton
           id="c"
           label=""
-          subtitle="STUN"
-          accent="#b56cff"
-          right={170}
-          bottom={120}
-          size={86}
-          totalMs={5000}
+          subtitle={SKILL_PROFILES[heroKind].c.subtitle}
+          accent={SKILL_PROFILES[heroKind].c.accent}
+          right={148}
+          bottom={332}
+          size={80}
+          totalMs={SKILL_PROFILES[heroKind].c.totalMs}
           getGame={getGame}
         />
         <TargetAttackButton

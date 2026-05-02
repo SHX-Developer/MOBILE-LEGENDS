@@ -130,9 +130,9 @@ export class BotObject implements Unit {
     return BOT_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL;
   }
 
-  /** Auto-attack visual. Ranger fires arrows, mage flings small fire bolts. */
+  /** Auto-attack visual. Ranger fires arrows, mage flings ember bolts. */
   private get autoAttackKind(): ProjectileKind {
-    return this.heroKind === 'mage' ? 'fire' : 'basic';
+    return this.heroKind === 'mage' ? 'firebolt' : 'basic';
   }
 
   billboardHealthBar(camera: THREE.Camera): void {
@@ -338,31 +338,37 @@ export class BotObject implements Unit {
       this.lastCAt = now;
       return true;
     }
-    // Q fireball — clean burst when it lines up.
+    // Q fireball — sharp burst with a small AoE splash.
     if (dist <= MAGE_Q_RANGE && now - this.lastQAt >= MAGE_Q_COOLDOWN_MS) {
       const damage = MAGE_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.5;
+      const splash = 35 + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4);
       projectiles.spawn(this.position, enemy.position, now, {
         team: this.team,
         damage,
-        kind: 'fire',
+        kind: 'fireball',
         owner: this,
         maxDistance: MAGE_Q_RANGE,
         target: enemy as never,
+        aoeRadius: 1.8,
+        aoeDamage: splash,
       });
       this.lastQAt = now;
       return true;
     }
-    // Fire-wall — slows and chips the target.
+    // Flame wave — slow + medium AoE.
     if (dist <= MAGE_E_RANGE && now - this.lastEAt >= MAGE_E_COOLDOWN_MS) {
       const damage = MAGE_E_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6);
+      const splash = 28 + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4);
       projectiles.spawn(this.position, enemy.position, now, {
         team: this.team,
         damage,
-        kind: 'fire',
+        kind: 'flamewave',
         effect: { slow: { factor: MAGE_E_SLOW_FACTOR, durationMs: MAGE_E_SLOW_DURATION_MS } },
         owner: this,
         maxDistance: MAGE_E_RANGE,
         target: enemy as never,
+        aoeRadius: 2.6,
+        aoeDamage: splash,
       });
       this.lastEAt = now;
       return true;

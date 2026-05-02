@@ -8,7 +8,19 @@ import {
 import type { Team, Unit } from '../combat/Unit.js';
 import type { UnitRegistry } from '../combat/UnitRegistry.js';
 
-export type ProjectileKind = 'basic' | 'heavy' | 'slow' | 'meteor' | 'control' | 'fire';
+export type ProjectileKind =
+  | 'basic'
+  | 'heavy'
+  | 'slow'
+  | 'meteor'
+  | 'control'
+  | 'fire'
+  /** Pure flaming orb. Mage Q — no arrow shape, reads as a magic ball. */
+  | 'fireball'
+  /** Flat ring of flame. Mage E — wide horizontal disc that travels. */
+  | 'flamewave'
+  /** Tiny fire bolt. Mage auto-attack — small spark instead of arrow. */
+  | 'firebolt';
 
 export interface ProjectileSpec {
   team: Team;
@@ -97,8 +109,20 @@ export class ProjectileManager {
         create: createMeteorProjectile,
       },
       fire: {
-        // FIRE — orange/yellow flame arrow for mage skillshots.
+        // FIRE — orange/yellow flame arrow. Kept for legacy callers.
         create: () => createSkillArrow(0xffa64a, 0xff5520, 1.15),
+      },
+      fireball: {
+        // FIREBALL — pure burning sphere with a bright halo. Mage Q.
+        create: createFireballProjectile,
+      },
+      flamewave: {
+        // FLAME WAVE — flat ring of fire that travels horizontally. Mage E.
+        create: createFlamewaveProjectile,
+      },
+      firebolt: {
+        // FIREBOLT — tiny ember sphere for the mage's auto-attack.
+        create: createFireboltProjectile,
       },
     };
   }
@@ -459,4 +483,119 @@ function createMeteorProjectile(): THREE.Object3D {
   tail.position.z = -0.72;
   meteor.add(tail);
   return meteor;
+}
+
+// --- Mage-only projectiles -------------------------------------------------
+// Visually pure magic — no arrow, no shaft. Each variant has its own shape
+// so the player can read mage casts at a glance even mid-fight.
+
+const FIREBALL_CORE_GEOM = new THREE.SphereGeometry(0.35, 14, 14);
+const FIREBALL_OUTER_GEOM = new THREE.SphereGeometry(0.55, 14, 14);
+const FIREBALL_HALO_GEOM = new THREE.SphereGeometry(0.78, 14, 14);
+const FIREBALL_TAIL_GEOM = new THREE.ConeGeometry(0.32, 0.9, 10);
+const FIREBALL_CORE_MAT = new THREE.MeshLambertMaterial({
+  color: 0xffe27a,
+  emissive: 0xffaa3a,
+  emissiveIntensity: 2.4,
+});
+const FIREBALL_OUTER_MAT = new THREE.MeshLambertMaterial({
+  color: 0xff7d2a,
+  emissive: 0xff4310,
+  emissiveIntensity: 1.6,
+  transparent: true,
+  opacity: 0.85,
+});
+const FIREBALL_HALO_MAT = new THREE.MeshBasicMaterial({
+  color: 0xff5a18,
+  transparent: true,
+  opacity: 0.45,
+  depthWrite: false,
+});
+const FIREBALL_TAIL_MAT = new THREE.MeshLambertMaterial({
+  color: 0xffb55a,
+  emissive: 0xff5818,
+  emissiveIntensity: 1.2,
+  transparent: true,
+  opacity: 0.7,
+});
+
+/** Pure flaming sphere — used for mage Q (FIREBALL). */
+function createFireballProjectile(): THREE.Object3D {
+  const g = new THREE.Group();
+  const halo = new THREE.Mesh(FIREBALL_HALO_GEOM, FIREBALL_HALO_MAT);
+  g.add(halo);
+  const outer = new THREE.Mesh(FIREBALL_OUTER_GEOM, FIREBALL_OUTER_MAT);
+  g.add(outer);
+  const core = new THREE.Mesh(FIREBALL_CORE_GEOM, FIREBALL_CORE_MAT);
+  g.add(core);
+  // Trailing flame cone behind the orb so it reads as motion.
+  const tail = new THREE.Mesh(FIREBALL_TAIL_GEOM, FIREBALL_TAIL_MAT);
+  tail.rotation.x = -Math.PI / 2;
+  tail.position.z = -0.55;
+  g.add(tail);
+  return g;
+}
+
+const FLAMEWAVE_RING_GEOM = new THREE.TorusGeometry(0.7, 0.18, 10, 24);
+const FLAMEWAVE_INNER_GEOM = new THREE.TorusGeometry(0.45, 0.1, 8, 18);
+const FLAMEWAVE_CORE_GEOM = new THREE.SphereGeometry(0.28, 12, 12);
+const FLAMEWAVE_RING_MAT = new THREE.MeshLambertMaterial({
+  color: 0xff9a3a,
+  emissive: 0xff5518,
+  emissiveIntensity: 1.8,
+  transparent: true,
+  opacity: 0.95,
+});
+const FLAMEWAVE_INNER_MAT = new THREE.MeshLambertMaterial({
+  color: 0xffd86a,
+  emissive: 0xffb83a,
+  emissiveIntensity: 2.0,
+  transparent: true,
+  opacity: 0.9,
+});
+const FLAMEWAVE_CORE_MAT = new THREE.MeshLambertMaterial({
+  color: 0xffe6a0,
+  emissive: 0xffc24a,
+  emissiveIntensity: 2.4,
+});
+
+/** Flat ring of flame — used for mage E (FLAME WAVE). */
+function createFlamewaveProjectile(): THREE.Object3D {
+  const g = new THREE.Group();
+  // Outer torus laid flat in the XY plane; rotated so it travels "edge-on"
+  // along +Z and reads as a wide arc when viewed from the tactical camera.
+  const ring = new THREE.Mesh(FLAMEWAVE_RING_GEOM, FLAMEWAVE_RING_MAT);
+  ring.rotation.x = Math.PI / 2;
+  g.add(ring);
+  const inner = new THREE.Mesh(FLAMEWAVE_INNER_GEOM, FLAMEWAVE_INNER_MAT);
+  inner.rotation.x = Math.PI / 2;
+  inner.position.z = 0.05;
+  g.add(inner);
+  const core = new THREE.Mesh(FLAMEWAVE_CORE_GEOM, FLAMEWAVE_CORE_MAT);
+  g.add(core);
+  return g;
+}
+
+const FIREBOLT_CORE_GEOM = new THREE.SphereGeometry(0.18, 10, 10);
+const FIREBOLT_HALO_GEOM = new THREE.SphereGeometry(0.34, 10, 10);
+const FIREBOLT_CORE_MAT = new THREE.MeshLambertMaterial({
+  color: 0xffd078,
+  emissive: 0xff7a1f,
+  emissiveIntensity: 2.2,
+});
+const FIREBOLT_HALO_MAT = new THREE.MeshBasicMaterial({
+  color: 0xff6a18,
+  transparent: true,
+  opacity: 0.5,
+  depthWrite: false,
+});
+
+/** Small ember sphere — mage's auto-attack. */
+function createFireboltProjectile(): THREE.Object3D {
+  const g = new THREE.Group();
+  const halo = new THREE.Mesh(FIREBOLT_HALO_GEOM, FIREBOLT_HALO_MAT);
+  g.add(halo);
+  const core = new THREE.Mesh(FIREBOLT_CORE_GEOM, FIREBOLT_CORE_MAT);
+  g.add(core);
+  return g;
 }

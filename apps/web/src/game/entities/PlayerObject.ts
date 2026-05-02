@@ -198,19 +198,24 @@ export class PlayerObject implements Unit {
     return this.heroKind === 'mage' ? MAGE_SPEED_3D : PLAYER_SPEED_3D;
   }
 
-  /** Auto-attack projectile cosmetic. Ranger: arrow, mage: small fire bolt. */
+  /** Auto-attack projectile cosmetic. Ranger: arrow, mage: ember firebolt. */
   get autoAttackKind(): ProjectileKind {
-    return this.heroKind === 'mage' ? 'fire' : 'basic';
+    return this.heroKind === 'mage' ? 'firebolt' : 'basic';
   }
 
   /** Q skill loadout — fresh per cast (damage scales with level). */
   get skillQ(): SkillConfig {
     if (this.heroKind === 'mage') {
+      // FIREBALL — bursting flame sphere with a small splash on impact.
+      // Splash radius is short (1.8u) so it isn't a free wave-clear, just a
+      // little overflow onto adjacent targets.
       return {
         damage: MAGE_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.5,
         cooldownMs: MAGE_Q_COOLDOWN_MS,
         range: MAGE_Q_RANGE,
-        projectileKind: 'fire',
+        projectileKind: 'fireball',
+        aoeRadius: 1.8,
+        aoeDamage: 35 + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
       };
     }
     return {
@@ -223,12 +228,17 @@ export class PlayerObject implements Unit {
 
   get skillE(): SkillConfig {
     if (this.heroKind === 'mage') {
+      // FLAME WAVE — wide flame disc that slows on impact and chips a
+      // medium AoE around the hit. Lower direct damage than the fireball
+      // but it lights up groups.
       return {
         damage: MAGE_E_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
         cooldownMs: MAGE_E_COOLDOWN_MS,
         range: MAGE_E_RANGE,
-        projectileKind: 'fire',
+        projectileKind: 'flamewave',
         effect: { slow: { factor: MAGE_E_SLOW_FACTOR, durationMs: MAGE_E_SLOW_DURATION_MS } },
+        aoeRadius: 2.6,
+        aoeDamage: 28 + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
       };
     }
     return {
