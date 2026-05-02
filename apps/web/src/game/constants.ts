@@ -164,15 +164,15 @@ export const SPAWN_ZONE_RADIUS = 6.5;
 
 // Skills
 export const SKILL_Q_DAMAGE = 130;
-export const SKILL_Q_COOLDOWN_MS = 6000;
+export const SKILL_Q_COOLDOWN_MS = 10000;
 export const SKILL_Q_RANGE = 16;
 export const SKILL_E_DAMAGE = 30;
-export const SKILL_E_COOLDOWN_MS = 8000;
+export const SKILL_E_COOLDOWN_MS = 3000;
 export const SKILL_E_RANGE = 14;
 export const SKILL_E_SLOW_FACTOR = 0.5;
 export const SKILL_E_SLOW_DURATION_MS = 2000;
 export const SKILL_C_DAMAGE = 20;
-export const SKILL_C_COOLDOWN_MS = 10000;
+export const SKILL_C_COOLDOWN_MS = 5000;
 export const SKILL_C_RANGE = 13;
 export const SKILL_C_STUN_DURATION_MS = 1000;
 

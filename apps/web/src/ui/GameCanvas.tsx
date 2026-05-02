@@ -138,7 +138,7 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           right={28}
           bottom={210}
           size={86}
-          totalMs={6000}
+          totalMs={10000}
           getGame={getGame}
         />
         <SkillButton
@@ -149,7 +149,7 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           right={170}
           bottom={186}
           size={86}
-          totalMs={8000}
+          totalMs={3000}
           getGame={getGame}
         />
         <SkillButton
@@ -160,7 +160,7 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           right={232}
           bottom={70}
           size={86}
-          totalMs={10000}
+          totalMs={5000}
           getGame={getGame}
         />
         <TriangleAttackButton
