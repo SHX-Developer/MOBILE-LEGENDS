@@ -123,21 +123,21 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
         {/* Invisible safety nets around the controls — empty taps inside
             these zones don't reach the camera-pan listener on the canvas. */}
         <ControlZone left={130} bottom={24} width={210} height={210} />
-        <ControlZone right={12} bottom={18} width={330} height={300} />
+        <ControlZone right={20} bottom={20} width={300} height={260} />
         <BottomCenterZone />
 
         <Joystick onChange={onJoystickChange} />
         <FireButton onPress={onFirePress} onRelease={onFireRelease} />
-        {/* MLBB-style right cluster: FIRE in the corner, target filters next to
-            it, and skills fanning above-left for easy thumb reach. */}
+        {/* Three skills wrap around FIRE (which sits in the corner). Q above,
+            E top-left diagonal, C straight left — like a fan. */}
         <SkillButton
           id="q"
           label=""
           subtitle="POWER"
           accent="#ff7a3d"
-          right={34}
-          bottom={178}
-          size={82}
+          right={28}
+          bottom={210}
+          size={86}
           totalMs={10000}
           getGame={getGame}
         />
@@ -146,9 +146,9 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label=""
           subtitle="SLOW"
           accent="#4ec9ff"
-          right={128}
-          bottom={204}
-          size={82}
+          right={170}
+          bottom={186}
+          size={86}
           totalMs={3000}
           getGame={getGame}
         />
@@ -157,22 +157,22 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label=""
           subtitle="STUN"
           accent="#b56cff"
-          right={218}
-          bottom={134}
-          size={82}
+          right={232}
+          bottom={70}
+          size={86}
           totalMs={5000}
           getGame={getGame}
         />
         <TargetAttackButton
           variant="tower"
-          right={142}
+          right={148}
           bottom={36}
           getGame={getGame}
         />
         <TargetAttackButton
           variant="minion"
-          right={122}
-          bottom={116}
+          right={56}
+          bottom={144}
           getGame={getGame}
         />
         <UtilityButton

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   MAP_W,
   MAP_H,
+  MAP_SCALE,
   HALF_W,
   HALF_H,
   LANE_WIDTH,
@@ -27,6 +28,8 @@ import { buildTowers, Tower } from './Towers.js';
 import { Colliders } from './Colliders.js';
 
 type Point = readonly [number, number];
+const S = (value: number) => value * MAP_SCALE;
+const scalePoints = (pts: ReadonlyArray<Point>): Point[] => pts.map(([x, z]) => [S(x), S(z)]);
 
 export interface MapEntities {
   colliders: Colliders;
@@ -67,15 +70,15 @@ function buildGround(scene: THREE.Scene): void {
   ground.receiveShadow = true;
   scene.add(ground);
 
-  addGroundPatch(scene, -32, 32, 50, 44, 0x78ad5d, 0.24);
-  addGroundPatch(scene, 32, -32, 50, 44, 0x8f7951, 0.18);
-  addGroundPatch(scene, -34, -26, 44, 38, 0x567f54, 0.18);
-  addGroundPatch(scene, 34, 26, 44, 38, 0x567f54, 0.18);
-  addGroundPatch(scene, 0, 0, 64, 44, 0x4d7a55, 0.14);
+  addGroundPatch(scene, S(-32), S(32), S(50), S(44), 0x78ad5d, 0.24);
+  addGroundPatch(scene, S(32), S(-32), S(50), S(44), 0x8f7951, 0.18);
+  addGroundPatch(scene, S(-34), S(-26), S(44), S(38), 0x567f54, 0.18);
+  addGroundPatch(scene, S(34), S(26), S(44), S(38), 0x567f54, 0.18);
+  addGroundPatch(scene, 0, 0, S(64), S(44), 0x4d7a55, 0.14);
   addBasePlaza(scene, BASE_BLUE_X, BASE_BLUE_Z, 0x8fb8cf, 0x4f9dff);
   addBasePlaza(scene, BASE_RED_X, BASE_RED_Z, 0xc1988a, 0xff6b6b);
 
-  for (let i = -48; i <= 48; i += 16) {
+  for (let i = S(-48); i <= S(48); i += S(16)) {
     addStripe(scene, i, 0, 0.28, MAP_H - 16, 0x4f7d3d, 0.12);
     addStripe(scene, 0, i, MAP_W - 16, 0.28, 0x4f7d3d, 0.12);
   }
@@ -150,15 +153,10 @@ function createBattlefieldTexture(): THREE.CanvasTexture {
     [-34, -28, 20, 16], [32, 28, 20, 16], [-26, 22, 24, 14], [26, -22, 24, 14],
     [-4, 0, 16, 24], [10, 4, 18, 20],
   ] as Array<[number, number, number, number]>) {
-    fillEllipse(x, z, rx, rz, '#26523e', 0.22);
+    fillEllipse(S(x), S(z), S(rx), S(rz), '#26523e', 0.22);
   }
 
-  const laneShapes = [
-    [BLUE_BASE, [-50, 30], [-50, -34], [-34, -50], [30, -50], RED_BASE],
-    [BLUE_BASE, [-28, 28], [-10, 10], [10, -10], [28, -28], RED_BASE],
-    [BLUE_BASE, [-34, 50], [34, 50], [50, 34], [50, -30], RED_BASE],
-  ] as ReadonlyArray<ReadonlyArray<Point>>;
-  for (const pts of laneShapes) {
+  for (const pts of LANE_POLYLINES) {
     strokePath(pts, 108, '#806f4a', 0.36, false);
     strokePath(pts, 82, '#d7bf81', 0.92, false);
     strokePath(pts, 18, '#f4dfa6', 0.28, false);
@@ -179,9 +177,10 @@ function createBattlefieldTexture(): THREE.CanvasTexture {
     [[9, -20], [-6, -24], [-17, -13]],
   ];
   for (const pts of wallShapes) {
-    strokePath(pts, 42, '#3f4d46', 0.38, true);
-    strokePath(pts, 24, '#828c7e', 0.86, true);
-    strokePath(pts, 6, '#b6b9a6', 0.55, true);
+    const scaled = scalePoints(pts);
+    strokePath(scaled, 42, '#3f4d46', 0.38, true);
+    strokePath(scaled, 24, '#828c7e', 0.86, true);
+    strokePath(scaled, 6, '#b6b9a6', 0.55, true);
   }
 
   for (const [x, z, color] of [
@@ -190,7 +189,7 @@ function createBattlefieldTexture(): THREE.CanvasTexture {
     [33, 18, '#6bd1ff'], [18, 36, '#9b7dff'], [30, -20, '#7ee06f'],
     [12, -32, '#ff8a4c'], [-39, 2, '#61d7a4'], [39, -2, '#61d7a4'],
   ] as Array<[number, number, string]>) {
-    const [px, py] = toPx([x, z]);
+    const [px, py] = toPx([S(x), S(z)]);
     ctx.save();
     ctx.fillStyle = 'rgba(45, 55, 34, 0.72)';
     ctx.beginPath();
@@ -315,7 +314,12 @@ function buildIslandEdges(scene: THREE.Scene): void {
   }
 
   const cornerMat = new THREE.MeshStandardMaterial({ color: 0x48534e, roughness: 1, flatShading: true });
-  for (const [x, z] of [[-62, -62], [62, -62], [-62, 62], [62, 62]] as Point[]) {
+  for (const [x, z] of [
+    [-HALF_W - 2, -HALF_H - 2],
+    [HALF_W + 2, -HALF_H - 2],
+    [-HALF_W - 2, HALF_H + 2],
+    [HALF_W + 2, HALF_H + 2],
+  ] as Point[]) {
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(5.5, 0), cornerMat);
     rock.scale.set(1.25, 0.7, 1.25);
     rock.position.set(x, -0.8, z);
@@ -438,16 +442,16 @@ function buildJungleWalls(scene: THREE.Scene, colliders: Colliders): void {
     [[5, -20], [-4, -22], [-13, -17]],
   ];
 
-  for (const chain of chains) buildWallChain(scene, colliders, ridgeMat, chain);
+  for (const chain of chains) buildWallChain(scene, colliders, ridgeMat, scalePoints(chain));
 
-  buildMountainCluster(scene, colliders, -42, -38, 0x8f8b7f, 1.25);
-  buildMountainCluster(scene, colliders, 42, 38, 0x8f8b7f, 1.25);
-  buildMountainCluster(scene, colliders, -54, -18, 0x7f8580, 1.05);
-  buildMountainCluster(scene, colliders, 54, 18, 0x7f8580, 1.05);
-  buildMountainCluster(scene, colliders, 18, -54, 0x7f8580, 1.05);
-  buildMountainCluster(scene, colliders, -18, 54, 0x7f8580, 1.05);
-  buildMountainCluster(scene, colliders, -54, 24, 0x7f8580, 0.9);
-  buildMountainCluster(scene, colliders, 54, -24, 0x7f8580, 0.9);
+  buildMountainCluster(scene, colliders, S(-42), S(-38), 0x8f8b7f, 1.25);
+  buildMountainCluster(scene, colliders, S(42), S(38), 0x8f8b7f, 1.25);
+  buildMountainCluster(scene, colliders, S(-54), S(-18), 0x7f8580, 1.05);
+  buildMountainCluster(scene, colliders, S(54), S(18), 0x7f8580, 1.05);
+  buildMountainCluster(scene, colliders, S(18), S(-54), 0x7f8580, 1.05);
+  buildMountainCluster(scene, colliders, S(-18), S(54), 0x7f8580, 1.05);
+  buildMountainCluster(scene, colliders, S(-54), S(24), 0x7f8580, 0.9);
+  buildMountainCluster(scene, colliders, S(54), S(-24), 0x7f8580, 0.9);
 }
 
 function buildWallChain(
@@ -547,7 +551,7 @@ function buildJungleCamps(scene: THREE.Scene): void {
     [-36, 2, 0x61d7a4, 0.9],
     [36, -2, 0x61d7a4, 0.9],
   ];
-  for (const [x, z, color, scale] of camps) addJungleCamp(scene, x, z, color, scale);
+  for (const [x, z, color, scale] of camps) addJungleCamp(scene, S(x), S(z), color, scale);
 }
 
 function addJungleCamp(scene: THREE.Scene, x: number, z: number, color: number, scale: number): void {
@@ -591,7 +595,9 @@ function buildLandmarks(scene: THREE.Scene, colliders: Colliders): void {
     [47, -12, 0.9], [50, 8, 1.1], [-10, 48, 0.85], [10, -48, 0.85],
   ];
   for (const [x, z, s] of trees) {
-    if (!nearLane(x, z, 1.5 * s) && !nearReservedZone(x, z)) addTree(scene, colliders, x, z, s);
+    const sx = S(x);
+    const sz = S(z);
+    if (!nearLane(sx, sz, 1.5 * s) && !nearReservedZone(sx, sz)) addTree(scene, colliders, sx, sz, s);
   }
 
   const rocks: Array<[number, number, number]> = [
@@ -600,7 +606,9 @@ function buildLandmarks(scene: THREE.Scene, colliders: Colliders): void {
     [24, -8, 0.9], [39, -26, 0.9], [25, 39, 0.9], [39, 25, 1.0],
   ];
   for (const [x, z, s] of rocks) {
-    if (!nearLane(x, z, 2.0 * s) && !nearReservedZone(x, z)) addRock(scene, colliders, x, z, s);
+    const sx = S(x);
+    const sz = S(z);
+    if (!nearLane(sx, sz, 2.0 * s) && !nearReservedZone(sx, sz)) addRock(scene, colliders, sx, sz, s);
   }
 
   const flowers: Array<[number, number, number]> = [
@@ -608,7 +616,7 @@ function buildLandmarks(scene: THREE.Scene, colliders: Colliders): void {
     [0, 30, 0x80e7ff], [12, -30, 0x80e7ff], [26, -28, 0x8d7cff],
     [33, 6, 0xf37ccf], [-48, 42, 0x80e7ff], [48, -42, 0xff9b7c],
   ];
-  for (const [x, z, color] of flowers) addFlowers(scene, x, z, color);
+  for (const [x, z, color] of flowers) addFlowers(scene, S(x), S(z), color);
 
   scatterFoliage(scene, colliders);
   addCornerMarker(scene, BASE_BLUE_X, BASE_BLUE_Z, 0x4684e6);

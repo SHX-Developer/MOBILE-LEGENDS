@@ -1,7 +1,9 @@
-// Map: roughly square arena. The single lane runs diagonally from the blue
-// corner (bottom-left in landscape view) to the red corner (top-right).
-export const MAP_W = 120;
-export const MAP_H = 120;
+// Map: roughly square arena. Strategic coordinates are scaled up so there is
+// more room between towers without making units themselves larger.
+export const MAP_SCALE = 1.3;
+const S = (value: number) => Number((value * MAP_SCALE).toFixed(2));
+export const MAP_W = S(120);
+export const MAP_H = S(120);
 export const HALF_W = MAP_W / 2;
 export const HALF_H = MAP_H / 2;
 
@@ -54,37 +56,37 @@ export interface TowerSpec {
   z: number;
 }
 export const TOWER_LAYOUT: readonly TowerSpec[] = [
-  { team: 'blue', lane: 'top', tier: 'inner', x: -48, z: 34 },
-  { team: 'blue', lane: 'top', tier: 'middle', x: -48, z: 12 },
-  { team: 'blue', lane: 'top', tier: 'outer', x: -48, z: -16 },
-  { team: 'blue', lane: 'mid', tier: 'inner', x: -34, z: 34 },
-  { team: 'blue', lane: 'mid', tier: 'middle', x: -22, z: 22 },
-  { team: 'blue', lane: 'mid', tier: 'outer', x: -10, z: 10 },
-  { team: 'blue', lane: 'bot', tier: 'inner', x: -34, z: 48 },
-  { team: 'blue', lane: 'bot', tier: 'middle', x: -12, z: 48 },
-  { team: 'blue', lane: 'bot', tier: 'outer', x: 16, z: 48 },
-  { team: 'red', lane: 'top', tier: 'outer', x: -16, z: -48 },
-  { team: 'red', lane: 'top', tier: 'middle', x: 12, z: -48 },
-  { team: 'red', lane: 'top', tier: 'inner', x: 34, z: -48 },
-  { team: 'red', lane: 'mid', tier: 'outer', x: 10, z: -10 },
-  { team: 'red', lane: 'mid', tier: 'middle', x: 22, z: -22 },
-  { team: 'red', lane: 'mid', tier: 'inner', x: 34, z: -34 },
-  { team: 'red', lane: 'bot', tier: 'outer', x: 48, z: 16 },
-  { team: 'red', lane: 'bot', tier: 'middle', x: 48, z: -12 },
-  { team: 'red', lane: 'bot', tier: 'inner', x: 48, z: -34 },
+  { team: 'blue', lane: 'top', tier: 'inner', x: S(-48), z: S(34) },
+  { team: 'blue', lane: 'top', tier: 'middle', x: S(-48), z: S(12) },
+  { team: 'blue', lane: 'top', tier: 'outer', x: S(-48), z: S(-16) },
+  { team: 'blue', lane: 'mid', tier: 'inner', x: S(-34), z: S(34) },
+  { team: 'blue', lane: 'mid', tier: 'middle', x: S(-22), z: S(22) },
+  { team: 'blue', lane: 'mid', tier: 'outer', x: S(-10), z: S(10) },
+  { team: 'blue', lane: 'bot', tier: 'inner', x: S(-34), z: S(48) },
+  { team: 'blue', lane: 'bot', tier: 'middle', x: S(-12), z: S(48) },
+  { team: 'blue', lane: 'bot', tier: 'outer', x: S(16), z: S(48) },
+  { team: 'red', lane: 'top', tier: 'outer', x: S(-16), z: S(-48) },
+  { team: 'red', lane: 'top', tier: 'middle', x: S(12), z: S(-48) },
+  { team: 'red', lane: 'top', tier: 'inner', x: S(34), z: S(-48) },
+  { team: 'red', lane: 'mid', tier: 'outer', x: S(10), z: S(-10) },
+  { team: 'red', lane: 'mid', tier: 'middle', x: S(22), z: S(-22) },
+  { team: 'red', lane: 'mid', tier: 'inner', x: S(34), z: S(-34) },
+  { team: 'red', lane: 'bot', tier: 'outer', x: S(48), z: S(16) },
+  { team: 'red', lane: 'bot', tier: 'middle', x: S(48), z: S(-12) },
+  { team: 'red', lane: 'bot', tier: 'inner', x: S(48), z: S(-34) },
 ];
-export const TOWER_BLUE_TOP_X = -48;
-export const TOWER_BLUE_TOP_Z = 12;
-export const TOWER_BLUE_MID_X = -22;
-export const TOWER_BLUE_MID_Z = 22;
-export const TOWER_BLUE_BOT_X = -12;
-export const TOWER_BLUE_BOT_Z = 48;
-export const TOWER_RED_TOP_X = 12;
-export const TOWER_RED_TOP_Z = -48;
-export const TOWER_RED_MID_X = 22;
-export const TOWER_RED_MID_Z = -22;
-export const TOWER_RED_BOT_X = 48;
-export const TOWER_RED_BOT_Z = -12;
+export const TOWER_BLUE_TOP_X = S(-48);
+export const TOWER_BLUE_TOP_Z = S(12);
+export const TOWER_BLUE_MID_X = S(-22);
+export const TOWER_BLUE_MID_Z = S(22);
+export const TOWER_BLUE_BOT_X = S(-12);
+export const TOWER_BLUE_BOT_Z = S(48);
+export const TOWER_RED_TOP_X = S(12);
+export const TOWER_RED_TOP_Z = S(-48);
+export const TOWER_RED_MID_X = S(22);
+export const TOWER_RED_MID_Z = S(-22);
+export const TOWER_RED_BOT_X = S(48);
+export const TOWER_RED_BOT_Z = S(-12);
 export const TOWER_MAX_HP = 1000;
 export const TOWER_DAMAGE = 40;
 export const TOWER_ATTACK_RANGE = 11;
@@ -105,34 +107,34 @@ type LanePath = ReadonlyArray<readonly [number, number]>;
 export const LANE_PATHS: Record<LaneId, { blue: LanePath; red: LanePath }> = {
   top: {
     blue: [
-      [-48, 30],
-      [-48, -30],
-      [-30, -48],
-      [30, -48],
+      [S(-48), S(30)],
+      [S(-48), S(-30)],
+      [S(-30), S(-48)],
+      [S(30), S(-48)],
     ],
     red: [
-      [30, -48],
-      [-30, -48],
-      [-48, -30],
-      [-48, 30],
+      [S(30), S(-48)],
+      [S(-30), S(-48)],
+      [S(-48), S(-30)],
+      [S(-48), S(30)],
     ],
   },
   mid: {
-    blue: [[-26, 26], [-8, 8], [8, -8], [26, -26]],
-    red: [[26, -26], [8, -8], [-8, 8], [-26, 26]],
+    blue: [[S(-26), S(26)], [S(-8), S(8)], [S(8), S(-8)], [S(26), S(-26)]],
+    red: [[S(26), S(-26)], [S(8), S(-8)], [S(-8), S(8)], [S(-26), S(26)]],
   },
   bot: {
     blue: [
-      [-30, 48],
-      [30, 48],
-      [48, 30],
-      [48, -30],
+      [S(-30), S(48)],
+      [S(30), S(48)],
+      [S(48), S(30)],
+      [S(48), S(-30)],
     ],
     red: [
-      [48, -30],
-      [48, 30],
-      [30, 48],
-      [-30, 48],
+      [S(48), S(-30)],
+      [S(48), S(30)],
+      [S(30), S(48)],
+      [S(-30), S(48)],
     ],
   },
 };
@@ -141,10 +143,10 @@ export const LANE_PATHS: Record<LaneId, { blue: LanePath; red: LanePath }> = {
 // anti-diagonal; player (blue) base sits at the (−x,+z) corner so it shows
 // up at "phone bottom-left" in landscape view.
 export const BASE_RADIUS = 5;
-export const BASE_BLUE_X = -HALF_W + 14;
-export const BASE_BLUE_Z = HALF_H - 14;
-export const BASE_RED_X = HALF_W - 14;
-export const BASE_RED_Z = -HALF_H + 14;
+export const BASE_BLUE_X = S(-46);
+export const BASE_BLUE_Z = S(46);
+export const BASE_RED_X = S(46);
+export const BASE_RED_Z = S(-46);
 export const BASE_MAX_HP = 1500;
 export const BASE_HIT_RADIUS = 5;
 export const BASE_REGEN_RADIUS = 12;
@@ -154,7 +156,7 @@ export const BASE_ATTACK_RANGE = 16;
 export const BASE_ATTACK_COOLDOWN_MS = 800;
 
 // Spawn points — just in front of each base, on the lane diagonal.
-const SPAWN_OFFSET = 6;
+const SPAWN_OFFSET = S(6);
 const DIAG = Math.SQRT1_2; // 1/sqrt(2)
 export const SPAWN_BLUE_X = BASE_BLUE_X + SPAWN_OFFSET * DIAG;
 export const SPAWN_BLUE_Z = BASE_BLUE_Z - SPAWN_OFFSET * DIAG;

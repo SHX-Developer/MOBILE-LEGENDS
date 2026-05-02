@@ -10,6 +10,8 @@ import {
   BOT_RETREAT_HP_FRACTION,
   BOT_SPEED_3D,
   BOT_VISION_RANGE,
+  BASE_BLUE_X,
+  BASE_BLUE_Z,
   HERO_BASE_XP_TO_LEVEL,
   HERO_DAMAGE_PER_LEVEL,
   HERO_HP_PER_LEVEL,
@@ -35,6 +37,8 @@ import type { UnitRegistry } from '../combat/UnitRegistry.js';
 import type { Colliders } from '../world/Colliders.js';
 import { HealthBar } from '../combat/HealthBar.js';
 import type { ProjectileManager } from './ProjectileManager.js';
+
+const TMP_TARGET = new THREE.Vector3();
 
 /**
  * Red-team bot opponent. Naive FSM:
@@ -66,6 +70,8 @@ export class BotObject implements Unit {
   private lastCAt = -Infinity;
   private recallStartedAt = 0;
   private deathStartedAt = 0;
+  private avoidSide: 1 | -1 = 1;
+  private lastProgress = 0;
   private armorMat!: THREE.MeshStandardMaterial;
   private armorDarkMat!: THREE.MeshStandardMaterial;
 
@@ -150,7 +156,7 @@ export class BotObject implements Unit {
         this.recallStartedAt = now;
         return;
       }
-      this.moveToward(this.spawn, deltaSec, speed);
+      this.moveToward(this.spawn, deltaSec, speed, colliders);
       const sdx = this.spawn.x - this.position.x;
       const sdz = this.spawn.z - this.position.z;
       if (sdx * sdx + sdz * sdz < 9) {
@@ -161,10 +167,14 @@ export class BotObject implements Unit {
       return;
     }
 
-    const enemy = registry.findNearestEnemy(this.team, this.position, BOT_VISION_RANGE);
+    const enemy = registry.findNearestEnemy(this.team, this.position, BOT_VISION_RANGE, [
+      'hero',
+      'minion',
+      'structure',
+    ]);
     if (!enemy) {
-      this.moveToward(new THREE.Vector3(0, 0, 0), deltaSec, speed);
-      colliders.resolve(this.position, this.radius);
+      TMP_TARGET.set(BASE_BLUE_X, 0, BASE_BLUE_Z);
+      this.moveToward(TMP_TARGET, deltaSec, speed, colliders);
       return;
     }
 
@@ -173,12 +183,7 @@ export class BotObject implements Unit {
     const dist = Math.hypot(dx, dz);
 
     if (dist > BOT_ATTACK_RANGE) {
-      const nx = dx / dist;
-      const nz = dz / dist;
-      this.position.x += nx * speed * deltaSec;
-      this.position.z += nz * speed * deltaSec;
-      this.group.rotation.y = Math.atan2(nx, nz);
-      colliders.resolve(this.position, this.radius);
+      this.moveToward(enemy.position, deltaSec, speed, colliders);
       // Try a long-range Q to harass while approaching.
       this.tryCastSkill(enemy, dist, now, projectiles);
     } else {
@@ -335,16 +340,57 @@ export class BotObject implements Unit {
     this.healthBar.setLevel(this.level, progress);
   }
 
-  private moveToward(target: THREE.Vector3, dt: number, speed: number): void {
+  private moveToward(target: THREE.Vector3, dt: number, speed: number, colliders: Colliders): void {
     const dx = target.x - this.position.x;
     const dz = target.z - this.position.z;
     const d = Math.hypot(dx, dz);
     if (d < 0.01) return;
     const nx = dx / d;
     const nz = dz / d;
-    this.position.x += nx * speed * dt;
-    this.position.z += nz * speed * dt;
-    this.group.rotation.y = Math.atan2(nx, nz);
+    const step = speed * dt;
+    const dir = this.pickMoveDirection(nx, nz, target, step, colliders);
+    this.position.x += dir.x * step;
+    this.position.z += dir.z * step;
+    colliders.resolve(this.position, this.radius);
+    this.group.rotation.y = Math.atan2(dir.x, dir.z);
+  }
+
+  private pickMoveDirection(
+    nx: number,
+    nz: number,
+    target: THREE.Vector3,
+    step: number,
+    colliders: Colliders,
+  ): { x: number; z: number } {
+    const before = distTo(this.position.x, this.position.z, target.x, target.z);
+    const angles = [0, 0.32, -0.32, 0.65, -0.65, 1.0, -1.0, 1.45, -1.45, 2.0, -2.0];
+    let best: { x: number; z: number } | null = null;
+    let bestScore = -Infinity;
+
+    for (const rawAngle of angles) {
+      const angle = rawAngle === 0 ? 0 : Math.abs(rawAngle) * this.avoidSide * Math.sign(rawAngle);
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const x = nx * cos - nz * sin;
+      const z = nx * sin + nz * cos;
+      const next = { x: this.position.x + x * step, z: this.position.z + z * step };
+      if (colliders.collides(next, this.radius)) continue;
+      const after = distTo(next.x, next.z, target.x, target.z);
+      const progress = before - after;
+      const score = progress - Math.abs(angle) * 0.07;
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x, z };
+      }
+    }
+
+    if (!best) {
+      this.avoidSide *= -1;
+      return { x: -nz * this.avoidSide, z: nx * this.avoidSide };
+    }
+    if (bestScore < this.lastProgress * 0.25) this.avoidSide *= -1;
+    this.lastProgress = bestScore;
+    return best;
   }
 
   private buildVisual(): void {
@@ -410,6 +456,10 @@ export class BotObject implements Unit {
     bow.rotation.z = -Math.PI / 18;
     this.group.add(bow);
   }
+}
+
+function distTo(ax: number, az: number, bx: number, bz: number): number {
+  return Math.hypot(bx - ax, bz - az);
 }
 
 function buildBow(
