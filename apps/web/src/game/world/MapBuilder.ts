@@ -5,7 +5,6 @@ import {
   HALF_W,
   HALF_H,
   LANE_WIDTH,
-  COLOR_GROUND,
   COLOR_LANE,
   COLOR_WALL,
   COLOR_TREE_TRUNK,
@@ -80,9 +79,10 @@ export function buildMap(scene: THREE.Scene): MapEntities {
 }
 
 function buildGround(scene: THREE.Scene): void {
+  const texture = createBattlefieldTexture();
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(MAP_W, MAP_H, 18, 18),
-    new THREE.MeshStandardMaterial({ color: COLOR_GROUND, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, map: texture, roughness: 1 }),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -100,6 +100,173 @@ function buildGround(scene: THREE.Scene): void {
     addStripe(scene, i, 0, 0.28, MAP_H - 16, 0x4f7d3d, 0.12);
     addStripe(scene, 0, i, MAP_W - 16, 0.28, 0x4f7d3d, 0.12);
   }
+}
+
+function createBattlefieldTexture(): THREE.CanvasTexture {
+  const size = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  const toPx = ([x, z]: Point): [number, number] => [
+    ((x + HALF_W) / MAP_W) * size,
+    ((z + HALF_H) / MAP_H) * size,
+  ];
+  const path = (pts: ReadonlyArray<Point>) => {
+    const [sx, sy] = toPx(pts[0]);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    for (let i = 1; i < pts.length; i++) {
+      const [x, y] = toPx(pts[i]);
+      ctx.lineTo(x, y);
+    }
+  };
+  const curve = (pts: ReadonlyArray<Point>) => {
+    const [sx, sy] = toPx(pts[0]);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const [cx, cy] = toPx(pts[i]);
+      const [nx, ny] = toPx(pts[i + 1]);
+      ctx.quadraticCurveTo(cx, cy, (cx + nx) / 2, (cy + ny) / 2);
+    }
+    const [ex, ey] = toPx(pts[pts.length - 1]);
+    ctx.lineTo(ex, ey);
+  };
+  const strokePath = (pts: ReadonlyArray<Point>, width: number, color: string, alpha = 1, curved = false) => {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = color;
+    curved ? curve(pts) : path(pts);
+    ctx.stroke();
+    ctx.restore();
+  };
+  const fillEllipse = (x: number, z: number, rx: number, rz: number, color: string, alpha = 1) => {
+    const [px, py] = toPx([x, z]);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(px, py, (rx / MAP_W) * size, (rz / MAP_H) * size, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const grad = ctx.createLinearGradient(0, size, size, 0);
+  grad.addColorStop(0, '#5f9850');
+  grad.addColorStop(0.34, '#6ea24f');
+  grad.addColorStop(0.5, '#4f8758');
+  grad.addColorStop(0.68, '#6b9a51');
+  grad.addColorStop(1, '#8f6e4d');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  ctx.fillStyle = 'rgba(38, 82, 62, 0.28)';
+  for (const [x, z, rx, rz] of [
+    [-34, -28, 20, 16], [32, 28, 20, 16], [-26, 22, 24, 14], [26, -22, 24, 14],
+    [-4, 0, 16, 24], [10, 4, 18, 20],
+  ] as Array<[number, number, number, number]>) {
+    fillEllipse(x, z, rx, rz, '#26523e', 0.22);
+  }
+
+  const river: Point[] = [[-50, -17], [-33, -7], [-20, 11], [-5, 21], [11, 14], [25, -4], [48, -18]];
+  strokePath(river, 142, '#1e5967', 0.36, true);
+  strokePath(river, 92, '#2f9eaa', 0.78, true);
+  strokePath(river, 28, '#68d0cc', 0.24, true);
+  fillEllipse(-24, -9, 9, 7, '#61c4c4', 0.7);
+  fillEllipse(24, 9, 9, 7, '#61c4c4', 0.7);
+
+  const laneShapes = [
+    [BLUE_BASE, [-50, 30], [-50, -34], [-34, -50], [30, -50], RED_BASE],
+    [BLUE_BASE, [-28, 28], [-10, 10], [10, -10], [28, -28], RED_BASE],
+    [BLUE_BASE, [-34, 50], [34, 50], [50, 34], [50, -30], RED_BASE],
+  ] as ReadonlyArray<ReadonlyArray<Point>>;
+  for (const pts of laneShapes) {
+    strokePath(pts, 108, '#806f4a', 0.36, false);
+    strokePath(pts, 82, '#d7bf81', 0.92, false);
+    strokePath(pts, 18, '#f4dfa6', 0.28, false);
+  }
+
+  const wallShapes: ReadonlyArray<ReadonlyArray<Point>> = [
+    [[-42, 15], [-34, 5], [-35, -12], [-27, -25]],
+    [[-22, 36], [-9, 31], [3, 25], [12, 17]],
+    [[-32, -36], [-17, -33], [-3, -25], [8, -21]],
+    [[13, -36], [29, -32], [39, -17]],
+    [[-16, -15], [-4, -22], [12, -18]],
+    [[-9, 20], [6, 24], [17, 13]],
+    [[42, -15], [34, -5], [35, 12], [27, 25]],
+    [[22, -36], [9, -31], [-3, -25], [-12, -17]],
+    [[32, 36], [17, 33], [3, 25], [-8, 21]],
+    [[-13, 36], [-29, 32], [-39, 17]],
+    [[16, 15], [4, 22], [-12, 18]],
+    [[9, -20], [-6, -24], [-17, -13]],
+  ];
+  for (const pts of wallShapes) {
+    strokePath(pts, 42, '#3f4d46', 0.38, true);
+    strokePath(pts, 24, '#828c7e', 0.86, true);
+    strokePath(pts, 6, '#b6b9a6', 0.55, true);
+  }
+
+  for (const [x, z, color] of [
+    [-33, -18, '#6bd1ff'], [-18, -36, '#9b7dff'], [-30, 20, '#7ee06f'],
+    [-12, 32, '#ff8a4c'], [-8, -8, '#ffb84d'], [10, 10, '#9b7dff'],
+    [33, 18, '#6bd1ff'], [18, 36, '#9b7dff'], [30, -20, '#7ee06f'],
+    [12, -32, '#ff8a4c'], [-39, 2, '#61d7a4'], [39, -2, '#61d7a4'],
+  ] as Array<[number, number, string]>) {
+    const [px, py] = toPx([x, z]);
+    ctx.save();
+    ctx.fillStyle = 'rgba(45, 55, 34, 0.72)';
+    ctx.beginPath();
+    ctx.arc(px, py, 31, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.88;
+    ctx.lineWidth = 7;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.72;
+    ctx.beginPath();
+    ctx.arc(px, py, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  for (const [x, z, color] of [
+    [BASE_BLUE_X, BASE_BLUE_Z, '#55b7ff'],
+    [BASE_RED_X, BASE_RED_Z, '#ff6969'],
+  ] as Array<[number, number, string]>) {
+    const [px, py] = toPx([x, z]);
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.45;
+    ctx.beginPath();
+    ctx.arc(px, py, 84, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.88;
+    ctx.lineWidth = 10;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(34, 55, 48, 0.45)';
+  ctx.lineWidth = 44;
+  ctx.strokeRect(20, 20, size - 40, size - 40);
+  ctx.strokeStyle = 'rgba(165, 148, 105, 0.75)';
+  ctx.lineWidth = 16;
+  ctx.strokeRect(28, 28, size - 56, size - 56);
+  ctx.restore();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
 }
 
 function addGroundPatch(
@@ -185,8 +352,20 @@ function buildIslandEdges(scene: THREE.Scene): void {
 }
 
 function buildLanes(scene: THREE.Scene): void {
-  const edgeMat = new THREE.MeshStandardMaterial({ color: 0xa88d5f, roughness: 0.96 });
-  const laneMat = new THREE.MeshStandardMaterial({ color: COLOR_LANE, roughness: 0.9 });
+  const edgeMat = new THREE.MeshStandardMaterial({
+    color: 0xa88d5f,
+    transparent: true,
+    opacity: 0.32,
+    roughness: 0.96,
+    depthWrite: false,
+  });
+  const laneMat = new THREE.MeshStandardMaterial({
+    color: COLOR_LANE,
+    transparent: true,
+    opacity: 0.42,
+    roughness: 0.9,
+    depthWrite: false,
+  });
   const grooveMat = new THREE.MeshBasicMaterial({
     color: 0xf2d99a,
     transparent: true,
