@@ -110,9 +110,25 @@ export class MinionObject implements Unit {
     this.radius = config.radius;
     this.path = path;
     this.group.position.copy(spawn);
-    // Stagger spawn so siblings in the same wave don't pile on top of each other.
-    const lateral = (index - 1) * 1.4;
-    this.group.position.x += lateral;
+    // Start each lane wave a few steps away from the base collider, then
+    // stagger siblings across the lane so the first frame is never crowded.
+    const firstWaypoint = path[0];
+    if (firstWaypoint) {
+      const dx = firstWaypoint[0] - spawn.x;
+      const dz = firstWaypoint[1] - spawn.z;
+      const len = Math.hypot(dx, dz);
+      if (len > 0.01) {
+        const nx = dx / len;
+        const nz = dz / len;
+        const lateral = (index - 1) * 1.45;
+        const forward = 4.2 + index * 0.8;
+        this.group.position.x += nx * forward - nz * lateral;
+        this.group.position.z += nz * forward + nx * lateral;
+      }
+    } else {
+      const lateral = (index - 1) * 1.4;
+      this.group.position.x += lateral;
+    }
     this.healthBar = new HealthBar(1.45, 0.16, team === 'blue' ? 0x64d8ff : 0xff7171);
     this.healthBar.group.position.set(0, 1.9 * config.scale + 0.4, 0);
     this.group.add(this.healthBar.group);

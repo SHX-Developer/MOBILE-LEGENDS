@@ -21,6 +21,18 @@ import {
   SPAWN_RED_X,
   SPAWN_RED_Z,
   SPAWN_ZONE_RADIUS,
+  TOWER_BLUE_TOP_X,
+  TOWER_BLUE_TOP_Z,
+  TOWER_BLUE_MID_X,
+  TOWER_BLUE_MID_Z,
+  TOWER_BLUE_BOT_X,
+  TOWER_BLUE_BOT_Z,
+  TOWER_RED_TOP_X,
+  TOWER_RED_TOP_Z,
+  TOWER_RED_MID_X,
+  TOWER_RED_MID_Z,
+  TOWER_RED_BOT_X,
+  TOWER_RED_BOT_Z,
   LANE_PATHS,
 } from '../constants.js';
 import { buildBases, Base } from './Bases.js';
@@ -237,11 +249,8 @@ function addSpawnZone(
 }
 
 function buildLandmarks(scene: THREE.Scene, colliders: Colliders): void {
-  // Hand-picked placements off the diagonal lane so the eye has reference
-  // points while moving. Each entry is a function on (scene, colliders).
-  // Lane runs along the (+x,−z) ↔ (−x,+z) anti-diagonal. Landmark coordinates
-  // are mirrored across the X axis so they stay off-lane (they were originally
-  // tuned for the (+x,+z) diagonal).
+  // Hand-picked placements filtered against all three lane corridors so the
+  // eye has reference points without putting rocks or trunks in minion paths.
   const trees: Array<[number, number, number]> = [
     [-44, -30, 1.0],
     [-30, -44, 1.2],
@@ -260,7 +269,9 @@ function buildLandmarks(scene: THREE.Scene, colliders: Colliders): void {
     [42, -20, 1.0],
     [-42, 20, 1.0],
   ];
-  for (const [x, z, s] of trees) addTree(scene, colliders, x, z, s);
+  for (const [x, z, s] of trees) {
+    if (!nearLane(x, z, 1.4 * s)) addTree(scene, colliders, x, z, s);
+  }
 
   const rocks: Array<[number, number, number]> = [
     [-18, -24, 1.4],
@@ -274,7 +285,9 @@ function buildLandmarks(scene: THREE.Scene, colliders: Colliders): void {
     [30, 0, 1.1],
     [-30, 0, 1.1],
   ];
-  for (const [x, z, s] of rocks) addRock(scene, colliders, x, z, s);
+  for (const [x, z, s] of rocks) {
+    if (!nearLane(x, z, 1.8 * s)) addRock(scene, colliders, x, z, s);
+  }
 
   // Decorative flower clusters (no collision) — pure visual reference.
   const flowers: Array<[number, number]> = [
@@ -300,6 +313,12 @@ function buildLandmarks(scene: THREE.Scene, colliders: Colliders): void {
 }
 
 const RNG_SEED = 0x9e3779b1;
+const LANE_POLYLINES: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
+  [[BASE_BLUE_X, BASE_BLUE_Z], ...LANE_PATHS.top.blue, [BASE_RED_X, BASE_RED_Z]],
+  [[BASE_BLUE_X, BASE_BLUE_Z], ...LANE_PATHS.mid.blue, [BASE_RED_X, BASE_RED_Z]],
+  [[BASE_BLUE_X, BASE_BLUE_Z], ...LANE_PATHS.bot.blue, [BASE_RED_X, BASE_RED_Z]],
+];
+
 function makeRng(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
@@ -310,7 +329,7 @@ function makeRng(seed: number): () => number {
 
 /**
  * Scatter small props (grass tufts, bushes, pebbles) across the map but keep
- * a clear corridor along the lane and around bases/towers/spawn pads so the
+ * a clear corridor along every lane and around bases/towers/spawn pads so the
  * playable lane stays readable.
  *
  * Grass and pebble props use InstancedMesh — one draw call for hundreds of
@@ -337,7 +356,7 @@ function scatterFoliage(scene: THREE.Scene, colliders: Colliders): void {
   for (let i = 0; i < 320; i++) {
     const x = (rng() - 0.5) * (MAP_W - 8);
     const z = (rng() - 0.5) * (MAP_H - 8);
-    if (distanceToLane(x, z) < LANE_WIDTH * 0.55 + 1.2) continue;
+    if (nearLane(x, z, 1.2)) continue;
     if (nearReservedZone(x, z)) continue;
     const yaw = rng() * Math.PI * 2;
     const s = 0.7 + rng() * 0.7;
@@ -360,7 +379,7 @@ function scatterFoliage(scene: THREE.Scene, colliders: Colliders): void {
   for (let i = 0; i < 22; i++) {
     const x = (rng() - 0.5) * (MAP_W - 16);
     const z = (rng() - 0.5) * (MAP_H - 16);
-    if (distanceToLane(x, z) < LANE_WIDTH * 0.7 + 2) continue;
+    if (nearLane(x, z, 2.2)) continue;
     if (nearReservedZone(x, z)) continue;
     const bush = new THREE.Mesh(bushGeom, bushMat);
     bush.position.set(x, 0.45, z);
@@ -376,6 +395,7 @@ function scatterFoliage(scene: THREE.Scene, colliders: Colliders): void {
   for (let i = 0; i < 90; i++) {
     const x = (rng() - 0.5) * (MAP_W - 8);
     const z = (rng() - 0.5) * (MAP_H - 8);
+    if (nearLane(x, z, 0.8)) continue;
     if (nearReservedZone(x, z)) continue;
     const euler = new THREE.Euler(rng(), rng() * Math.PI * 2, rng());
     tmpQuat.setFromEuler(euler);
@@ -390,8 +410,35 @@ function scatterFoliage(scene: THREE.Scene, colliders: Colliders): void {
 }
 
 function distanceToLane(x: number, z: number): number {
-  // Lane runs along (+x,−z) ↔ (−x,+z); perpendicular distance is |x + z|/√2.
-  return Math.abs(x + z) / Math.SQRT2;
+  let best = Infinity;
+  for (const pts of LANE_POLYLINES) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, az] = pts[i];
+      const [bx, bz] = pts[i + 1];
+      best = Math.min(best, distanceToSegment(x, z, ax, az, bx, bz));
+    }
+  }
+  return best;
+}
+
+function nearLane(x: number, z: number, extraClearance = 0): boolean {
+  return distanceToLane(x, z) < LANE_WIDTH / 2 + extraClearance;
+}
+
+function distanceToSegment(
+  x: number,
+  z: number,
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+): number {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const len2 = dx * dx + dz * dz;
+  if (len2 < 0.0001) return Math.hypot(x - ax, z - az);
+  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / len2));
+  return Math.hypot(x - (ax + dx * t), z - (az + dz * t));
 }
 
 function nearReservedZone(x: number, z: number): boolean {
@@ -401,8 +448,17 @@ function nearReservedZone(x: number, z: number): boolean {
   if (dBase(BASE_RED_X, BASE_RED_Z) < 14) return true;
   if (dBase(SPAWN_BLUE_X, SPAWN_BLUE_Z) < 8) return true;
   if (dBase(SPAWN_RED_X, SPAWN_RED_Z) < 8) return true;
-  if (dBase(-22, 22) < 6) return true; // tower blue
-  if (dBase(22, -22) < 6) return true; // tower red
+  const towers: ReadonlyArray<readonly [number, number]> = [
+    [TOWER_BLUE_TOP_X, TOWER_BLUE_TOP_Z],
+    [TOWER_BLUE_MID_X, TOWER_BLUE_MID_Z],
+    [TOWER_BLUE_BOT_X, TOWER_BLUE_BOT_Z],
+    [TOWER_RED_TOP_X, TOWER_RED_TOP_Z],
+    [TOWER_RED_MID_X, TOWER_RED_MID_Z],
+    [TOWER_RED_BOT_X, TOWER_RED_BOT_Z],
+  ];
+  for (const [tx, tz] of towers) {
+    if (dBase(tx, tz) < 6.5) return true;
+  }
   return false;
 }
 
@@ -451,27 +507,43 @@ function buildJungleBarriers(scene: THREE.Scene, colliders: Colliders): void {
   const wallMat = new THREE.MeshStandardMaterial({ color: 0x6b6f7a, roughness: 0.95, flatShading: true });
   const capMat = new THREE.MeshStandardMaterial({ color: 0x8a8e98, roughness: 0.9 });
 
-  // Barrier between top and mid lanes — runs along the upper jungle.
-  // Two short walls leaving a passage near each tower.
+  // Ruined stone ridges between the lanes. They mirror the Mobile Legends
+  // jungle silhouette: small wall chains around the neutral pockets, with
+  // clear mouths into every lane.
   buildWallChain(scene, colliders, wallMat, capMat, [
-    [-30, -22], [-22, -22], [-14, -22],
+    [-34, -24], [-27, -25], [-20, -25],
   ]);
   buildWallChain(scene, colliders, wallMat, capMat, [
-    [4, -22], [12, -18], [16, -10],
+    [-12, -33], [-4, -34], [4, -33],
+  ]);
+  buildWallChain(scene, colliders, wallMat, capMat, [
+    [4, -30], [12, -31], [20, -32],
+  ]);
+  buildWallChain(scene, colliders, wallMat, capMat, [
+    [-32, 4], [-31, 10], [-30, 16],
   ]);
 
-  // Barrier between mid and bot lanes — mirror of the above.
   buildWallChain(scene, colliders, wallMat, capMat, [
-    [22, 14], [22, 22], [22, 30],
+    [34, 24], [27, 25], [20, 25],
   ]);
   buildWallChain(scene, colliders, wallMat, capMat, [
-    [-16, 10], [-12, 18], [-4, 22],
+    [12, 33], [4, 34], [-4, 33],
+  ]);
+  buildWallChain(scene, colliders, wallMat, capMat, [
+    [-4, 30], [-12, 31], [-20, 32],
+  ]);
+  buildWallChain(scene, colliders, wallMat, capMat, [
+    [32, -4], [31, -10], [30, -16],
   ]);
 
-  // Mountain clusters in the corners that the lanes don't touch — purely
-  // decorative geometry plus colliders so the corners feel solid.
-  buildMountainCluster(scene, colliders, -28, 28, 0xa39988);
-  buildMountainCluster(scene, colliders, 28, -28, 0xa39988);
+  // Mountain shelves sit outside the lanes, like the tall rocky borders in
+  // the reference map. The mid lane is deliberately left clean.
+  buildMountainCluster(scene, colliders, -30, -31, 0xa39988);
+  buildMountainCluster(scene, colliders, 30, 31, 0xa39988);
+  buildMountainCluster(scene, colliders, -54, -18, 0x8f8a80);
+  buildMountainCluster(scene, colliders, 54, 18, 0x8f8a80);
+  buildMountainCluster(scene, colliders, 18, -54, 0x8f8a80);
+  buildMountainCluster(scene, colliders, -18, 54, 0x8f8a80);
 }
 
 function buildWallChain(
@@ -482,6 +554,7 @@ function buildWallChain(
   pts: ReadonlyArray<readonly [number, number]>,
 ): void {
   for (const [x, z] of pts) {
+    if (nearLane(x, z, 2.0) || nearReservedZone(x, z)) continue;
     const block = new THREE.Mesh(
       new THREE.BoxGeometry(2.2, 1.4, 2.2),
       wallMat,
@@ -514,6 +587,7 @@ function buildMountainCluster(
     [cx + 1.2, cz + 2.6, 1.9],
   ];
   for (const [px, pz, h] of peaks) {
+    if (nearLane(px, pz, 2.4) || nearReservedZone(px, pz)) continue;
     const peak = new THREE.Mesh(
       new THREE.ConeGeometry(1.6, h, 7),
       stoneMat,
