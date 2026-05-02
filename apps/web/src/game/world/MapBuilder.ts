@@ -44,10 +44,12 @@ export function buildMap(scene: THREE.Scene): MapEntities {
   const colliders = new Colliders();
   buildGround(scene);
   buildLane(scene);
+  buildRiver(scene);
   buildPerimeterWalls(scene, colliders);
   buildSpawnZones(scene);
   const bases = buildBases(scene, colliders);
   const towers = buildTowers(scene, colliders);
+  buildJungleBarriers(scene, colliders);
   buildLandmarks(scene, colliders);
   return { colliders, towers, bases };
 }
@@ -402,6 +404,126 @@ function nearReservedZone(x: number, z: number): boolean {
   if (dBase(-22, 22) < 6) return true; // tower blue
   if (dBase(22, -22) < 6) return true; // tower red
   return false;
+}
+
+/**
+ * Decorative river — two cyan strips that run perpendicular to the mid lane,
+ * meeting at the centre. Visual only, no collider.
+ */
+function buildRiver(scene: THREE.Scene): void {
+  const waterMat = new THREE.MeshStandardMaterial({
+    color: 0x4ec9ff,
+    transparent: true,
+    opacity: 0.45,
+    roughness: 0.25,
+    metalness: 0.1,
+  });
+  const lengths = [
+    // Two strips angled along the (+x,+z) ↔ (-x,-z) axis (perpendicular
+    // to the mid lane), each spanning roughly half the map and crossing
+    // through the centre.
+    { cx: -16, cz: -16 },
+    { cx: 16, cz: 16 },
+  ];
+  for (const { cx, cz } of lengths) {
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(38, 8), waterMat);
+    strip.rotation.x = -Math.PI / 2;
+    strip.rotation.z = Math.PI / 4; // run along the (+x,+z) diagonal
+    strip.position.set(cx, 0.024, cz);
+    scene.add(strip);
+  }
+  // Centre pool where the strips meet.
+  const pool = new THREE.Mesh(
+    new THREE.CircleGeometry(7, 36),
+    waterMat,
+  );
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.set(0, 0.026, 0);
+  scene.add(pool);
+}
+
+/**
+ * Stone walls between the lanes — split the off-lane area into jungle
+ * pockets that the player can walk around but not through. Each barrier
+ * is a low chain of grey blocks with collider circles.
+ */
+function buildJungleBarriers(scene: THREE.Scene, colliders: Colliders): void {
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x6b6f7a, roughness: 0.95, flatShading: true });
+  const capMat = new THREE.MeshStandardMaterial({ color: 0x8a8e98, roughness: 0.9 });
+
+  // Barrier between top and mid lanes — runs along the upper jungle.
+  // Two short walls leaving a passage near each tower.
+  buildWallChain(scene, colliders, wallMat, capMat, [
+    [-30, -22], [-22, -22], [-14, -22],
+  ]);
+  buildWallChain(scene, colliders, wallMat, capMat, [
+    [4, -22], [12, -18], [16, -10],
+  ]);
+
+  // Barrier between mid and bot lanes — mirror of the above.
+  buildWallChain(scene, colliders, wallMat, capMat, [
+    [22, 14], [22, 22], [22, 30],
+  ]);
+  buildWallChain(scene, colliders, wallMat, capMat, [
+    [-16, 10], [-12, 18], [-4, 22],
+  ]);
+
+  // Mountain clusters in the corners that the lanes don't touch — purely
+  // decorative geometry plus colliders so the corners feel solid.
+  buildMountainCluster(scene, colliders, -28, 28, 0xa39988);
+  buildMountainCluster(scene, colliders, 28, -28, 0xa39988);
+}
+
+function buildWallChain(
+  scene: THREE.Scene,
+  colliders: Colliders,
+  wallMat: THREE.Material,
+  capMat: THREE.Material,
+  pts: ReadonlyArray<readonly [number, number]>,
+): void {
+  for (const [x, z] of pts) {
+    const block = new THREE.Mesh(
+      new THREE.BoxGeometry(2.2, 1.4, 2.2),
+      wallMat,
+    );
+    block.position.set(x, 0.7, z);
+    block.castShadow = true;
+    scene.add(block);
+    const cap = new THREE.Mesh(
+      new THREE.BoxGeometry(2.4, 0.18, 2.4),
+      capMat,
+    );
+    cap.position.set(x, 1.5, z);
+    scene.add(cap);
+    colliders.addCircle(x, z, 1.3);
+  }
+}
+
+function buildMountainCluster(
+  scene: THREE.Scene,
+  colliders: Colliders,
+  cx: number,
+  cz: number,
+  color: number,
+): void {
+  const stoneMat = new THREE.MeshStandardMaterial({ color, roughness: 1, flatShading: true });
+  const peaks: Array<[number, number, number]> = [
+    [cx, cz, 3.2],
+    [cx + 2.8, cz - 1.5, 2.4],
+    [cx - 2.2, cz + 1.8, 2.6],
+    [cx + 1.2, cz + 2.6, 1.9],
+  ];
+  for (const [px, pz, h] of peaks) {
+    const peak = new THREE.Mesh(
+      new THREE.ConeGeometry(1.6, h, 7),
+      stoneMat,
+    );
+    peak.position.set(px, h / 2, pz);
+    peak.rotation.y = Math.random() * Math.PI;
+    peak.castShadow = true;
+    scene.add(peak);
+    colliders.addCircle(px, pz, 1.3);
+  }
 }
 
 /** Two campfires — small ambient landmark on the off-lane sides. */
