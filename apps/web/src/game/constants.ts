@@ -39,26 +39,23 @@ export const HERO_BASE_XP_TO_LEVEL = 90;
 export const HERO_XP_LEVEL_GROWTH = 1.45;
 export const HERO_BASE_REGEN_PER_SEC = 85;
 
-// Towers — 1 per lane per team. Mid sits on the centre diagonal; Top
-// runs along the (-x, ...) wall side and Bot along the (..., +z) wall.
+// Towers — 1 per lane per team. Coordinates follow the Mobile Legends-style
+// three-lane island: blue bottom-left, red top-right, top along left/top,
+// bot along bottom/right, mid through the river.
 export const TOWER_RADIUS = 1.6;
 export const TOWER_HEIGHT = 5;
-// Mid lane towers (existing diagonal).
-export const TOWER_BLUE_MID_X = -22;
-export const TOWER_BLUE_MID_Z = 22;
-export const TOWER_RED_MID_X = 22;
-export const TOWER_RED_MID_Z = -22;
-// Top lane: blue base → goes up along x=-46 → bends right along z=-46.
-// Blue tower defends the vertical leg, red defends the horizontal leg.
-export const TOWER_BLUE_TOP_X = -44;
-export const TOWER_BLUE_TOP_Z = -8;
-export const TOWER_RED_TOP_X = 8;
-export const TOWER_RED_TOP_Z = -44;
-// Bot lane: blue base → goes right along z=+46 → bends up along x=+46.
-export const TOWER_BLUE_BOT_X = -8;
-export const TOWER_BLUE_BOT_Z = 44;
-export const TOWER_RED_BOT_X = 44;
-export const TOWER_RED_BOT_Z = 8;
+export const TOWER_BLUE_MID_X = -24;
+export const TOWER_BLUE_MID_Z = 24;
+export const TOWER_RED_MID_X = 24;
+export const TOWER_RED_MID_Z = -24;
+export const TOWER_BLUE_TOP_X = -48;
+export const TOWER_BLUE_TOP_Z = 22;
+export const TOWER_RED_TOP_X = 22;
+export const TOWER_RED_TOP_Z = -48;
+export const TOWER_BLUE_BOT_X = -22;
+export const TOWER_BLUE_BOT_Z = 48;
+export const TOWER_RED_BOT_X = 48;
+export const TOWER_RED_BOT_Z = -22;
 export const TOWER_MAX_HP = 1000;
 export const TOWER_DAMAGE = 40;
 export const TOWER_ATTACK_RANGE = 14;
@@ -79,30 +76,34 @@ type LanePath = ReadonlyArray<readonly [number, number]>;
 export const LANE_PATHS: Record<LaneId, { blue: LanePath; red: LanePath }> = {
   top: {
     blue: [
-      [-44, 0],
-      [-44, -44],
-      [44, -44],
+      [-48, 30],
+      [-48, -30],
+      [-30, -48],
+      [30, -48],
     ],
     red: [
-      [44, -44],
-      [-44, -44],
-      [-44, 44],
+      [30, -48],
+      [-30, -48],
+      [-48, -30],
+      [-48, 30],
     ],
   },
   mid: {
-    blue: [[0, 0], [44, -44]],
-    red: [[0, 0], [-44, 44]],
+    blue: [[-26, 26], [-8, 8], [8, -8], [26, -26]],
+    red: [[26, -26], [8, -8], [-8, 8], [-26, 26]],
   },
   bot: {
     blue: [
-      [0, 44],
-      [44, 44],
-      [44, -44],
+      [-30, 48],
+      [30, 48],
+      [48, 30],
+      [48, -30],
     ],
     red: [
-      [44, 0],
-      [44, 44],
-      [-44, 44],
+      [48, -30],
+      [48, 30],
+      [30, 48],
+      [-30, 48],
     ],
   },
 };
