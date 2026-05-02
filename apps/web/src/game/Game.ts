@@ -277,7 +277,7 @@ export class Game {
     this.lastHealAt = now;
     this.healStartedAt = now;
     this.healApplied = 0;
-    Sounds.skill('e');
+    Sounds.skill('e', this.player.heroKind);
     this.healRing = this.spawnHealRing(this.player.position, HEAL_DURATION_MS);
   }
 
@@ -292,7 +292,7 @@ export class Game {
     this.recallSpawnZ = SPAWN_BLUE_Z;
     this.playerHpBeforeChannel = this.player.hp;
     this.recallRing = this.spawnRecallRing(this.player.position, '#9fd8ff');
-    Sounds.skill('c');
+    Sounds.skill('c', this.player.heroKind);
   }
 
   /** UI helpers for cooldown badges on the new buttons. */
@@ -1023,7 +1023,7 @@ export class Game {
       maxDistance: cfg.range,
       fromPlayer: true,
     });
-    Sounds.skill(soundId);
+    Sounds.skill(soundId, this.player.heroKind);
     return now;
   }
 

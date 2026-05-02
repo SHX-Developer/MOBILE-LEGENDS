@@ -168,23 +168,21 @@ export function GameCanvas({ mode, heroKind = 'ranger', onExit }: GameCanvasProp
 
         <Joystick onChange={onJoystickChange} />
         <FireButton onPress={onFirePress} onRelease={onFireRelease} />
-        {/* Skills sit in a tidy vertical column directly above TOWER, fanning
-            outward from the action area:
-              • Q (1st) — same row as MINION, immediately to its left and
-                directly above TOWER. The "left of MINION" anchor.
-              • E (2nd) — one slot up. Geometrically between MINION and
-                TOWER along the column.
-              • C (3rd) — top of the column. The "above TOWER" anchor.
-            Labels, accent colours, and cooldown durations come from the
-            per-hero SKILL_PROFILES so the mage's three buttons read
-            differently from the ranger's. */}
+        {/* Skills fan around the action area instead of stacking in one
+            row. Anchored to the new (post-swap) MINION/TOWER positions:
+              • Q (1st) — to the LEFT of MINION on the same row.
+              • E (2nd) — diagonally BETWEEN MINION (top) and TOWER
+                (bottom-left), slightly inset from both.
+              • C (3rd) — directly ABOVE TOWER.
+            Labels, accent colours, and cooldown ring durations come from
+            SKILL_PROFILES so each hero's loadout reads differently. */}
         <SkillButton
           id="q"
           label=""
           subtitle={SKILL_PROFILES[heroKind].q.subtitle}
           accent={SKILL_PROFILES[heroKind].q.accent}
-          right={148}
-          bottom={148}
+          right={240}
+          bottom={36}
           size={80}
           totalMs={SKILL_PROFILES[heroKind].q.totalMs}
           getGame={getGame}
@@ -194,8 +192,8 @@ export function GameCanvas({ mode, heroKind = 'ranger', onExit }: GameCanvasProp
           label=""
           subtitle={SKILL_PROFILES[heroKind].e.subtitle}
           accent={SKILL_PROFILES[heroKind].e.accent}
-          right={148}
-          bottom={240}
+          right={140}
+          bottom={130}
           size={80}
           totalMs={SKILL_PROFILES[heroKind].e.totalMs}
           getGame={getGame}
@@ -205,20 +203,23 @@ export function GameCanvas({ mode, heroKind = 'ranger', onExit }: GameCanvasProp
           label=""
           subtitle={SKILL_PROFILES[heroKind].c.subtitle}
           accent={SKILL_PROFILES[heroKind].c.accent}
-          right={148}
-          bottom={332}
+          right={56}
+          bottom={240}
           size={80}
           totalMs={SKILL_PROFILES[heroKind].c.totalMs}
           getGame={getGame}
         />
+        {/* MINION and TOWER swapped per the latest layout pass —
+            the player wants the minion-attack closer to the FIRE side
+            because it gets used more often than the tower lock. */}
         <TargetAttackButton
-          variant="tower"
+          variant="minion"
           right={148}
           bottom={36}
           getGame={getGame}
         />
         <TargetAttackButton
-          variant="minion"
+          variant="tower"
           right={56}
           bottom={144}
           getGame={getGame}

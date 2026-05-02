@@ -13,7 +13,8 @@ export const LANE_WIDTH = 16;
 export const LANE_ANGLE_RAD = Math.PI / 4;
 export const LANE_LENGTH = Math.SQRT2 * (MAP_W - 24);
 
-// Player
+// Player (the ranger archetype). Faster auto-attack than the mage —
+// pumping out arrows is her thing.
 export const PLAYER_RADIUS = 1;
 export const PLAYER_HEIGHT = 2.4;
 export const PLAYER_SPEED_3D = 6.4;
@@ -26,10 +27,12 @@ export const PROJECTILE_LIFETIME_MS = 1500;
 export const PROJECTILE_RADIUS = 0.4;
 
 // Player combat
-export const PLAYER_MAX_HP = 500;
+// Ranger: standard HP pool, snappy auto-attack rhythm. The fast cooldown is
+// a big part of her identity vs. the mage.
+export const PLAYER_MAX_HP = 520;
 export const PLAYER_ATTACK_DAMAGE = 50;
 export const PLAYER_ATTACK_RANGE = 10;
-export const PLAYER_ATTACK_COOLDOWN_MS = 480;
+export const PLAYER_ATTACK_COOLDOWN_MS = 360;
 export const PLAYER_RESPAWN_MS = 6000;
 export const RESPAWN_LEVEL_PENALTY_MS = 900;
 export const RESPAWN_MATCH_MINUTE_PENALTY_MS = 700;
@@ -222,34 +225,38 @@ export const RECALL_COOLDOWN_MS = 30000;
 // the other rounds out the team.
 export type HeroKind = 'ranger' | 'mage';
 
-// Mage — fire archetype. Slightly squishier than the ranger but bigger
-// burst with AoE on the ult. Stats are independent of the ranger constants
-// so we can tune them in isolation.
-export const MAGE_MAX_HP = 460;
-export const MAGE_ATTACK_DAMAGE = 38;
+// Mage — fire archetype. Glass cannon: noticeably squishier than the
+// ranger, slow auto-attack, but huge burst on his skills. Player should
+// feel like he kills hard if he lands his spells, dies fast if he doesn't.
+export const MAGE_MAX_HP = 380;
+export const MAGE_ATTACK_DAMAGE = 34;
 export const MAGE_ATTACK_RANGE = 8.5;
-export const MAGE_ATTACK_COOLDOWN_MS = 720;
-export const MAGE_SPEED_3D = 5.8;
+export const MAGE_ATTACK_COOLDOWN_MS = 880;
+export const MAGE_SPEED_3D = 5.4;
 
-// Mage skills (огненная школа)
-// Q — fireball: heavy single-target damage.
-export const MAGE_Q_DAMAGE = 140;
+// Mage skills (огненная школа). Numbers are bigger than the ranger's
+// equivalents — the trade-off for low HP and slow autos is that every
+// spell hurts.
+// Q — fireball: heavy single-target damage with a small AoE splash.
+export const MAGE_Q_DAMAGE = 170;
 export const MAGE_Q_COOLDOWN_MS = 7000;
 export const MAGE_Q_RANGE = 14;
 
-// E — fire wall: a slowing flame line that ticks damage on contact.
-export const MAGE_E_DAMAGE = 70;
-export const MAGE_E_SLOW_FACTOR = 0.55;
+// E — fire wall: a slowing flame disc that splashes nearby enemies.
+export const MAGE_E_DAMAGE = 90;
+export const MAGE_E_SLOW_FACTOR = 0.5;
 export const MAGE_E_SLOW_DURATION_MS = 2500;
 export const MAGE_E_COOLDOWN_MS = 8000;
 export const MAGE_E_RANGE = 12;
 
-// C — meteor: slow-falling chunk that crushes a primary target then
-// shockwaves the rest. The AoE damage is dealt to every enemy unit other
-// than the primary target within MAGE_C_AOE_RADIUS of the impact.
-export const MAGE_C_DAMAGE = 200;
-export const MAGE_C_AOE_RADIUS = 4.5;
-export const MAGE_C_AOE_DAMAGE = 120;
+// C — meteor: the ult. Slow-falling chunk that crushes a primary target,
+// shockwaves the rest, AND stuns whatever it hits for 2 seconds. AoE
+// damage is dealt to every enemy unit other than the primary target
+// within MAGE_C_AOE_RADIUS of the impact.
+export const MAGE_C_DAMAGE = 240;
+export const MAGE_C_AOE_RADIUS = 4.8;
+export const MAGE_C_AOE_DAMAGE = 140;
+export const MAGE_C_STUN_DURATION_MS = 2000;
 export const MAGE_C_COOLDOWN_MS = 12000;
 export const MAGE_C_RANGE = 14;
 

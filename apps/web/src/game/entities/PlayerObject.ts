@@ -15,6 +15,7 @@ import {
   MAGE_C_COOLDOWN_MS,
   MAGE_C_DAMAGE,
   MAGE_C_RANGE,
+  MAGE_C_STUN_DURATION_MS,
   MAGE_E_COOLDOWN_MS,
   MAGE_E_DAMAGE,
   MAGE_E_RANGE,
@@ -252,12 +253,15 @@ export class PlayerObject implements Unit {
 
   get skillC(): SkillConfig {
     if (this.heroKind === 'mage') {
-      // Meteor — chunky direct hit + AoE shockwave to other enemies.
+      // Meteor — chunky direct hit + AoE shockwave + 2-second stun on the
+      // primary target. The mage's signature ult: lands a spell, locks the
+      // target down long enough for the follow-up combo.
       return {
         damage: MAGE_C_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
         cooldownMs: MAGE_C_COOLDOWN_MS,
         range: MAGE_C_RANGE,
         projectileKind: 'meteor',
+        effect: { stun: { durationMs: MAGE_C_STUN_DURATION_MS } },
         aoeRadius: MAGE_C_AOE_RADIUS,
         aoeDamage: MAGE_C_AOE_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
       };

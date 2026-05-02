@@ -26,6 +26,7 @@ import {
   MAGE_C_COOLDOWN_MS,
   MAGE_C_DAMAGE,
   MAGE_C_RANGE,
+  MAGE_C_STUN_DURATION_MS,
   MAGE_E_COOLDOWN_MS,
   MAGE_E_DAMAGE,
   MAGE_E_RANGE,
@@ -208,11 +209,11 @@ export class BotObject implements Unit {
       return;
     }
 
-    const enemy = registry.findNearestEnemy(this.team, this.position, BOT_VISION_RANGE, [
-      'hero',
-      'minion',
-      'structure',
-    ]);
+    // Pick the nearest enemy of ANY kind — no hero priority. The bot will
+    // chew on minions when minions are closer, only locking onto the hero
+    // when the hero is the nearest threat. This stops the AI from running
+    // straight past minions at the player.
+    const enemy = registry.findNearestEnemy(this.team, this.position, BOT_VISION_RANGE);
     if (!enemy) {
       // Walk toward the enemy team's base. Blue bots push toward red base
       // and vice versa — used to be hard-coded to blue base because the bot
@@ -321,7 +322,8 @@ export class BotObject implements Unit {
     now: number,
     projectiles: ProjectileManager,
   ): boolean {
-    // Meteor first — biggest threat with AoE, makes the mage scary.
+    // Meteor first — biggest threat. Direct hit + 2s stun + AoE
+    // shockwave; same loadout the player-side mage uses.
     if (dist <= MAGE_C_RANGE && now - this.lastCAt >= MAGE_C_COOLDOWN_MS) {
       const damage = MAGE_C_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6);
       const aoeDamage = MAGE_C_AOE_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4);
@@ -329,6 +331,7 @@ export class BotObject implements Unit {
         team: this.team,
         damage,
         kind: 'meteor',
+        effect: { stun: { durationMs: MAGE_C_STUN_DURATION_MS } },
         owner: this,
         maxDistance: MAGE_C_RANGE,
         target: enemy as never,
