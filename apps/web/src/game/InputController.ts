@@ -128,9 +128,10 @@ export class InputController {
     const dx = e.clientX - this.drag.startX;
     const dy = e.clientY - this.drag.startY;
     if (!this.drag.engaged) {
-      // Higher threshold than the usual 8–10px because finger taps near skill
-      // buttons jitter a bit and we don't want them to count as a pan.
-      if (Math.hypot(dx, dy) < 22) return;
+      // Slightly lower threshold than before — players want the camera to
+      // start tracking quickly when they sweep to scout. Still high enough
+      // that micro-jitter near skill/joystick zones doesn't trigger a pan.
+      if (Math.hypot(dx, dy) < 16) return;
       this.drag.engaged = true;
     }
     // Map screen delta → world delta. The CSS rotation in portrait swaps
@@ -138,7 +139,10 @@ export class InputController {
     const portrait = window.innerHeight > window.innerWidth;
     const screenX = portrait ? dy : dx;
     const screenZ = portrait ? -dx : dy;
-    const scale = 0.06;
+    // Bumped from 0.06 → 0.11: about 80% more world-units per pixel of finger
+    // travel, so a half-screen swipe now actually scrolls to the next lane
+    // instead of barely peeking past the player.
+    const scale = 0.11;
     this.drag.cumX = screenX * scale;
     this.drag.cumZ = screenZ * scale;
     // Clamp so the player can't pan halfway across the world.

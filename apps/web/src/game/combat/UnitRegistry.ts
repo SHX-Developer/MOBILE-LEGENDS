@@ -65,6 +65,49 @@ export class UnitRegistry {
     return null;
   }
 
+  /**
+   * Magnetic aim helper for skillshots. Picks the enemy whose direction from
+   * `pos` falls inside a cone of half-angle `coneCos` (cosine form: 1.0 =
+   * exact, lower = wider) around the requested (dirX,dirZ), preferring the
+   * earliest matching kind in `priority`. Among same-priority candidates,
+   * the one closest to the cone centre wins. Returns null if nothing inside
+   * the cone within `maxRange`. Inputs (dirX,dirZ) must be normalized.
+   *
+   * The point: the player's finger drag picks an *approximate* direction —
+   * snapping to a nearby unit's exact direction makes skill-shots actually
+   * connect instead of grazing past.
+   */
+  findAimAssist(
+    team: Team,
+    pos: THREE.Vector3,
+    dirX: number,
+    dirZ: number,
+    maxRange: number,
+    coneCos: number,
+    priority: UnitKind[] = ['hero', 'minion', 'structure'],
+  ): Unit | null {
+    let best: Unit | null = null;
+    let bestKindIdx = priority.length;
+    let bestCos = coneCos;
+    for (const u of this.units) {
+      if (!u.alive || u.team === team) continue;
+      const ki = priority.indexOf(u.kind);
+      if (ki < 0 || ki > bestKindIdx) continue;
+      const dx = u.position.x - pos.x;
+      const dz = u.position.z - pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > maxRange || d < 1e-3) continue;
+      const cos = (dx * dirX + dz * dirZ) / d;
+      if (cos < coneCos) continue;
+      if (ki < bestKindIdx || cos > bestCos) {
+        best = u;
+        bestKindIdx = ki;
+        bestCos = cos;
+      }
+    }
+    return best;
+  }
+
   /** First alive enemy unit overlapping the projectile point, or null. */
   findHit(pos: THREE.Vector3, projectileRadius: number, ownerTeam: Team): Unit | null {
     for (const u of this.units) {

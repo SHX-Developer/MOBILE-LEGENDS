@@ -126,13 +126,18 @@ export class Game {
     this.mode = opts.mode;
     const { clientWidth, clientHeight } = container;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    // Capping at 2 keeps mid-range mobile GPUs honest while still giving
-    // retina-class screens enough pixels to keep distant minions and HP
-    // numbers crisp at the wider tactical zoom.
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // Antialias is murder on mobile fillrate — at the closer tactical zoom
+    // and with the texture-baked map, edges read fine without it.
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    // Capping at 1.5 keeps mid-range mobile GPUs (where DPR is often 3) at
+    // a sane fragment count. Retina screens still get ~50% more pixels than
+    // CSS-resolution, which is enough for HP digits and minions.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.setSize(clientWidth, clientHeight);
     this.renderer.shadowMap.enabled = false;
+    // Not setting castShadow anywhere — see setupLights — but make doubly
+    // sure no shader variant is compiled for it.
+    this.renderer.shadowMap.autoUpdate = false;
     container.appendChild(this.renderer.domElement);
 
     // Share the device's max anisotropy with the canvas-text textures so
@@ -265,10 +270,15 @@ export class Game {
     a.active = true;
     a.range = skill === 'q' ? SKILL_Q_RANGE : skill === 'e' ? SKILL_E_RANGE : SKILL_C_RANGE;
 
+    // Prefer heroes for the initial auto-snap; minions and towers only get
+    // picked if no hero is around. Without the priority a stray ranged
+    // minion right behind the player would steal aim from the obvious
+    // hero target the player wants to shoot.
     const enemy = this.registry.findNearestEnemy(
       this.player.team,
       this.player.position,
       a.range * 1.6,
+      ['hero', 'minion', 'structure'],
     );
     if (enemy) {
       const dx = enemy.position.x - this.player.position.x;
@@ -292,8 +302,33 @@ export class Game {
     if (!a.active) return;
     const len = Math.hypot(dirX, dirZ);
     if (len < 0.001) return;
-    a.dirX = dirX / len;
-    a.dirZ = dirZ / len;
+    let nx = dirX / len;
+    let nz = dirZ / len;
+    // Magnetic aim — when the finger direction is within a generous cone
+    // (~25° half-angle, cos 0.91) of an enemy in cast range, snap to that
+    // enemy's exact direction. Hero > minion > structure priority means a
+    // hero peeking through minions is the natural target. The cone is
+    // intentionally wide: skill-shots in a MOBA should feel like they want
+    // to hit, not punish sub-pixel finger movement.
+    const enemy = this.registry.findAimAssist(
+      this.player.team,
+      this.player.position,
+      nx,
+      nz,
+      a.range * 1.15,
+      0.91,
+    );
+    if (enemy) {
+      const ex = enemy.position.x - this.player.position.x;
+      const ez = enemy.position.z - this.player.position.z;
+      const elen = Math.hypot(ex, ez);
+      if (elen > 1e-3) {
+        nx = ex / elen;
+        nz = ez / elen;
+      }
+    }
+    a.dirX = nx;
+    a.dirZ = nz;
     this.refreshAimIndicator();
   }
 
@@ -503,16 +538,11 @@ export class Game {
     const hemi = new THREE.HemisphereLight(0xd4e6ff, 0x506a3a, 1.0);
     this.scene.add(hemi);
 
+    // Shadows are off at the renderer level — keep castShadow=false so three
+    // doesn't allocate a shadow camera or compile shadow-variant shaders.
     const sun = new THREE.DirectionalLight(0xfff2cc, 1.6);
     sun.position.set(40, 60, 30);
-    sun.castShadow = true;
-    sun.shadow.camera.left = -90;
-    sun.shadow.camera.right = 90;
-    sun.shadow.camera.top = 30;
-    sun.shadow.camera.bottom = -30;
-    sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 200;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.castShadow = false;
     this.scene.add(sun);
   }
 

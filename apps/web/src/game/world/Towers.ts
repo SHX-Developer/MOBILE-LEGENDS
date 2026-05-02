@@ -70,14 +70,12 @@ export class Tower implements Unit {
     this.group = new THREE.Group();
     this.group.position.set(x, 0, z);
 
-    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x8b877a, roughness: 0.88, metalness: 0.05 });
-    const trimMat = new THREE.MeshStandardMaterial({ color, roughness: 0.42, metalness: 0.18 });
-    const coreMat = new THREE.MeshStandardMaterial({
+    const stoneMat = new THREE.MeshLambertMaterial({ color: 0x8b877a });
+    const trimMat = new THREE.MeshLambertMaterial({ color });
+    const coreMat = new THREE.MeshLambertMaterial({
       color,
       emissive: color,
       emissiveIntensity: 0.85,
-      roughness: 0.24,
-      metalness: 0.55,
     });
 
     const base = new THREE.Mesh(
@@ -92,7 +90,7 @@ export class Tower implements Unit {
       trimMat,
     );
     plinth.position.set(0, 0.92, 0);
-    plinth.castShadow = true;
+    plinth.castShadow = false;
     this.group.add(plinth);
 
     const shaft = new THREE.Mesh(
@@ -100,7 +98,7 @@ export class Tower implements Unit {
       stoneMat,
     );
     shaft.position.set(0, 1.2 + TOWER_HEIGHT / 2, 0);
-    shaft.castShadow = true;
+    shaft.castShadow = false;
     this.group.add(shaft);
 
     const bandY = [2.3, 4.2, 5.8];
@@ -110,7 +108,7 @@ export class Tower implements Unit {
         trimMat,
       );
       band.position.set(0, y, 0);
-      band.castShadow = true;
+      band.castShadow = false;
       this.group.add(band);
     }
 
@@ -119,7 +117,7 @@ export class Tower implements Unit {
       trimMat,
     );
     cap.position.set(0, 1.2 + TOWER_HEIGHT + 0.68, 0);
-    cap.castShadow = true;
+    cap.castShadow = false;
     this.group.add(cap);
 
     this.head = new THREE.Mesh(
@@ -127,7 +125,7 @@ export class Tower implements Unit {
       coreMat,
     );
     this.head.position.set(0, 1.2 + TOWER_HEIGHT + 1.55, 0);
-    this.head.castShadow = true;
+    this.head.castShadow = false;
     this.group.add(this.head);
 
     this.core = new THREE.Mesh(
@@ -293,7 +291,7 @@ export class Tower implements Unit {
   }
 
   private spawnDebris(): void {
-    const mat = new THREE.MeshStandardMaterial({ color: this.color, roughness: 0.85, flatShading: true });
+    const mat = new THREE.MeshLambertMaterial({ color: this.color, flatShading: true });
     for (let i = 0; i < 14; i++) {
       const chunk = new THREE.Mesh(
         new THREE.BoxGeometry(0.5 + Math.random() * 0.4, 0.5 + Math.random() * 0.4, 0.5 + Math.random() * 0.4),

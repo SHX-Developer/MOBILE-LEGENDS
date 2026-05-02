@@ -55,23 +55,21 @@ export class Base implements Unit {
 
     this.platform = new THREE.Mesh(
       new THREE.CylinderGeometry(BASE_RADIUS + 1, BASE_RADIUS + 2, 0.6, 32),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.6 }),
+      new THREE.MeshLambertMaterial({ color }),
     );
     this.platform.position.set(x, 0.3, z);
     scene.add(this.platform);
 
     this.crystal = new THREE.Mesh(
       new THREE.OctahedronGeometry(2.6, 0),
-      new THREE.MeshStandardMaterial({
+      new THREE.MeshLambertMaterial({
         color,
         emissive: color,
         emissiveIntensity: 0.6,
-        roughness: 0.2,
-        metalness: 0.7,
       }),
     );
     this.crystal.position.set(x, 4, z);
-    this.crystal.castShadow = true;
+    this.crystal.castShadow = false;
     scene.add(this.crystal);
     this.collider = colliders.addCircle(x, z, BASE_RADIUS);
 

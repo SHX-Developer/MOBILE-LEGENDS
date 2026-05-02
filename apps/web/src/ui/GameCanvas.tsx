@@ -788,7 +788,10 @@ const SkillButton = memo(function SkillButton({
   const cancelRef = useRef<HTMLDivElement>(null);
   const [aiming, setAiming] = useState(false);
   const [canceling, setCanceling] = useState(false);
-  const DRAG_AIM_THRESHOLD = 14;
+  // Lower threshold (was 14) so the aim indicator appears almost the moment
+  // the finger leaves the button — a tap-then-flick should immediately let
+  // the player steer, not fight a deadzone first.
+  const DRAG_AIM_THRESHOLD = 7;
 
   function pointInCancel(clientX: number, clientY: number): boolean {
     const cancel = cancelRef.current;
@@ -855,7 +858,11 @@ const SkillButton = memo(function SkillButton({
           // Drag -> world-direction. Same axis flip the joystick uses.
           const wx = e.clientY - cy;
           const wz = -(e.clientX - cx);
-          if (Math.hypot(wx, wz) > 8) getGame()?.updateAim(id, wx, wz);
+          // Tiny deadzone (was 8) — direction is normalized inside updateAim,
+          // so what mattered here was cutting off finger jitter. 3px is enough
+          // to ignore the shake of a stationary thumb without making the user
+          // shove the finger across the screen to retarget.
+          if (Math.hypot(wx, wz) > 3) getGame()?.updateAim(id, wx, wz);
         }}
         onPointerUp={(e) => {
           if (activePointer.current !== e.pointerId) return;

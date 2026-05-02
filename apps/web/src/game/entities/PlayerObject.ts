@@ -40,8 +40,8 @@ export class PlayerObject implements Unit {
   private readonly spawn: THREE.Vector3;
   private readonly healthBar = new HealthBar(2.4, 0.22, 0x44ff66, true, true);
   private readonly rangeRing: THREE.Mesh;
-  private cloakMat!: THREE.MeshStandardMaterial;
-  private cloakLightMat!: THREE.MeshStandardMaterial;
+  private cloakMat!: THREE.MeshLambertMaterial;
+  private cloakLightMat!: THREE.MeshLambertMaterial;
   /** While now < attackLockUntil the hero stops moving (stand-still on shoot). */
   attackLockUntil = 0;
   private gaitPhase = 0;
@@ -332,25 +332,25 @@ export class PlayerObject implements Unit {
    */
   private buildMia(): void {
     // Palette — soft pale skin + dark navy outfit + silver-blonde hair.
-    const skin = new THREE.MeshStandardMaterial({ color: 0xfadcc1, roughness: 0.65 });
-    const cloak = new THREE.MeshStandardMaterial({ color: 0x1f4c8a, roughness: 0.55 });
-    const cloakLight = new THREE.MeshStandardMaterial({ color: 0x3d7bc4, roughness: 0.55 });
+    const skin = new THREE.MeshLambertMaterial({ color: 0xfadcc1 });
+    const cloak = new THREE.MeshLambertMaterial({ color: 0x1f4c8a });
+    const cloakLight = new THREE.MeshLambertMaterial({ color: 0x3d7bc4 });
     this.cloakMat = cloak;
     this.cloakLightMat = cloakLight;
-    const tights = new THREE.MeshStandardMaterial({ color: 0x141927, roughness: 0.55 });
-    const trim = new THREE.MeshStandardMaterial({
-      color: 0xf2cf5a, roughness: 0.35, metalness: 0.5,
+    const tights = new THREE.MeshLambertMaterial({ color: 0x141927 });
+    const trim = new THREE.MeshLambertMaterial({
+      color: 0xf2cf5a,
     });
-    const hair = new THREE.MeshStandardMaterial({ color: 0xeef2f7, roughness: 0.55 });
-    const hairAccent = new THREE.MeshStandardMaterial({ color: 0xc7d4e6, roughness: 0.6 });
-    const bootMat = new THREE.MeshStandardMaterial({ color: 0x281b14, roughness: 0.7 });
-    const bowMat = new THREE.MeshStandardMaterial({
-      color: 0x2a2a36, roughness: 0.35, metalness: 0.7,
+    const hair = new THREE.MeshLambertMaterial({ color: 0xeef2f7 });
+    const hairAccent = new THREE.MeshLambertMaterial({ color: 0xc7d4e6 });
+    const bootMat = new THREE.MeshLambertMaterial({ color: 0x281b14 });
+    const bowMat = new THREE.MeshLambertMaterial({
+      color: 0x2a2a36,
     });
-    const bowAccent = new THREE.MeshStandardMaterial({
-      color: 0xe6b450, roughness: 0.35, metalness: 0.65,
+    const bowAccent = new THREE.MeshLambertMaterial({
+      color: 0xe6b450,
     });
-    const stringMat = new THREE.MeshStandardMaterial({ color: 0xf4ead5, roughness: 0.5 });
+    const stringMat = new THREE.MeshLambertMaterial({ color: 0xf4ead5 });
 
     // Body root — the parent of everything except the healthbar. Death animation
     // tilts the WHOLE Player group, so building under a body root keeps the
@@ -368,15 +368,15 @@ export class PlayerObject implements Unit {
       const hip = new THREE.Group();
       hip.position.set(0.16 * side, 0.95, 0);
       const thigh = new THREE.Mesh(thighGeom, tights);
-      thigh.castShadow = true;
+      thigh.castShadow = false;
       hip.add(thigh);
       const calf = new THREE.Mesh(calfGeom, tights);
       calf.position.y = -0.62;
-      calf.castShadow = true;
+      calf.castShadow = false;
       hip.add(calf);
       const boot = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.34), bootMat);
       boot.position.set(0, -1.12, 0.05);
-      boot.castShadow = true;
+      boot.castShadow = false;
       hip.add(boot);
       body.add(hip);
       if (side < 0) this.leftLeg = hip;
@@ -386,7 +386,7 @@ export class PlayerObject implements Unit {
     // Skirt — short tiered piece sitting on the hips.
     const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.46, 0.34, 18), cloak);
     skirt.position.y = 1.05;
-    skirt.castShadow = true;
+    skirt.castShadow = false;
     body.add(skirt);
     const skirtTrim = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.025, 8, 24), trim);
     skirtTrim.rotation.x = Math.PI / 2;
@@ -405,7 +405,7 @@ export class PlayerObject implements Unit {
       cloakLight,
     );
     torso.position.y = 1.58;
-    torso.castShadow = true;
+    torso.castShadow = false;
     body.add(torso);
 
     // Decorative chest strap (cross-belt) — narrow gold band.
@@ -423,11 +423,11 @@ export class PlayerObject implements Unit {
       const shoulder = new THREE.Group();
       shoulder.position.set(0.36 * side, 1.78, 0);
       const upper = new THREE.Mesh(upperArmGeom, skin);
-      upper.castShadow = true;
+      upper.castShadow = false;
       shoulder.add(upper);
       const forearm = new THREE.Mesh(forearmGeom, skin);
       forearm.position.y = -0.42;
-      forearm.castShadow = true;
+      forearm.castShadow = false;
       shoulder.add(forearm);
       const glove = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), tights);
       glove.position.y = -0.78;
@@ -440,7 +440,7 @@ export class PlayerObject implements Unit {
     // Head + face hint.
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 16), skin);
     head.position.y = 2.12;
-    head.castShadow = true;
+    head.castShadow = false;
     body.add(head);
     // Simple eye dots — a tiny touch but reads as a face from far away.
     const eyeMat = new THREE.MeshBasicMaterial({ color: 0x202434 });
@@ -454,7 +454,7 @@ export class PlayerObject implements Unit {
     const cap = new THREE.Mesh(new THREE.SphereGeometry(0.29, 16, 16), hair);
     cap.position.y = 2.16;
     cap.scale.set(1, 0.9, 1);
-    cap.castShadow = true;
+    cap.castShadow = false;
     body.add(cap);
 
     // Side bangs — two small wedges in front of the ears.
@@ -483,7 +483,7 @@ export class PlayerObject implements Unit {
       );
       seg.position.y = layer.y;
       seg.rotation.x = Math.PI;
-      seg.castShadow = true;
+      seg.castShadow = false;
       tailRoot.add(seg);
     }
     body.add(tailRoot);
@@ -517,7 +517,7 @@ function buildRecurveBow(
   upperLimb.rotation.z = Math.PI / 2;
   upperLimb.position.y = 0.1;
   upperLimb.scale.set(0.8, 1, 1);
-  upperLimb.castShadow = true;
+  upperLimb.castShadow = false;
   bow.add(upperLimb);
   // Lower limb — mirror.
   const lowerLimb = new THREE.Mesh(
@@ -527,7 +527,7 @@ function buildRecurveBow(
   lowerLimb.rotation.z = -Math.PI / 2;
   lowerLimb.position.y = -0.1;
   lowerLimb.scale.set(0.8, 1, 1);
-  lowerLimb.castShadow = true;
+  lowerLimb.castShadow = false;
   bow.add(lowerLimb);
 
   // Centre grip — gold.
@@ -555,7 +555,7 @@ function buildRecurveBow(
   tip.position.z = 0.85;
   bow.add(tip);
   // Fletching — three small wedges at the back of the shaft.
-  const fletchMat = new THREE.MeshStandardMaterial({ color: 0xc44a4a, roughness: 0.7 });
+  const fletchMat = new THREE.MeshLambertMaterial({ color: 0xc44a4a });
   for (let i = 0; i < 3; i++) {
     const fl = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.18), fletchMat);
     const a = (i / 3) * Math.PI * 2;

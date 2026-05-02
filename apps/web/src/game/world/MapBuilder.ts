@@ -62,12 +62,14 @@ export function buildMap(scene: THREE.Scene): MapEntities {
 
 function buildGround(scene: THREE.Scene): void {
   const texture = createBattlefieldTexture();
+  // Ground is a flat textured plane — no displacement, no need for the 18×18
+  // grid the original used. 1×1 = 2 triangles instead of 648.
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(MAP_W, MAP_H, 18, 18),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, map: texture, roughness: 1 }),
+    new THREE.PlaneGeometry(MAP_W, MAP_H, 1, 1),
+    new THREE.MeshLambertMaterial({ color: 0xffffff, map: texture }),
   );
   ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
+  ground.receiveShadow = false;
   scene.add(ground);
 
   addGroundPatch(scene, S(-32), S(32), S(50), S(44), 0x78ad5d, 0.24);
@@ -261,7 +263,7 @@ function addGroundPatch(
 function addBasePlaza(scene: THREE.Scene, x: number, z: number, stone: number, glow: number): void {
   const pad = new THREE.Mesh(
     new THREE.CircleGeometry(15, 64),
-    new THREE.MeshStandardMaterial({ color: stone, roughness: 0.78 }),
+    new THREE.MeshLambertMaterial({ color: stone }),
   );
   pad.rotation.x = -Math.PI / 2;
   pad.position.set(x, 0.018, z);
@@ -295,8 +297,8 @@ function addStripe(
 }
 
 function buildIslandEdges(scene: THREE.Scene): void {
-  const cliffMat = new THREE.MeshStandardMaterial({ color: 0x596760, roughness: 0.95, flatShading: true });
-  const grassLipMat = new THREE.MeshStandardMaterial({ color: 0x4f7a44, roughness: 1 });
+  const cliffMat = new THREE.MeshLambertMaterial({ color: 0x596760, flatShading: true });
+  const grassLipMat = new THREE.MeshLambertMaterial({ color: 0x4f7a44 });
   const specs: Array<[number, number, number, number]> = [
     [0, -HALF_H - 2.2, MAP_W, 4.4],
     [0, HALF_H + 2.2, MAP_W, 4.4],
@@ -313,7 +315,7 @@ function buildIslandEdges(scene: THREE.Scene): void {
     scene.add(lip);
   }
 
-  const cornerMat = new THREE.MeshStandardMaterial({ color: 0x48534e, roughness: 1, flatShading: true });
+  const cornerMat = new THREE.MeshLambertMaterial({ color: 0x48534e, flatShading: true });
   for (const [x, z] of [
     [-HALF_W - 2, -HALF_H - 2],
     [HALF_W + 2, -HALF_H - 2],
@@ -328,8 +330,8 @@ function buildIslandEdges(scene: THREE.Scene): void {
 }
 
 function buildPerimeterWalls(scene: THREE.Scene, colliders: Colliders): void {
-  const mat = new THREE.MeshStandardMaterial({ color: COLOR_WALL, roughness: 0.9 });
-  const capMat = new THREE.MeshStandardMaterial({ color: 0xc1ab8a, roughness: 0.85 });
+  const mat = new THREE.MeshLambertMaterial({ color: COLOR_WALL });
+  const capMat = new THREE.MeshLambertMaterial({ color: 0xc1ab8a });
   const wallH = 3.4;
   const wallT = 3.2;
   const sides: Array<[number, number, number, number]> = [
@@ -349,7 +351,7 @@ function buildPerimeterWalls(scene: THREE.Scene, colliders: Colliders): void {
     scene.add(cap);
   }
 
-  const postMat = new THREE.MeshStandardMaterial({ color: 0x756756, roughness: 0.8 });
+  const postMat = new THREE.MeshLambertMaterial({ color: 0x756756 });
   for (const x of [-HALF_W - wallT / 2, HALF_W + wallT / 2]) {
     for (const z of [-HALF_H - wallT / 2, HALF_H + wallT / 2]) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(5, wallH + 1.4, 5), postMat);
@@ -425,7 +427,7 @@ function addSpawnZone(
 }
 
 function buildJungleWalls(scene: THREE.Scene, colliders: Colliders): void {
-  const ridgeMat = new THREE.MeshStandardMaterial({ color: 0x74796f, roughness: 0.98, flatShading: true });
+  const ridgeMat = new THREE.MeshLambertMaterial({ color: 0x74796f, flatShading: true });
 
   const chains: Point[][] = [
     [[-39, 12], [-34, 5], [-32, -3], [-35, -12]],
@@ -474,7 +476,7 @@ function buildWallChain(
     boulder.position.set(x, 0.9 * scale, z);
     boulder.scale.set(1.45, 0.82, 0.92);
     boulder.rotation.set(0.18 * (i % 2), -angle, 0.08 * ((i % 3) - 1));
-    boulder.castShadow = true;
+    boulder.castShadow = false;
     scene.add(boulder);
 
     const peak = new THREE.Mesh(
@@ -487,7 +489,7 @@ function buildWallChain(
       z + Math.sin(angle + Math.PI / 2) * 0.65,
     );
     peak.rotation.y = -angle + (i % 2 ? 0.25 : -0.2);
-    peak.castShadow = true;
+    peak.castShadow = false;
     scene.add(peak);
 
     if (i < pts.length - 1) {
@@ -502,7 +504,7 @@ function buildWallChain(
         link.position.set(mx, 0.62 * scale, mz);
         link.scale.set(1.7, 0.55, 0.72);
         link.rotation.y = -angle;
-        link.castShadow = true;
+        link.castShadow = false;
         scene.add(link);
       }
     }
@@ -518,7 +520,7 @@ function buildMountainCluster(
   color: number,
   scale = 1,
 ): void {
-  const stoneMat = new THREE.MeshStandardMaterial({ color, roughness: 1, flatShading: true });
+  const stoneMat = new THREE.MeshLambertMaterial({ color, flatShading: true });
   const peaks: Array<[number, number, number]> = [
     [cx, cz, 3.6 * scale],
     [cx + 2.8 * scale, cz - 1.5 * scale, 2.7 * scale],
@@ -530,7 +532,7 @@ function buildMountainCluster(
     const peak = new THREE.Mesh(new THREE.ConeGeometry(1.7 * scale, h, 7), stoneMat);
     peak.position.set(px, h / 2, pz);
     peak.rotation.y = (px * 0.13 + pz * 0.07) % Math.PI;
-    peak.castShadow = true;
+    peak.castShadow = false;
     scene.add(peak);
     colliders.addCircle(px, pz, 1.35 * scale);
   }
@@ -558,7 +560,7 @@ function addJungleCamp(scene: THREE.Scene, x: number, z: number, color: number, 
   if (nearLane(x, z, 1.2) || nearReservedZone(x, z)) return;
   const dirt = new THREE.Mesh(
     new THREE.CircleGeometry(4.6 * scale, 34),
-    new THREE.MeshStandardMaterial({ color: 0x6b7040, roughness: 0.95 }),
+    new THREE.MeshLambertMaterial({ color: 0x6b7040 }),
   );
   dirt.rotation.x = -Math.PI / 2;
   dirt.position.set(x, 0.034, z);
@@ -574,16 +576,15 @@ function addJungleCamp(scene: THREE.Scene, x: number, z: number, color: number, 
 
   const core = new THREE.Mesh(
     new THREE.DodecahedronGeometry(1.1 * scale, 0),
-    new THREE.MeshStandardMaterial({
+    new THREE.MeshLambertMaterial({
       color,
       emissive: color,
       emissiveIntensity: 0.18,
-      roughness: 0.72,
       flatShading: true,
     }),
   );
   core.position.set(x, 1.0 * scale, z);
-  core.castShadow = true;
+  core.castShadow = false;
   scene.add(core);
 }
 
@@ -634,10 +635,10 @@ function makeRng(seed: number): () => number {
 
 function scatterFoliage(scene: THREE.Scene, colliders: Colliders): void {
   const rng = makeRng(RNG_SEED);
-  const grassMat = new THREE.MeshStandardMaterial({ color: 0x3f8033, roughness: 1 });
-  const grassDarkMat = new THREE.MeshStandardMaterial({ color: 0x2d6024, roughness: 1 });
-  const bushMat = new THREE.MeshStandardMaterial({ color: 0x376a32, roughness: 0.95 });
-  const pebbleMat = new THREE.MeshStandardMaterial({ color: 0x8a8780, roughness: 1, flatShading: true });
+  const grassMat = new THREE.MeshLambertMaterial({ color: 0x3f8033 });
+  const grassDarkMat = new THREE.MeshLambertMaterial({ color: 0x2d6024 });
+  const bushMat = new THREE.MeshLambertMaterial({ color: 0x376a32 });
+  const pebbleMat = new THREE.MeshLambertMaterial({ color: 0x8a8780, flatShading: true });
   const grassGeom = new THREE.ConeGeometry(0.16, 0.45, 4);
   const grassLight = new THREE.InstancedMesh(grassGeom, grassMat, 260);
   const grassDark = new THREE.InstancedMesh(grassGeom, grassDarkMat, 260);
@@ -739,18 +740,18 @@ function nearReservedZone(x: number, z: number): boolean {
 function addTree(scene: THREE.Scene, colliders: Colliders, x: number, z: number, scale: number): void {
   const trunk = new THREE.Mesh(
     new THREE.CylinderGeometry(0.25 * scale, 0.32 * scale, 1.6 * scale, 8),
-    new THREE.MeshStandardMaterial({ color: COLOR_TREE_TRUNK, roughness: 0.9 }),
+    new THREE.MeshLambertMaterial({ color: COLOR_TREE_TRUNK }),
   );
   trunk.position.set(x, 0.8 * scale, z);
-  trunk.castShadow = true;
+  trunk.castShadow = false;
   scene.add(trunk);
 
   const leaves = new THREE.Mesh(
     new THREE.ConeGeometry(1.2 * scale, 2.4 * scale, 10),
-    new THREE.MeshStandardMaterial({ color: COLOR_TREE_LEAVES, roughness: 0.85 }),
+    new THREE.MeshLambertMaterial({ color: COLOR_TREE_LEAVES }),
   );
   leaves.position.set(x, 2.8 * scale, z);
-  leaves.castShadow = true;
+  leaves.castShadow = false;
   scene.add(leaves);
   colliders.addCircle(x, z, 0.48 * scale);
 }
@@ -758,11 +759,11 @@ function addTree(scene: THREE.Scene, colliders: Colliders, x: number, z: number,
 function addRock(scene: THREE.Scene, colliders: Colliders, x: number, z: number, scale: number): void {
   const rock = new THREE.Mesh(
     new THREE.DodecahedronGeometry(0.9 * scale, 0),
-    new THREE.MeshStandardMaterial({ color: COLOR_ROCK, roughness: 1, flatShading: true }),
+    new THREE.MeshLambertMaterial({ color: COLOR_ROCK, flatShading: true }),
   );
   rock.position.set(x, 0.7 * scale, z);
   rock.rotation.set((x % 5) * 0.04, (x + z) * 0.08, (z % 5) * 0.04);
-  rock.castShadow = true;
+  rock.castShadow = false;
   scene.add(rock);
   colliders.addCircle(x, z, 0.68 * scale);
 }

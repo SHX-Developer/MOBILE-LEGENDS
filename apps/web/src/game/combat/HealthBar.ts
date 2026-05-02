@@ -111,8 +111,10 @@ export class HealthBar {
       this.hpTexture.minFilter = THREE.LinearMipmapLinearFilter;
       this.hpTexture.magFilter = THREE.LinearFilter;
       this.hpTexture.anisotropy = HealthBar.maxAnisotropy;
-      const hpW = longAxis * 0.95;
-      const hpH = hpW * (this.hpCanvas.height / this.hpCanvas.width);
+      // Bigger HP plate — extends a little past the bar's edges so the
+      // digits read clearly even at the closer tactical zoom.
+      const hpW = longAxis * 1.25;
+      const hpH = hpW * (this.hpCanvas.height / this.hpCanvas.width) * 1.2;
       const hpPlane = new THREE.Mesh(
         new THREE.PlaneGeometry(hpW, hpH),
         new THREE.MeshBasicMaterial({

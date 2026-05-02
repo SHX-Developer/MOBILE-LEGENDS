@@ -7,7 +7,8 @@ import * as THREE from 'three';
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
   // Slightly higher tactical view so the larger map and lane spacing read.
-  private offset = new THREE.Vector3(0, 22, 14);
+  // Brought in a touch — the further view was making minions/HP read too small.
+  private offset = new THREE.Vector3(0, 18, 11.5);
   /** User-driven look-ahead, applied on top of the followed target. */
   private lookOffset = new THREE.Vector3();
   /** Where the look offset is being eased toward when no input is active. */

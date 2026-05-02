@@ -18,12 +18,27 @@ export class FloatingTextManager {
   static maxAnisotropy = 1;
 
   private readonly items: FloatingText[] = [];
+  /**
+   * Damage popups land in tight bursts — caching the canvas/texture per
+   * (amount,color) pair is the difference between a steady tick and a stutter
+   * during teamfights. The cache is global to the run; numbers repeat enough
+   * (auto-attack damage, skill ticks) that hit rate stays high. Sprites get
+   * their own SpriteMaterial because we animate opacity, but they share the
+   * texture map.
+   */
+  private static readonly textureCache = new Map<string, THREE.Texture>();
 
   constructor(private readonly scene: THREE.Scene) {}
 
   spawnDamage(position: THREE.Vector3, amount: number, targetTeam: Team, ownerTeam?: Team): void {
     const color = ownerTeam === 'blue' ? '#ffe066' : targetTeam === 'blue' ? '#ff6868' : '#ffffff';
-    const texture = makeTextTexture(`-${Math.round(amount)}`, color);
+    const text = `-${Math.round(amount)}`;
+    const cacheKey = `${text}|${color}`;
+    let texture = FloatingTextManager.textureCache.get(cacheKey);
+    if (!texture) {
+      texture = makeTextTexture(text, color);
+      FloatingTextManager.textureCache.set(cacheKey, texture);
+    }
     const material = new THREE.SpriteMaterial({
       map: texture,
       transparent: true,
@@ -53,7 +68,7 @@ export class FloatingTextManager {
       const t = (now - item.bornAt) / item.duration;
       if (t >= 1) {
         this.scene.remove(item.mesh);
-        item.mesh.material.map?.dispose();
+        // Texture is cached — only the per-sprite material gets disposed.
         item.mesh.material.dispose();
         this.items.splice(i, 1);
         continue;
@@ -66,7 +81,6 @@ export class FloatingTextManager {
   dispose(): void {
     for (const item of this.items) {
       this.scene.remove(item.mesh);
-      item.mesh.material.map?.dispose();
       item.mesh.material.dispose();
     }
     this.items.length = 0;

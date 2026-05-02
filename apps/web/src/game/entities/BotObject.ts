@@ -72,8 +72,8 @@ export class BotObject implements Unit {
   private deathStartedAt = 0;
   private avoidSide: 1 | -1 = 1;
   private lastProgress = 0;
-  private armorMat!: THREE.MeshStandardMaterial;
-  private armorDarkMat!: THREE.MeshStandardMaterial;
+  private armorMat!: THREE.MeshLambertMaterial;
+  private armorDarkMat!: THREE.MeshLambertMaterial;
 
   constructor(spawn: THREE.Vector3) {
     this.spawn = spawn.clone();
@@ -402,34 +402,30 @@ export class BotObject implements Unit {
   }
 
   private buildVisual(): void {
-    const skin = new THREE.MeshStandardMaterial({ color: 0xe6c5a0, roughness: 0.7 });
-    const armor = new THREE.MeshStandardMaterial({ color: 0xc73c3c, roughness: 0.6 });
-    const armorDark = new THREE.MeshStandardMaterial({ color: 0x6a1717, roughness: 0.5 });
+    const skin = new THREE.MeshLambertMaterial({ color: 0xe6c5a0 });
+    const armor = new THREE.MeshLambertMaterial({ color: 0xc73c3c });
+    const armorDark = new THREE.MeshLambertMaterial({ color: 0x6a1717 });
     this.armorMat = armor;
     this.armorDarkMat = armorDark;
-    const accent = new THREE.MeshStandardMaterial({
+    const accent = new THREE.MeshLambertMaterial({
       color: 0xf2c14e,
-      roughness: 0.4,
-      metalness: 0.4,
     });
-    const bowDark = new THREE.MeshStandardMaterial({
+    const bowDark = new THREE.MeshLambertMaterial({
       color: 0x331414,
-      roughness: 0.45,
-      metalness: 0.5,
     });
-    const stringMat = new THREE.MeshStandardMaterial({ color: 0xf1dac2, roughness: 0.5 });
+    const stringMat = new THREE.MeshLambertMaterial({ color: 0xf1dac2 });
 
     const legGeom = new THREE.CylinderGeometry(0.2, 0.2, 0.9, 12);
     for (const x of [-0.22, 0.22]) {
       const leg = new THREE.Mesh(legGeom, armorDark);
       leg.position.set(x, 0.45, 0);
-      leg.castShadow = true;
+      leg.castShadow = false;
       this.group.add(leg);
     }
 
     const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 0.6, 6, 12), armor);
     torso.position.y = 1.55;
-    torso.castShadow = true;
+    torso.castShadow = false;
     this.group.add(torso);
 
     const beltAccent = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.07, 8, 24), accent);
@@ -441,18 +437,18 @@ export class BotObject implements Unit {
     for (const x of [-0.55, 0.55]) {
       const arm = new THREE.Mesh(armGeom, armor);
       arm.position.set(x, 1.55, 0);
-      arm.castShadow = true;
+      arm.castShadow = false;
       this.group.add(arm);
     }
 
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 14), skin);
     head.position.y = 2.18;
-    head.castShadow = true;
+    head.castShadow = false;
     this.group.add(head);
 
     const helm = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.5, 16), armor);
     helm.position.y = 2.5;
-    helm.castShadow = true;
+    helm.castShadow = false;
     this.group.add(helm);
 
     const helmTip = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), accent);
@@ -478,7 +474,7 @@ function buildBow(
   const bow = new THREE.Group();
   const arc = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.035, 8, 28), bowMat);
   arc.scale.set(0.55, 1.25, 1);
-  arc.castShadow = true;
+  arc.castShadow = false;
   bow.add(arc);
 
   const string = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.1, 6), stringMat);

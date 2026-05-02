@@ -325,25 +325,24 @@ export class MinionObject implements Unit {
     root.scale.setScalar(this.config.scale);
     this.group.add(root);
 
-    const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x303442, roughness: 0.75 });
-    const glowMat = new THREE.MeshStandardMaterial({
+    const bodyMat = new THREE.MeshLambertMaterial({ color });
+    const darkMat = new THREE.MeshLambertMaterial({ color: 0x303442 });
+    const glowMat = new THREE.MeshLambertMaterial({
       color: 0xffdf7a,
       emissive: 0xffc35a,
       emissiveIntensity: 0.5,
-      roughness: 0.4,
     });
 
     // Body — bulkier for tank, slimmer for ranged.
     const torsoR = this.variant === 'tank' ? 0.46 : this.variant === 'ranged' ? 0.28 : 0.36;
     const torso = new THREE.Mesh(new THREE.CapsuleGeometry(torsoR, 0.5, 5, 10), bodyMat);
     torso.position.y = 0.95;
-    torso.castShadow = true;
+    torso.castShadow = false;
     root.add(torso);
 
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 12, 12), bodyMat);
     head.position.y = 1.45;
-    head.castShadow = true;
+    head.castShadow = false;
     root.add(head);
 
     // Legs — separate pivots for the gait swing.
@@ -353,7 +352,7 @@ export class MinionObject implements Unit {
     const leftLegPivot = new THREE.Group();
     leftLegPivot.position.set(-0.15, 0.55, 0);
     const leftLegMesh = new THREE.Mesh(legGeom, legMat);
-    leftLegMesh.castShadow = true;
+    leftLegMesh.castShadow = false;
     leftLegPivot.add(leftLegMesh);
     root.add(leftLegPivot);
     this.leftLeg = leftLegPivot;
@@ -361,7 +360,7 @@ export class MinionObject implements Unit {
     const rightLegPivot = new THREE.Group();
     rightLegPivot.position.set(0.15, 0.55, 0);
     const rightLegMesh = new THREE.Mesh(legGeom, legMat);
-    rightLegMesh.castShadow = true;
+    rightLegMesh.castShadow = false;
     rightLegPivot.add(rightLegMesh);
     root.add(rightLegPivot);
     this.rightLeg = rightLegPivot;
@@ -372,7 +371,7 @@ export class MinionObject implements Unit {
     const leftArmPivot = new THREE.Group();
     leftArmPivot.position.set(-(torsoR + 0.08), 1.18, 0);
     const leftArmMesh = new THREE.Mesh(armGeom, legMat);
-    leftArmMesh.castShadow = true;
+    leftArmMesh.castShadow = false;
     leftArmPivot.add(leftArmMesh);
     root.add(leftArmPivot);
     this.leftArm = leftArmPivot;
@@ -380,7 +379,7 @@ export class MinionObject implements Unit {
     const rightArmPivot = new THREE.Group();
     rightArmPivot.position.set(torsoR + 0.08, 1.18, 0);
     const rightArmMesh = new THREE.Mesh(armGeom, legMat);
-    rightArmMesh.castShadow = true;
+    rightArmMesh.castShadow = false;
     rightArmPivot.add(rightArmMesh);
     root.add(rightArmPivot);
     this.rightArm = rightArmPivot;

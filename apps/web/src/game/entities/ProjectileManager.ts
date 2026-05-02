@@ -107,7 +107,7 @@ export class ProjectileManager {
     mesh.position.copy(origin);
     mesh.position.y = 1.4;
     mesh.rotation.y = Math.atan2(dir.x, dir.z);
-    mesh.castShadow = true;
+    mesh.castShadow = false;
     this.scene.add(mesh);
 
     this.projectiles.push({
@@ -317,17 +317,13 @@ const MUZZLE_FLASH_GEOM = new THREE.SphereGeometry(0.28, 8, 8);
 // --- Cached projectile assets ---------------------------------------------
 // Geometries and materials are immutable per kind, so allocate them once
 // at module load and clone the lightweight Object3Ds for each shot.
-const ARROW_SHAFT_MAT = new THREE.MeshStandardMaterial({
+const ARROW_SHAFT_MAT = new THREE.MeshLambertMaterial({
   color: 0xd9b56d,
-  roughness: 0.55,
-  metalness: 0.15,
 });
-const ARROW_TIP_MAT = new THREE.MeshStandardMaterial({
+const ARROW_TIP_MAT = new THREE.MeshLambertMaterial({
   color: 0xf8f0dc,
   emissive: 0xffcf5a,
   emissiveIntensity: 0.35,
-  roughness: 0.35,
-  metalness: 0.6,
 });
 const ARROW_SHAFT_GEOM = new THREE.CylinderGeometry(0.045, 0.045, 1.2, 8);
 const ARROW_TIP_GEOM = new THREE.ConeGeometry(0.13, 0.34, 10);
@@ -355,8 +351,8 @@ const SKILL_ARROW_SHAFT_GEOM = new THREE.CylinderGeometry(0.07, 0.05, 1.4, 8);
 const SKILL_ARROW_TIP_GEOM = new THREE.ConeGeometry(0.18, 0.4, 12);
 const SKILL_ARROW_HALO_GEOM = new THREE.SphereGeometry(0.32, 12, 12);
 const SKILL_ARROW_MAT_CACHE = new Map<string, {
-  shaft: THREE.MeshStandardMaterial;
-  tip: THREE.MeshStandardMaterial;
+  shaft: THREE.MeshLambertMaterial;
+  tip: THREE.MeshLambertMaterial;
   halo: THREE.MeshBasicMaterial;
 }>();
 
@@ -365,11 +361,11 @@ function getSkillArrowMats(color: number, emissive: number) {
   let mats = SKILL_ARROW_MAT_CACHE.get(key);
   if (!mats) {
     mats = {
-      shaft: new THREE.MeshStandardMaterial({
-        color, emissive, emissiveIntensity: 1.4, roughness: 0.3, metalness: 0.5,
+      shaft: new THREE.MeshLambertMaterial({
+        color, emissive, emissiveIntensity: 1.4,
       }),
-      tip: new THREE.MeshStandardMaterial({
-        color: 0xffffff, emissive, emissiveIntensity: 2.2, roughness: 0.2, metalness: 0.5,
+      tip: new THREE.MeshLambertMaterial({
+        color: 0xffffff, emissive, emissiveIntensity: 2.2,
       }),
       halo: new THREE.MeshBasicMaterial({
         color: emissive, transparent: true, opacity: 0.55, depthWrite: false,
@@ -400,14 +396,13 @@ function createSkillArrow(color: number, emissive: number, scale = 1.0): THREE.O
 
 const METEOR_CORE_GEOM = new THREE.DodecahedronGeometry(0.65, 0);
 const METEOR_TAIL_GEOM = new THREE.ConeGeometry(0.38, 1.1, 12);
-const METEOR_CORE_MAT = new THREE.MeshStandardMaterial({
+const METEOR_CORE_MAT = new THREE.MeshLambertMaterial({
   color: 0xff7a2f,
   emissive: 0xff3300,
   emissiveIntensity: 1.25,
-  roughness: 0.85,
   flatShading: true,
 });
-const METEOR_TAIL_MAT = new THREE.MeshStandardMaterial({
+const METEOR_TAIL_MAT = new THREE.MeshLambertMaterial({
   color: 0xffc34d,
   emissive: 0xff6a00,
   emissiveIntensity: 0.9,
