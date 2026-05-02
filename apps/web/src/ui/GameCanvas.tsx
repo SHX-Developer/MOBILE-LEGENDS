@@ -123,21 +123,21 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
         {/* Invisible safety nets around the controls — empty taps inside
             these zones don't reach the camera-pan listener on the canvas. */}
         <ControlZone left={130} bottom={24} width={210} height={210} />
-        <ControlZone right={20} bottom={20} width={300} height={260} />
+        <ControlZone right={12} bottom={18} width={330} height={300} />
         <BottomCenterZone />
 
         <Joystick onChange={onJoystickChange} />
         <FireButton onPress={onFirePress} onRelease={onFireRelease} />
-        {/* Three skills wrap around FIRE (which sits in the corner). Q above,
-            E top-left diagonal, C straight left — like a fan. */}
+        {/* MLBB-style right cluster: FIRE in the corner, target filters next to
+            it, and skills fanning above-left for easy thumb reach. */}
         <SkillButton
           id="q"
           label=""
           subtitle="POWER"
           accent="#ff7a3d"
-          right={28}
-          bottom={210}
-          size={86}
+          right={34}
+          bottom={178}
+          size={82}
           totalMs={10000}
           getGame={getGame}
         />
@@ -146,9 +146,9 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label=""
           subtitle="SLOW"
           accent="#4ec9ff"
-          right={170}
-          bottom={186}
-          size={86}
+          right={128}
+          bottom={204}
+          size={82}
           totalMs={3000}
           getGame={getGame}
         />
@@ -157,22 +157,22 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           label=""
           subtitle="STUN"
           accent="#b56cff"
-          right={232}
-          bottom={70}
-          size={86}
+          right={218}
+          bottom={134}
+          size={82}
           totalMs={5000}
           getGame={getGame}
         />
-        <TriangleAttackButton
+        <TargetAttackButton
           variant="tower"
-          right={148}
+          right={142}
           bottom={36}
           getGame={getGame}
         />
-        <TriangleAttackButton
+        <TargetAttackButton
           variant="minion"
-          right={56}
-          bottom={144}
+          right={122}
+          bottom={116}
           getGame={getGame}
         />
         <UtilityButton
@@ -182,7 +182,7 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
           centerOffsetX={-46}
           getGame={getGame}
           getCooldown={(g) => g.getHealCooldownLeft()}
-          getChannelLeft={() => 0}
+          getChannelLeft={(g) => g.getHealChannelLeft()}
           onPress={(g) => g.tryHeal()}
         />
         <UtilityButton
@@ -218,7 +218,7 @@ export function GameCanvas({ mode, onExit }: GameCanvasProps) {
   );
 }
 
-const TriangleAttackButton = memo(function TriangleAttackButton({
+const TargetAttackButton = memo(function TargetAttackButton({
   variant,
   right,
   bottom,
@@ -230,7 +230,8 @@ const TriangleAttackButton = memo(function TriangleAttackButton({
   getGame: () => Game | null;
 }) {
   const accent = variant === 'tower' ? '#f0b04a' : '#7be38e';
-  const label = variant === 'tower' ? 'БАШНЯ' : 'МИНЬОН';
+  const label = variant === 'tower' ? 'TOWER' : 'MINION';
+  const icon = variant === 'tower' ? 'T' : 'M';
   return (
     <button
       onPointerDown={(e) => {
@@ -245,31 +246,43 @@ const TriangleAttackButton = memo(function TriangleAttackButton({
         position: 'absolute',
         right,
         bottom,
-        width: 64,
-        height: 64,
-        // Triangle shape pointing inward toward FIRE — sharp tip at the
-        // bottom-right corner so both buttons "lean" into the auto-attack.
-        clipPath: variant === 'tower'
-          ? 'polygon(50% 100%, 0% 0%, 100% 0%)' // pointing down (above-targets)
-          : 'polygon(100% 50%, 0% 0%, 0% 100%)', // pointing right (left-targets)
-        border: 'none',
-        background: `linear-gradient(135deg, ${accent} 0%, #1a1825 100%)`,
-        color: '#0a0e15',
+        width: 76,
+        height: 76,
+        borderRadius: '50%',
+        border: `2px solid ${accent}`,
+        background: `radial-gradient(circle at 35% 28%, #ffffff 0%, ${accent} 28%, #192033 78%)`,
+        color: '#071015',
         fontWeight: 900,
-        fontSize: 9,
-        letterSpacing: 1,
+        fontSize: 10,
+        letterSpacing: 0.8,
         cursor: 'pointer',
-        boxShadow: `0 0 0 2px ${accent}66, 0 4px 14px rgba(0,0,0,0.45)`,
+        boxShadow: `0 8px 20px rgba(0,0,0,0.5), 0 0 0 4px ${accent}33`,
         touchAction: 'none',
-        display: 'grid',
-        placeItems: 'center',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 2,
         contain: 'layout paint',
       }}
     >
       <span
         style={{
-          // Pull the label toward the centre of the triangle.
-          transform: variant === 'tower' ? 'translateY(-8px)' : 'translateX(-8px)',
+          fontSize: 22,
+          lineHeight: 1,
+          color: '#0b1220',
+          textShadow: '0 1px 0 rgba(255,255,255,0.45)',
+          pointerEvents: 'none',
+        }}
+      >
+        {icon}
+      </span>
+      <span
+        style={{
+          fontSize: 9,
+          lineHeight: 1,
+          color: '#fff',
+          textShadow: '0 1px 4px rgba(0,0,0,0.7)',
           pointerEvents: 'none',
         }}
       >
@@ -315,10 +328,11 @@ const UtilityButton = memo(function UtilityButton({
   const onCd = cooldown > 0;
   const channeling = channel > 0;
   const fillPct = onCd ? Math.min(100, ((totalMs - cooldown) / totalMs) * 100) : 100;
+  const disabled = onCd || channeling;
   return (
     <button
       onPointerDown={(e) => {
-        if (onCd || channeling) return;
+        if (disabled) return;
         const g = getGame();
         if (!g) return;
         e.preventDefault();
@@ -334,26 +348,26 @@ const UtilityButton = memo(function UtilityButton({
         height: 64,
         borderRadius: '50%',
         border: `2px solid ${accent}`,
-        background: onCd
+        background: onCd && !channeling
           ? 'rgba(20, 24, 36, 0.7)'
           : `radial-gradient(circle at 35% 30%, ${accent} 0%, #1a1825 75%)`,
         color: '#0a0e15',
         fontWeight: 900,
         fontSize: 11,
         letterSpacing: 1.5,
-        cursor: onCd ? 'default' : 'pointer',
+        cursor: disabled ? 'default' : 'pointer',
         boxShadow: channeling
           ? `0 0 0 4px ${accent}99, 0 0 22px ${accent}aa`
           : '0 6px 18px rgba(0,0,0,0.45)',
         touchAction: 'none',
-        opacity: onCd ? 0.55 : 1,
+        opacity: onCd && !channeling ? 0.55 : 1,
         display: 'grid',
         placeItems: 'center',
         overflow: 'hidden',
         contain: 'layout paint',
       }}
     >
-      {onCd && (
+      {onCd && !channeling && (
         <div
           style={{
             position: 'absolute',
@@ -364,8 +378,8 @@ const UtilityButton = memo(function UtilityButton({
           }}
         />
       )}
-      <div style={{ position: 'relative', pointerEvents: 'none', color: onCd ? '#fff' : '#0a0e15' }}>
-        {onCd ? Math.ceil(cooldown / 1000) : channeling ? Math.ceil(channel / 1000) : label}
+      <div style={{ position: 'relative', pointerEvents: 'none', color: onCd && !channeling ? '#fff' : '#0a0e15' }}>
+        {channeling ? Math.ceil(channel / 1000) : onCd ? Math.ceil(cooldown / 1000) : label}
       </div>
     </button>
   );

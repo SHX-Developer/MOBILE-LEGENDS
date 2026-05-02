@@ -26,7 +26,7 @@ export const PROJECTILE_RADIUS = 0.4;
 // Player combat
 export const PLAYER_MAX_HP = 500;
 export const PLAYER_ATTACK_DAMAGE = 50;
-export const PLAYER_ATTACK_RANGE = 12;
+export const PLAYER_ATTACK_RANGE = 10;
 export const PLAYER_ATTACK_COOLDOWN_MS = 480;
 export const PLAYER_RESPAWN_MS = 6000;
 export const RESPAWN_LEVEL_PENALTY_MS = 900;
@@ -190,6 +190,7 @@ export const MINION_XP_REWARD = 38;
 
 // Hero utility skills
 export const HEAL_AMOUNT = 180;
+export const HEAL_DURATION_MS = 3000;
 export const HEAL_COOLDOWN_MS = 22000;
 export const RECALL_CHANNEL_MS = 5000;
 export const RECALL_COOLDOWN_MS = 30000;
@@ -199,7 +200,7 @@ export const BOT_MAX_HP = 420;
 export const BOT_RADIUS = 1;
 export const BOT_SPEED_3D = 4.6;
 export const BOT_DAMAGE = 32;
-export const BOT_ATTACK_RANGE = 11;
+export const BOT_ATTACK_RANGE = 9.5;
 export const BOT_ATTACK_COOLDOWN_MS = 720;
 export const BOT_VISION_RANGE = 28;
 export const BOT_RESPAWN_MS = 6000;

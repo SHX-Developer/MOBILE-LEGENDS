@@ -148,7 +148,10 @@ export class MinionObject implements Unit {
     colliders: Colliders,
     objective: Unit | null,
   ): void {
-    if (!this.alive) return;
+    if (!this.alive) {
+      this.animateDeath(now);
+      return;
+    }
     if (this.stunnedUntil > now) return;
 
     const target = registry.findNearestEnemy(this.team, this.position, this.config.attackRange, [
@@ -221,7 +224,18 @@ export class MinionObject implements Unit {
   private die(): void {
     this.alive = false;
     this.deadAt = performance.now();
-    this.group.visible = false;
+    this.healthBar.group.visible = false;
+    this.lastAttackAt = Infinity;
+  }
+
+  private animateDeath(now: number): void {
+    if (!this.deadAt) return;
+    const t = Math.min(1, (now - this.deadAt) / 2000);
+    const eased = 1 - (1 - t) * (1 - t);
+    this.group.rotation.x = -Math.PI / 2 * Math.min(1, eased * 1.2);
+    this.group.position.y = -0.45 * eased;
+    const scale = Math.max(0.72, 1 - eased * 0.28);
+    this.group.scale.setScalar(scale);
   }
 
   private animateGait(speed: number, deltaSec: number): void {

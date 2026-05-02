@@ -15,6 +15,7 @@ import {
   RESPAWN_MATCH_MINUTE_PENALTY_MS,
   RESPAWN_MAX_MS,
   HEAL_AMOUNT,
+  HEAL_DURATION_MS,
   HEAL_COOLDOWN_MS,
   RECALL_CHANNEL_MS,
   RECALL_COOLDOWN_MS,
@@ -93,6 +94,9 @@ export class Game {
   private lastCAt = -Infinity;
   private lastHealAt = -Infinity;
   private lastRecallAt = -Infinity;
+  private healStartedAt = 0;
+  private healApplied = 0;
+  private healRing?: THREE.Mesh;
   /** Time recall channel started; 0 when not channeling. */
   private recallStartedAt = 0;
   private recallSpawnX = 0;
@@ -200,10 +204,12 @@ export class Game {
     const now = performance.now();
     if (!this.player.alive) return;
     if (now - this.lastHealAt < HEAL_COOLDOWN_MS) return;
+    if (this.healStartedAt) return;
     this.lastHealAt = now;
-    this.player.heal(HEAL_AMOUNT);
+    this.healStartedAt = now;
+    this.healApplied = 0;
     Sounds.skill('e');
-    this.spawnHealRing(this.player.position);
+    this.healRing = this.spawnHealRing(this.player.position, HEAL_DURATION_MS);
   }
 
   /** Begin a 5s channel that returns the hero to spawn. Cancelled by death. */
@@ -223,6 +229,10 @@ export class Game {
   /** UI helpers for cooldown badges on the new buttons. */
   getHealCooldownLeft(now = performance.now()): number {
     return Math.max(0, HEAL_COOLDOWN_MS - (now - this.lastHealAt));
+  }
+  getHealChannelLeft(now = performance.now()): number {
+    if (!this.healStartedAt) return 0;
+    return Math.max(0, HEAL_DURATION_MS - (now - this.healStartedAt));
   }
   getRecallCooldownLeft(now = performance.now()): number {
     return Math.max(0, RECALL_COOLDOWN_MS - (now - this.lastRecallAt));
@@ -283,7 +293,7 @@ export class Game {
     this.input.requestSkill(skill, a.dirX, a.dirZ);
   }
 
-  private spawnHealRing(at: THREE.Vector3): void {
+  private spawnHealRing(at: THREE.Vector3, durationMs = 600): THREE.Mesh {
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(0.5, 1.6, 32),
       new THREE.MeshBasicMaterial({
@@ -299,18 +309,21 @@ export class Game {
     this.scene.add(ring);
     const startedAt = performance.now();
     const tick = () => {
-      const t = (performance.now() - startedAt) / 600;
+      const t = (performance.now() - startedAt) / durationMs;
       if (t >= 1) {
         this.scene.remove(ring);
         ring.geometry.dispose();
         (ring.material as THREE.Material).dispose();
+        if (this.healRing === ring) this.healRing = undefined;
         return;
       }
-      ring.scale.setScalar(1 + t * 1.4);
-      (ring.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - t);
+      ring.position.set(at.x, 0.06, at.z);
+      ring.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.9);
+      (ring.material as THREE.MeshBasicMaterial).opacity = 0.35 + 0.5 * (1 - t);
       requestAnimationFrame(tick);
     };
     tick();
+    return ring;
   }
 
   private spawnRecallRing(at: THREE.Vector3, color: string): THREE.Mesh {
@@ -353,6 +366,26 @@ export class Game {
       this.lastRecallAt = now;
       this.cancelRecall();
       this.spawnHealRing(this.player.position);
+    }
+  }
+
+  private tickHeal(now: number): void {
+    if (!this.healStartedAt) return;
+    if (!this.player.alive) {
+      this.healStartedAt = 0;
+      this.healApplied = 0;
+      return;
+    }
+    const elapsed = Math.min(HEAL_DURATION_MS, now - this.healStartedAt);
+    const shouldHaveApplied = HEAL_AMOUNT * (elapsed / HEAL_DURATION_MS);
+    const deltaHeal = shouldHaveApplied - this.healApplied;
+    if (deltaHeal > 0) {
+      this.player.heal(deltaHeal);
+      this.healApplied = shouldHaveApplied;
+    }
+    if (elapsed >= HEAL_DURATION_MS) {
+      this.healStartedAt = 0;
+      this.healApplied = 0;
     }
   }
 
@@ -581,8 +614,12 @@ export class Game {
       this.spawnMinionWave(now);
     }
 
+    const isMovingDuringRecall = this.recallStartedAt && Math.hypot(movement.x, movement.z) > 0.08;
+    if (isMovingDuringRecall) this.cancelRecall();
+    const playerMovement = this.recallStartedAt ? { x: 0, z: 0 } : movement;
+
     // Always tick the player so the death-fall animation runs while dead.
-    this.player.update(movement, delta, now);
+    this.player.update(playerMovement, delta, now);
     if (this.player.alive) {
       this.colliders.resolve(this.player.position, PLAYER_RADIUS);
       const canAct = this.player.stunnedUntil <= now;
@@ -605,6 +642,7 @@ export class Game {
     this.bot.respawnDelayMs = this.getRespawnDelayMs(this.bot.level, now);
     this.bot.update(delta, now, this.registry, this.projectiles, this.colliders);
     this.healHeroesAtBase(delta);
+    this.tickHeal(now);
     this.updateMinions(delta, now);
 
     for (const t of this.towers) t.update(now, this.registry, this.projectiles);
@@ -648,7 +686,7 @@ export class Game {
   };
 
   private tryAutoAttack(now: number): void {
-    this.fireAtNearest(now, ['minion', 'hero', 'structure']);
+    this.fireAtNearest(now, ['hero', 'minion', 'structure']);
   }
 
   /** Public — invoked by the right-side BAШНЯ button. Locks aim onto towers/bases. */
@@ -956,7 +994,7 @@ export class Game {
   private cleanupMinions(now: number): void {
     for (let i = this.minions.length - 1; i >= 0; i--) {
       const minion = this.minions[i];
-      if (minion.alive || now - minion.deadAt < 1000) continue;
+      if (minion.alive || now - minion.deadAt < 2000) continue;
       this.registry.remove(minion);
       minion.dispose();
       this.minions.splice(i, 1);
