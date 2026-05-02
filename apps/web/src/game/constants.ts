@@ -87,8 +87,8 @@ export const TOWER_RED_BOT_X = 48;
 export const TOWER_RED_BOT_Z = -12;
 export const TOWER_MAX_HP = 1000;
 export const TOWER_DAMAGE = 40;
-export const TOWER_ATTACK_RANGE = 14;
-export const TOWER_ATTACK_COOLDOWN_MS = 1500;
+export const TOWER_ATTACK_RANGE = 11;
+export const TOWER_ATTACK_COOLDOWN_MS = 1100;
 
 // Backwards-compat single-tower aliases (kept while older code paths
 // reference TOWER_BLUE_X / TOWER_RED_X — point them at the mid towers).

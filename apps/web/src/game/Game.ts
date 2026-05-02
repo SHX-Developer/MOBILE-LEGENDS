@@ -144,18 +144,7 @@ export class Game {
     this.registry.add(this.player);
     this.registry.add(this.bot);
     for (const t of this.towers) this.registry.add(t);
-
-    // Bases are shielded by their team's towers. With three turrets on each
-    // lane, the core opens only after all nine allied towers are gone.
-    const exposeBaseIfReady = (team: Team) => {
-      const teamTowers = this.towers.filter((tower) => tower.team === team);
-      if (teamTowers.every((t) => !t.alive)) {
-        this.registry.add(team === 'blue' ? this.bases[0] : this.bases[1]);
-      }
-    };
-    for (const tower of this.towers) {
-      tower.onDestroyed = () => exposeBaseIfReady(tower.team);
-    }
+    for (const b of this.bases) this.registry.add(b);
 
     // Match end via base destruction is offline-only. Online uses
     // server-driven kill score so client base sims can drift cosmetically
