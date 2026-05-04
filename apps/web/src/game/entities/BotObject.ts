@@ -141,6 +141,11 @@ export class BotObject implements Unit {
   level = 1;
   xp = 0;
   respawnDelayMs = BOT_RESPAWN_MS;
+  /** Set by ProjectileManager when caught in a bulwark Taunt. The bot AI
+   *  honours this field and forces its target to `tauntedBy` until the
+   *  deadline. */
+  tauntedBy?: Unit;
+  tauntedUntil = 0;
   /** Lane the bot pushes through when there's no enemy in vision. Set
    *  per-archetype by Game on spawn (fighter→top, ranger→bot, mage→mid,
    *  tank→roam, assassin→jungle). */
@@ -401,11 +406,25 @@ export class BotObject implements Unit {
       return;
     }
 
-    // Pick the nearest enemy of ANY kind — no hero priority. The bot will
-    // chew on minions when minions are closer, only locking onto the hero
-    // when the hero is the nearest threat. This stops the AI from running
-    // straight past minions at the player.
-    const enemy = registry.findNearestEnemy(this.team, this.position, BOT_VISION_RANGE);
+    // Honour active taunt — the bulwark's C forces nearby enemies to
+    // target him for a few seconds even if a closer/squishier target
+    // exists. Falls back to the regular nearest-enemy search if the
+    // taunt expired or the taunter is gone.
+    let enemy: Unit | null = null;
+    if (
+      this.tauntedBy && this.tauntedUntil !== undefined &&
+      this.tauntedUntil > now && this.tauntedBy.alive
+    ) {
+      enemy = this.tauntedBy;
+    } else {
+      this.tauntedBy = undefined;
+      this.tauntedUntil = 0;
+      // Pick the nearest enemy of ANY kind — no hero priority. The bot
+      // will chew on minions when minions are closer, only locking onto
+      // a hero when it's the nearest threat. Stops the AI from running
+      // straight past minions at the player.
+      enemy = registry.findNearestEnemy(this.team, this.position, BOT_VISION_RANGE);
+    }
     if (!enemy) {
       // No vision — walk along the assigned lane toward enemy structures.
       this.walkLane(deltaSec, speed, colliders);
@@ -605,7 +624,8 @@ export class BotObject implements Unit {
       this.lastEAt = now;
       return true;
     }
-    // ЗЕМЛЕТРЯС — self-cast big AoE stun when in a fight.
+    // Taunt — self-cast AoE stun + 3s aggro pull. Bot bulwarks live for
+    // this exact teamfight engage.
     if (dist <= 5 && now - this.lastCAt >= TANK_C_COOLDOWN_MS) {
       projectiles.spawn(this.position, this.position, now, {
         team: this.team,
@@ -617,11 +637,12 @@ export class BotObject implements Unit {
         aoeRadius: TANK_C_AOE_RADIUS,
         aoeDamage: TANK_C_AOE_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
         effect: { stun: { durationMs: TANK_C_STUN_DURATION_MS } },
+        tauntDurationMs: 3000,
       });
       this.lastCAt = now;
       return true;
     }
-    // УДАР — single-target hammer + 1s stun.
+    // Shield Slam — single-target hammer + stun + lingering slow.
     if (dist <= TANK_Q_RANGE && now - this.lastQAt >= TANK_Q_COOLDOWN_MS) {
       projectiles.spawn(this.position, enemy.position, now, {
         team: this.team,
@@ -630,7 +651,10 @@ export class BotObject implements Unit {
         owner: this,
         maxDistance: TANK_Q_RANGE,
         target: enemy as never,
-        effect: { stun: { durationMs: TANK_Q_STUN_DURATION_MS } },
+        effect: {
+          stun: { durationMs: TANK_Q_STUN_DURATION_MS },
+          slow: { factor: 0.6, durationMs: 2500 },
+        },
       });
       this.lastQAt = now;
       return true;

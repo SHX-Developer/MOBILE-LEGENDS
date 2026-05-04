@@ -795,6 +795,24 @@ const Minimap = memo(function Minimap({ getGame }: { getGame: () => Game | null 
             </g>
           );
         })}
+        {/* Jungle creeps — small purple diamonds, dimmed when dead. */}
+        {snap.jungle.map((c, i) => {
+          const [x, y] = norm(c.x, c.z);
+          return (
+            <rect
+              key={`jungle-${i}`}
+              x={x - 2}
+              y={y - 2}
+              width={4}
+              height={4}
+              transform={`rotate(45 ${x} ${y})`}
+              fill="#bca3ff"
+              opacity={dim(c.alive)}
+              stroke="rgba(0,0,0,0.55)"
+              strokeWidth={0.5}
+            />
+          );
+        })}
         {/* Minions — tiny dots. */}
         {snap.minions.map((m, i) => {
           if (!m.alive) return null;

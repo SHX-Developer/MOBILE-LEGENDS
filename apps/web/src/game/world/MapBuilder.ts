@@ -542,22 +542,33 @@ function buildMountainCluster(
   }
 }
 
+/** Where the jungle creeps spawn. World-space positions, plus the colour
+ *  used both for the decorative ring on the floor and for the creep's
+ *  crystal cluster. Game.ts reads this directly to spawn JungleCreep
+ *  instances at the same spots the decorative camps live. */
+export interface JungleCampSpec {
+  x: number;
+  z: number;
+  color: number;
+  scale: number;
+}
+export const JUNGLE_CAMPS: JungleCampSpec[] = [
+  { x: S(-32), z: S(-18), color: 0x6bd1ff, scale: 1.2 },
+  { x: S(-18), z: S(-36), color: 0x9b7dff, scale: 1.1 },
+  { x: S(-30), z: S(20), color: 0x7ee06f, scale: 0.95 },
+  { x: S(-12), z: S(32), color: 0xff8a4c, scale: 1.0 },
+  { x: S(-8), z: S(-8), color: 0xffb84d, scale: 1.0 },
+  { x: S(10), z: S(10), color: 0x9b7dff, scale: 1.0 },
+  { x: S(32), z: S(18), color: 0x6bd1ff, scale: 1.2 },
+  { x: S(18), z: S(36), color: 0x9b7dff, scale: 1.1 },
+  { x: S(30), z: S(-20), color: 0x7ee06f, scale: 0.95 },
+  { x: S(12), z: S(-32), color: 0xff8a4c, scale: 1.0 },
+  { x: S(-36), z: S(2), color: 0x61d7a4, scale: 0.9 },
+  { x: S(36), z: S(-2), color: 0x61d7a4, scale: 0.9 },
+];
+
 function buildJungleCamps(scene: THREE.Scene): void {
-  const camps: Array<[number, number, number, number]> = [
-    [-32, -18, 0x6bd1ff, 1.2],
-    [-18, -36, 0x9b7dff, 1.1],
-    [-30, 20, 0x7ee06f, 0.95],
-    [-12, 32, 0xff8a4c, 1.0],
-    [-8, -8, 0xffb84d, 1.0],
-    [10, 10, 0x9b7dff, 1.0],
-    [32, 18, 0x6bd1ff, 1.2],
-    [18, 36, 0x9b7dff, 1.1],
-    [30, -20, 0x7ee06f, 0.95],
-    [12, -32, 0xff8a4c, 1.0],
-    [-36, 2, 0x61d7a4, 0.9],
-    [36, -2, 0x61d7a4, 0.9],
-  ];
-  for (const [x, z, color, scale] of camps) addJungleCamp(scene, S(x), S(z), color, scale);
+  for (const camp of JUNGLE_CAMPS) addJungleCamp(scene, camp.x, camp.z, camp.color, camp.scale);
 }
 
 function addJungleCamp(scene: THREE.Scene, x: number, z: number, color: number, scale: number): void {
@@ -577,19 +588,9 @@ function addJungleCamp(scene: THREE.Scene, x: number, z: number, color: number, 
   ring.rotation.x = -Math.PI / 2;
   ring.position.set(x, 0.06, z);
   scene.add(ring);
-
-  const core = new THREE.Mesh(
-    new THREE.DodecahedronGeometry(1.1 * scale, 0),
-    new THREE.MeshLambertMaterial({
-      color,
-      emissive: color,
-      emissiveIntensity: 0.18,
-      flatShading: true,
-    }),
-  );
-  core.position.set(x, 1.0 * scale, z);
-  core.castShadow = false;
-  scene.add(core);
+  // The decorative crystal that used to live here has moved to JungleCreep
+  // — Game.ts spawns one creep per camp at the same world position, and
+  // the creep's body provides the crystal-cluster visual + actual HP/aggro.
 }
 
 function buildLandmarks(scene: THREE.Scene, colliders: Colliders): void {

@@ -95,6 +95,12 @@ export interface ProjectileSpec {
    * Piercing Arrow.
    */
   pierces?: boolean;
+  /**
+   * Self-cast Taunt — every enemy caught in the AoE has its AI forced
+   * to target the projectile's owner for the duration. Set on the
+   * bulwark's C skill spec.
+   */
+  tauntDurationMs?: number;
 }
 
 interface Projectile {
@@ -124,6 +130,9 @@ interface Projectile {
   /** Set of units already damaged by this piercing projectile, so a
    *  single shot doesn't re-hit a target on subsequent ticks. */
   pierceHits?: Set<Unit>;
+  /** Forces every enemy caught by a self-cast AoE to target `owner` for
+   *  the given duration. Used by the bulwark's Taunt. */
+  tauntDurationMs?: number;
 }
 
 interface Variant {
@@ -251,6 +260,7 @@ export class ProjectileManager {
       executeBonus: spec.executeBonus,
       pierces: spec.pierces,
       pierceHits: spec.pierces ? new Set<Unit>() : undefined,
+      tauntDurationMs: spec.tauntDurationMs,
     });
     if (spec.selfCast) {
       // Zero out velocity so the spinning visual stays planted at the
@@ -367,6 +377,16 @@ export class ProjectileManager {
       if (p.effect?.stun) {
         const until = now + p.effect.stun.durationMs;
         if (until > other.stunnedUntil) other.stunnedUntil = until;
+      }
+      // Taunt — force the caught unit's AI to target the bulwark for the
+      // duration. Player-controlled units ignore this; only bot AI
+      // honours `tauntedBy`.
+      if (p.tauntDurationMs && p.owner) {
+        const tUntil = now + p.tauntDurationMs;
+        if (!other.tauntedUntil || tUntil > other.tauntedUntil) {
+          other.tauntedBy = p.owner;
+          other.tauntedUntil = tUntil;
+        }
       }
       if (wasAlive && !other.alive) {
         this.grantKillXp(other, p.owner, registry);

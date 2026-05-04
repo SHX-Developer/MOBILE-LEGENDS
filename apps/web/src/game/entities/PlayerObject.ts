@@ -130,6 +130,8 @@ export interface SkillConfig {
   executeBonus?: number;
   /** Piercing flag — projectile keeps flying through hits (Piercing Arrow). */
   pierces?: boolean;
+  /** Taunt — forces enemies in the self-cast AoE to retarget the caster. */
+  tauntDurationMs?: number;
   /**
    * Self-only buff bundle — used by the various buff/utility skills.
    * No projectile is fired when this is set; Game.tryUseSkill calls
@@ -469,13 +471,18 @@ export class PlayerObject implements Unit {
           aoeDamage: 100 + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
         };
       case 'tank':
-        // Bulwark — Shield Slam (single target + 1s stun).
+        // Bulwark — Shield Slam: stuns AND slows the target for 2.5s
+        // after the stun wears off. Pillar of the bulwark's "stick on
+        // the carry" identity.
         return {
           damage: TANK_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL,
           cooldownMs: TANK_Q_COOLDOWN_MS,
           range: TANK_Q_RANGE,
           projectileKind: 'hammer',
-          effect: { stun: { durationMs: TANK_Q_STUN_DURATION_MS } },
+          effect: {
+            stun: { durationMs: TANK_Q_STUN_DURATION_MS },
+            slow: { factor: 0.6, durationMs: 2500 },
+          },
         };
       default:
         // Arcshooter — Rapid Fire (single fat 360-damage burst that
@@ -587,9 +594,10 @@ export class PlayerObject implements Unit {
           selfBuff: { invisibilityMs: ASSASSIN_C_INVIS_MS },
         };
       case 'tank':
-        // Bulwark — "Taunt" implemented as a giant AoE stun. Until a real
-        // taunt-targeting system lands, locking everyone in radius gets
-        // 80% of the way there: stunned bots can't AI off the bulwark.
+        // Bulwark — Taunt: real aggro pull. Caught enemies are stunned
+        // briefly AND forced to retarget the bulwark for the next 3s
+        // via ProjectileManager.detonateSelfCast. Damage is small, the
+        // value is the pull.
         return {
           damage: 0,
           cooldownMs: TANK_C_COOLDOWN_MS,
@@ -600,6 +608,7 @@ export class PlayerObject implements Unit {
           aoeRadius: TANK_C_AOE_RADIUS,
           aoeDamage: TANK_C_AOE_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
           effect: { stun: { durationMs: TANK_C_STUN_DURATION_MS } },
+          tauntDurationMs: 3000,
         };
       default:
         // Arcshooter — Focus Mode (self-buff: attack speed +40% 4s).

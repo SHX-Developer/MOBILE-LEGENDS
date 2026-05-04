@@ -32,6 +32,11 @@ export interface Unit {
   physicalDef?: number;
   /** Fraction of magic damage absorbed (0..1). Defaults to 0 if absent. */
   magicalDef?: number;
+  /** When set + tauntedUntil > now, AI for this unit is forced to target
+   *  `tauntedBy` instead of running its normal targeting search. Cleared
+   *  when the duration expires or when the taunter dies. */
+  tauntedBy?: Unit;
+  tauntedUntil?: number;
   takeDamage(amount: number, type?: DamageType): void;
   grantXp?(amount: number): void;
 }
