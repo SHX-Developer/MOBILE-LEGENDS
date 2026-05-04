@@ -27,10 +27,15 @@ export class UnitRegistry {
   ): Unit | null {
     if (kinds) return this.findNearestEnemyByPriority(team, pos, maxRange, kinds);
 
+    const now = performance.now();
     let best: Unit | null = null;
     let bestDist = maxRange;
     for (const u of this.units) {
       if (!u.alive || u.team === team) continue;
+      // Skip invisible units (Shadowblade's C). The invis breaks the
+      // moment they take damage, so AI can re-acquire after the player
+      // commits to an attack.
+      if (u.invisibleUntil !== undefined && u.invisibleUntil > now) continue;
       const dx = u.position.x - pos.x;
       const dz = u.position.z - pos.z;
       const d = Math.hypot(dx, dz);
@@ -52,11 +57,13 @@ export class UnitRegistry {
     maxRange: number,
     priority: UnitKind[],
   ): Unit | null {
+    const now = performance.now();
     for (const kind of priority) {
       let best: Unit | null = null;
       let bestDist = maxRange;
       for (const u of this.units) {
         if (!u.alive || u.team === team || u.kind !== kind) continue;
+        if (u.invisibleUntil !== undefined && u.invisibleUntil > now) continue;
         const dx = u.position.x - pos.x;
         const dz = u.position.z - pos.z;
         const d = Math.hypot(dx, dz);

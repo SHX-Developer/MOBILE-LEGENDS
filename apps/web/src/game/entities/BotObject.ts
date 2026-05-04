@@ -32,11 +32,6 @@ import {
   FIGHTER_C_AOE_RADIUS,
   FIGHTER_C_COOLDOWN_MS,
   FIGHTER_C_STUN_DURATION_MS,
-  FIGHTER_E_AOE_DAMAGE,
-  FIGHTER_E_AOE_RADIUS,
-  FIGHTER_E_COOLDOWN_MS,
-  FIGHTER_E_DAMAGE,
-  FIGHTER_E_RANGE,
   FIGHTER_Q_COOLDOWN_MS,
   FIGHTER_Q_DAMAGE,
   FIGHTER_Q_RANGE,
@@ -81,7 +76,6 @@ import {
   TANK_C_COOLDOWN_MS,
   TANK_C_STUN_DURATION_MS,
   TANK_E_COOLDOWN_MS,
-  TANK_E_HEAL,
   TANK_Q_COOLDOWN_MS,
   TANK_Q_DAMAGE,
   TANK_Q_RANGE,
@@ -470,22 +464,10 @@ export class BotObject implements Unit {
       this.lastCAt = now;
       return true;
     }
-    // РЫВОК — gap-closer with AoE landing damage.
-    if (dist <= FIGHTER_E_RANGE && now - this.lastEAt >= FIGHTER_E_COOLDOWN_MS) {
-      projectiles.spawn(this.position, enemy.position, now, {
-        team: this.team,
-        damage: FIGHTER_E_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.8),
-        kind: 'blade',
-        owner: this,
-        maxDistance: FIGHTER_E_RANGE,
-        target: enemy as never,
-        aoeRadius: FIGHTER_E_AOE_RADIUS,
-        aoeDamage: FIGHTER_E_AOE_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.3),
-      });
-      this.lastEAt = now;
-      return true;
-    }
-    // СЕЧЕНИЕ — primary single-target hit + small slow.
+    // Warlord E "Rage Mode" is a self-buff — bot AI doesn't currently
+    // model offensive self-buffs (it can't time them against a real
+    // teamfight), so we skip it. Q + C still cover the rotation.
+    // Power Strike — primary single-target hit + small slow.
     if (dist <= FIGHTER_Q_RANGE && now - this.lastQAt >= FIGHTER_Q_COOLDOWN_MS) {
       projectiles.spawn(this.position, enemy.position, now, {
         team: this.team,
@@ -565,9 +547,12 @@ export class BotObject implements Unit {
     now: number,
     projectiles: ProjectileManager,
   ): boolean {
-    // ЩИТ — self-heal when wounded. Triggers below 65% HP.
+    // Iron Wall is a player-only mechanic (real shield-absorb math sits
+    // on PlayerObject). For the bot tank we approximate it with a flat
+    // self-heal whenever HP dips — same intent (stay alive longer) with
+    // far less plumbing.
     if (now - this.lastEAt >= TANK_E_COOLDOWN_MS && this.hp <= this.maxHp * 0.65) {
-      this.heal(TANK_E_HEAL + (this.level - 1) * 30);
+      this.heal(280 + (this.level - 1) * 30);
       this.lastEAt = now;
       return true;
     }

@@ -5,16 +5,12 @@ import {
   ASSASSIN_ATTACK_DAMAGE,
   ASSASSIN_ATTACK_RANGE,
   ASSASSIN_C_COOLDOWN_MS,
-  ASSASSIN_C_DAMAGE,
-  ASSASSIN_C_EXECUTE_BONUS,
-  ASSASSIN_C_EXECUTE_HP_PCT,
-  ASSASSIN_C_RANGE,
-  ASSASSIN_E_AOE_DAMAGE,
-  ASSASSIN_E_AOE_RADIUS,
+  ASSASSIN_C_INVIS_MS,
   ASSASSIN_E_COOLDOWN_MS,
   ASSASSIN_E_DAMAGE,
   ASSASSIN_E_RANGE,
   ASSASSIN_MAX_HP,
+  ASSASSIN_Q_AOE_RADIUS,
   ASSASSIN_Q_COOLDOWN_MS,
   ASSASSIN_Q_DAMAGE,
   ASSASSIN_Q_RANGE,
@@ -26,11 +22,9 @@ import {
   FIGHTER_C_AOE_RADIUS,
   FIGHTER_C_COOLDOWN_MS,
   FIGHTER_C_STUN_DURATION_MS,
-  FIGHTER_E_AOE_DAMAGE,
-  FIGHTER_E_AOE_RADIUS,
+  FIGHTER_E_BUFF_DURATION_MS,
   FIGHTER_E_COOLDOWN_MS,
-  FIGHTER_E_DAMAGE,
-  FIGHTER_E_RANGE,
+  FIGHTER_E_DAMAGE_BONUS,
   FIGHTER_MAX_HP,
   FIGHTER_Q_COOLDOWN_MS,
   FIGHTER_Q_DAMAGE,
@@ -72,15 +66,12 @@ import {
   PLAYER_TOWER_FOCUS_DECAY_MS,
   PLAYER_TOWER_FOCUS_STACK_BONUS,
   PLAYER_TOWER_FOCUS_STACK_CAP,
+  SKILL_C_ATTACK_SPEED_DURATION_MS,
+  SKILL_C_ATTACK_SPEED_FACTOR,
   SKILL_C_COOLDOWN_MS,
-  SKILL_C_DAMAGE,
-  SKILL_C_RANGE,
-  SKILL_C_STUN_DURATION_MS,
   SKILL_E_COOLDOWN_MS,
   SKILL_E_DAMAGE,
   SKILL_E_RANGE,
-  SKILL_E_SLOW_DURATION_MS,
-  SKILL_E_SLOW_FACTOR,
   SKILL_Q_COOLDOWN_MS,
   SKILL_Q_DAMAGE,
   SKILL_Q_RANGE,
@@ -92,9 +83,8 @@ import {
   TANK_C_COOLDOWN_MS,
   TANK_C_STUN_DURATION_MS,
   TANK_E_COOLDOWN_MS,
-  TANK_E_HEAL,
-  TANK_E_SPEED_BUFF_FACTOR,
-  TANK_E_SPEED_BUFF_MS,
+  TANK_E_SHIELD,
+  TANK_E_SHIELD_DURATION_MS,
   TANK_MAX_HP,
   TANK_Q_COOLDOWN_MS,
   TANK_Q_DAMAGE,
@@ -133,13 +123,39 @@ export interface SkillConfig {
   /** Execute mechanic — bonus damage when target is below the threshold. */
   executeHpThreshold?: number;
   executeBonus?: number;
-  /** Self-only buff (heal + speed) — used by the tank's shield button. No
-   *  projectile is fired when this is set. */
+  /** Piercing flag — projectile keeps flying through hits (Piercing Arrow). */
+  pierces?: boolean;
+  /**
+   * Self-only buff bundle — used by the various buff/utility skills.
+   * No projectile is fired when this is set; Game.tryUseSkill calls
+   * PlayerObject.applySelfBuff and the player's stat getters pick up
+   * the active buffs from there.
+   */
   selfBuff?: {
+    /** Instant heal applied on cast. */
     heal?: number;
+    /** Movement speed multiplier (>1 to speed up) for `speedDurationMs`. */
     speedFactor?: number;
     speedDurationMs?: number;
+    /** Auto-attack speed multiplier (>1 to fire faster) for the duration. */
+    attackSpeedFactor?: number;
+    attackSpeedDurationMs?: number;
+    /** Outgoing damage multiplier (>1 to deal more) for the duration. */
+    damageFactor?: number;
+    damageDurationMs?: number;
+    /** Hit-points of absorbing shield to add. Damages eat the shield first. */
+    shieldHp?: number;
+    shieldDurationMs?: number;
+    /** Become invisible for the duration — enemies can't auto-target. */
+    invisibilityMs?: number;
   };
+  /**
+   * Skill teleports the caster `range` units in the aimed direction and
+   * deals AoE damage at the landing point. Used for the Shadowblade's
+   * Shadow Dash. No projectile is fired; Game.tryUseSkill moves the
+   * player and applies the AoE on arrival.
+   */
+  teleport?: boolean;
 }
 
 /**
@@ -286,18 +302,36 @@ export class PlayerObject implements Unit {
   }
 
   get attackCooldownMs(): number {
+    let base: number;
     switch (this.heroKind) {
-      case 'mage': return MAGE_ATTACK_COOLDOWN_MS;
-      case 'fighter': return FIGHTER_ATTACK_COOLDOWN_MS;
-      case 'assassin': return ASSASSIN_ATTACK_COOLDOWN_MS;
-      case 'tank': return TANK_ATTACK_COOLDOWN_MS;
-      default: return PLAYER_ATTACK_COOLDOWN_MS;
+      case 'mage': base = MAGE_ATTACK_COOLDOWN_MS; break;
+      case 'fighter': base = FIGHTER_ATTACK_COOLDOWN_MS; break;
+      case 'assassin': base = ASSASSIN_ATTACK_COOLDOWN_MS; break;
+      case 'tank': base = TANK_ATTACK_COOLDOWN_MS; break;
+      default: base = PLAYER_ATTACK_COOLDOWN_MS;
     }
+    if (performance.now() < this.attackSpeedBuffUntil) {
+      // Higher factor = faster autos = lower cooldown.
+      return base / this.attackSpeedBuffFactor;
+    }
+    return base;
   }
 
-  /** Speed buff granted by tank's E. Decays back to base when expired. */
+  /** Move-speed buff timestamp + multiplier. */
   speedBuffUntil = 0;
   speedBuffFactor = 1;
+  /** Auto-attack speed buff (Focus Mode). */
+  attackSpeedBuffUntil = 0;
+  attackSpeedBuffFactor = 1;
+  /** Outgoing-damage buff (Rage Mode). Stacks on top of the tower-focus
+   *  multiplier so a chain-dive into a Rage cast hits like a truck. */
+  damageBuffUntil = 0;
+  damageBuffFactor = 1;
+  /** Absorbing shield (Iron Wall). Eaten before HP. */
+  shieldHp = 0;
+  shieldUntil = 0;
+  /** Invisibility window (Shadowblade's C). Used by AI to skip targeting. */
+  invisibleUntil = 0;
 
   get speed3D(): number {
     let base: number;
@@ -323,12 +357,39 @@ export class PlayerObject implements Unit {
     }
   }
 
-  /** Apply tank-style self buff: instant heal + temporary speed multiplier. */
-  applySelfBuff(buff: { heal?: number; speedFactor?: number; speedDurationMs?: number }, now: number): void {
+  /**
+   * Apply a self-buff bundle (subset of fields used per skill). Each field
+   * is independent — Iron Wall sets shieldHp, Focus Mode sets attackSpeed,
+   * Rage Mode sets damage, Invisibility sets invisibleUntil. All durations
+   * are absolute deadlines stored on the player so getters can cheaply
+   * check `now < <field>Until`.
+   */
+  applySelfBuff(buff: NonNullable<SkillConfig['selfBuff']>, now: number): void {
     if (buff.heal && buff.heal > 0) this.heal(buff.heal);
     if (buff.speedFactor && buff.speedFactor > 1 && buff.speedDurationMs) {
       this.speedBuffFactor = buff.speedFactor;
       this.speedBuffUntil = now + buff.speedDurationMs;
+    }
+    if (buff.attackSpeedFactor && buff.attackSpeedFactor > 1 && buff.attackSpeedDurationMs) {
+      this.attackSpeedBuffFactor = buff.attackSpeedFactor;
+      this.attackSpeedBuffUntil = now + buff.attackSpeedDurationMs;
+    }
+    if (buff.damageFactor && buff.damageFactor > 1 && buff.damageDurationMs) {
+      this.damageBuffFactor = buff.damageFactor;
+      this.damageBuffUntil = now + buff.damageDurationMs;
+    }
+    if (buff.shieldHp && buff.shieldHp > 0) {
+      // Iron Wall stacks — recasting adds to current shield up to a hard
+      // cap so spam doesn't make the bulwark unkillable.
+      const cap = buff.shieldHp * 2;
+      this.shieldHp = Math.min(cap, this.shieldHp + buff.shieldHp);
+      this.shieldUntil = now + (buff.shieldDurationMs ?? 6000);
+    }
+    if (buff.invisibilityMs && buff.invisibilityMs > 0) {
+      this.invisibleUntil = now + buff.invisibilityMs;
+      // Visual: dim the body group while invisible. takeDamage breaks
+      // invis early but leaves the dim until next frame paints.
+      this.group.visible = false;
     }
   }
 
@@ -337,17 +398,17 @@ export class PlayerObject implements Unit {
     const lvl = this.level - 1;
     switch (this.heroKind) {
       case 'mage':
-        // FIREBALL — bursting flame sphere with a small splash on impact.
+        // Arcanist — Arcane Burst (300 + AoE on impact).
         return {
           damage: MAGE_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.5,
           cooldownMs: MAGE_Q_COOLDOWN_MS,
           range: MAGE_Q_RANGE,
           projectileKind: 'fireball',
-          aoeRadius: 1.8,
-          aoeDamage: 35 + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
+          aoeRadius: 2.4,
+          aoeDamage: 120 + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.5),
         };
       case 'fighter':
-        // СЕЧЕНИЕ — heavy sword strike with a brief slow on impact.
+        // Warlord — Power Strike (220, single target, light slow).
         return {
           damage: FIGHTER_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.4,
           cooldownMs: FIGHTER_Q_COOLDOWN_MS,
@@ -356,15 +417,20 @@ export class PlayerObject implements Unit {
           effect: { slow: { factor: FIGHTER_Q_SLOW_FACTOR, durationMs: FIGHTER_Q_SLOW_DURATION_MS } },
         };
       case 'assassin':
-        // ЛЕЗВИЯ — single fast dagger throw with extreme single-target damage.
+        // Shadowblade — Shadow Dash. Teleport in the aim direction +
+        // landing AoE. Implemented in Game.tryUseSkill via the teleport
+        // flag; the projectileKind is just the cosmetic for the burst.
         return {
-          damage: ASSASSIN_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.6,
+          damage: ASSASSIN_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.4,
           cooldownMs: ASSASSIN_Q_COOLDOWN_MS,
           range: ASSASSIN_Q_RANGE,
-          projectileKind: 'dagger',
+          projectileKind: 'shadow',
+          teleport: true,
+          aoeRadius: ASSASSIN_Q_AOE_RADIUS,
+          aoeDamage: 100 + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
         };
       case 'tank':
-        // УДАР — hammer slam: solid hit + 1s stun.
+        // Bulwark — Shield Slam (single target + 1s stun).
         return {
           damage: TANK_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL,
           cooldownMs: TANK_Q_COOLDOWN_MS,
@@ -373,9 +439,10 @@ export class PlayerObject implements Unit {
           effect: { stun: { durationMs: TANK_Q_STUN_DURATION_MS } },
         };
       default:
-        // Ranger POWER — heavy arrow.
+        // Arcshooter — Rapid Fire (single fat 360-damage burst that
+        // represents the 3×120 lore-shot).
         return {
-          damage: SKILL_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.5,
+          damage: SKILL_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.6,
           cooldownMs: SKILL_Q_COOLDOWN_MS,
           range: SKILL_Q_RANGE,
           projectileKind: 'heavy',
@@ -387,59 +454,58 @@ export class PlayerObject implements Unit {
     const lvl = this.level - 1;
     switch (this.heroKind) {
       case 'mage':
-        // FLAME WAVE — wide flame disc that slows on impact and chips AoE.
+        // Arcanist — Magic Trap (slow + small AoE, modeled as a slow
+        // projectile with splash for now).
         return {
           damage: MAGE_E_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
           cooldownMs: MAGE_E_COOLDOWN_MS,
           range: MAGE_E_RANGE,
           projectileKind: 'flamewave',
           effect: { slow: { factor: MAGE_E_SLOW_FACTOR, durationMs: MAGE_E_SLOW_DURATION_MS } },
-          aoeRadius: 2.6,
-          aoeDamage: 28 + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
+          aoeRadius: 2.8,
+          aoeDamage: 80 + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.3),
         };
       case 'fighter':
-        // РЫВОК — fast sword wave that splashes on impact.
+        // Warlord — Rage Mode (self-buff: +30% outgoing damage 5s).
         return {
-          damage: FIGHTER_E_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.8),
+          damage: 0,
           cooldownMs: FIGHTER_E_COOLDOWN_MS,
-          range: FIGHTER_E_RANGE,
-          projectileKind: 'blade',
-          aoeRadius: FIGHTER_E_AOE_RADIUS,
-          aoeDamage: FIGHTER_E_AOE_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.3),
+          range: 0,
+          projectileKind: 'basic',
+          selfBuff: {
+            damageFactor: 1 + FIGHTER_E_DAMAGE_BONUS,
+            damageDurationMs: FIGHTER_E_BUFF_DURATION_MS,
+          },
         };
       case 'assassin':
-        // ТЕНЬ — fast shadow wave with small splash.
+        // Shadowblade — Backstab (heavy single target).
         return {
-          damage: ASSASSIN_E_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL,
+          damage: ASSASSIN_E_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.5,
           cooldownMs: ASSASSIN_E_COOLDOWN_MS,
           range: ASSASSIN_E_RANGE,
-          projectileKind: 'shadow',
-          aoeRadius: ASSASSIN_E_AOE_RADIUS,
-          aoeDamage: ASSASSIN_E_AOE_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.3),
+          projectileKind: 'dagger',
         };
       case 'tank':
-        // ЩИТ — self-buff: instant heal + brief speed boost. No projectile,
-        // Game.tryUseSkill takes the selfBuff branch and applies it directly.
+        // Bulwark — Iron Wall (600 HP shield, 6s).
         return {
           damage: 0,
           cooldownMs: TANK_E_COOLDOWN_MS,
           range: 0,
-          // projectileKind is unused for selfBuff; pick something cheap.
           projectileKind: 'basic',
           selfBuff: {
-            heal: TANK_E_HEAL + lvl * 30,
-            speedFactor: TANK_E_SPEED_BUFF_FACTOR,
-            speedDurationMs: TANK_E_SPEED_BUFF_MS,
+            shieldHp: TANK_E_SHIELD + lvl * 60,
+            shieldDurationMs: TANK_E_SHIELD_DURATION_MS,
           },
         };
       default:
-        // Ranger SLOW.
+        // Arcshooter — Piercing Arrow. Long-range arrow that passes
+        // through every enemy on its path.
         return {
-          damage: SKILL_E_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
+          damage: SKILL_E_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.2,
           cooldownMs: SKILL_E_COOLDOWN_MS,
           range: SKILL_E_RANGE,
-          projectileKind: 'slow',
-          effect: { slow: { factor: SKILL_E_SLOW_FACTOR, durationMs: SKILL_E_SLOW_DURATION_MS } },
+          projectileKind: 'heavy',
+          pierces: true,
         };
     }
   }
@@ -448,18 +514,18 @@ export class PlayerObject implements Unit {
     const lvl = this.level - 1;
     switch (this.heroKind) {
       case 'mage':
-        // Meteor — primary stun + AoE.
+        // Arcanist — Meteor Call (huge ult).
         return {
-          damage: MAGE_C_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
+          damage: MAGE_C_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.5,
           cooldownMs: MAGE_C_COOLDOWN_MS,
           range: MAGE_C_RANGE,
           projectileKind: 'meteor',
           effect: { stun: { durationMs: MAGE_C_STUN_DURATION_MS } },
           aoeRadius: MAGE_C_AOE_RADIUS,
-          aoeDamage: MAGE_C_AOE_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
+          aoeDamage: MAGE_C_AOE_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL,
         };
       case 'fighter':
-        // ВИХРЬ — self-cast spin AoE with stun.
+        // Warlord — Spin Attack (vortex AoE).
         return {
           damage: 0,
           cooldownMs: FIGHTER_C_COOLDOWN_MS,
@@ -468,21 +534,22 @@ export class PlayerObject implements Unit {
           selfCast: true,
           selfCastDurationMs: 700,
           aoeRadius: FIGHTER_C_AOE_RADIUS,
-          aoeDamage: FIGHTER_C_AOE_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.5),
+          aoeDamage: FIGHTER_C_AOE_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL,
           effect: { stun: { durationMs: FIGHTER_C_STUN_DURATION_MS } },
         };
       case 'assassin':
-        // КАЗНЬ — single-target finisher with execute bonus on low HP.
+        // Shadowblade — Invisibility (utility, no damage).
         return {
-          damage: ASSASSIN_C_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.2,
+          damage: 0,
           cooldownMs: ASSASSIN_C_COOLDOWN_MS,
-          range: ASSASSIN_C_RANGE,
-          projectileKind: 'shadow',
-          executeHpThreshold: ASSASSIN_C_EXECUTE_HP_PCT,
-          executeBonus: ASSASSIN_C_EXECUTE_BONUS,
+          range: 0,
+          projectileKind: 'basic',
+          selfBuff: { invisibilityMs: ASSASSIN_C_INVIS_MS },
         };
       case 'tank':
-        // ЗЕМЛЕТРЯСЕНИЕ — self-cast big AoE stun.
+        // Bulwark — "Taunt" implemented as a giant AoE stun. Until a real
+        // taunt-targeting system lands, locking everyone in radius gets
+        // 80% of the way there: stunned bots can't AI off the bulwark.
         return {
           damage: 0,
           cooldownMs: TANK_C_COOLDOWN_MS,
@@ -495,13 +562,16 @@ export class PlayerObject implements Unit {
           effect: { stun: { durationMs: TANK_C_STUN_DURATION_MS } },
         };
       default:
-        // Ranger STUN.
+        // Arcshooter — Focus Mode (self-buff: attack speed +40% 4s).
         return {
-          damage: SKILL_C_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
+          damage: 0,
           cooldownMs: SKILL_C_COOLDOWN_MS,
-          range: SKILL_C_RANGE,
-          projectileKind: 'control',
-          effect: { stun: { durationMs: SKILL_C_STUN_DURATION_MS } },
+          range: 0,
+          projectileKind: 'basic',
+          selfBuff: {
+            attackSpeedFactor: SKILL_C_ATTACK_SPEED_FACTOR,
+            attackSpeedDurationMs: SKILL_C_ATTACK_SPEED_DURATION_MS,
+          },
         };
     }
   }
@@ -521,9 +591,12 @@ export class PlayerObject implements Unit {
     return this.towerFocusStacks;
   }
 
-  /** Multiply outgoing damage (autos + skills) by this at fire-time. */
+  /** Multiply outgoing damage (autos + skills) by this at fire-time.
+   *  Tower-focus stacks AND any active Rage damage buff both compose. */
   outgoingDamageMultiplier(now = performance.now()): number {
-    return 1 + this.getTowerFocusStacks(now) * PLAYER_TOWER_FOCUS_STACK_BONUS;
+    let mult = 1 + this.getTowerFocusStacks(now) * PLAYER_TOWER_FOCUS_STACK_BONUS;
+    if (now < this.damageBuffUntil) mult *= this.damageBuffFactor;
+    return mult;
   }
 
   update(input: { x: number; z: number }, deltaSec: number, now: number): void {
@@ -531,6 +604,13 @@ export class PlayerObject implements Unit {
       this.tickDeath(now);
       return;
     }
+    // Restore visibility when the invis buff expires.
+    if (this.invisibleUntil !== 0 && now >= this.invisibleUntil) {
+      this.invisibleUntil = 0;
+      this.group.visible = true;
+    }
+    // Drop the shield value once the buff window closes.
+    if (this.shieldHp > 0 && now >= this.shieldUntil) this.shieldHp = 0;
     if (this.stunnedUntil > now) {
       this.velocity.set(0, 0, 0);
       this.animateGait(0, deltaSec, now);
@@ -623,9 +703,26 @@ export class PlayerObject implements Unit {
 
   takeDamage(amount: number): void {
     if (!this.alive) return;
-    this.hp = Math.max(0, this.hp - amount);
+    let remaining = amount;
+    // Shield (Iron Wall) absorbs first. The shield expires by timer too —
+    // checking inline keeps the cleanup cheap.
+    const now = performance.now();
+    if (this.shieldHp > 0 && now < this.shieldUntil) {
+      const absorbed = Math.min(this.shieldHp, remaining);
+      this.shieldHp -= absorbed;
+      remaining -= absorbed;
+    } else if (this.shieldHp > 0) {
+      // Expired — drop the shield value.
+      this.shieldHp = 0;
+    }
+    if (remaining > 0) this.hp = Math.max(0, this.hp - remaining);
     this.healthBar.setRatio(this.hp / this.maxHp);
     this.healthBar.setHp(this.hp, this.maxHp);
+    // Taking damage breaks invisibility — same convention as MOBA invis.
+    if (this.invisibleUntil > now) {
+      this.invisibleUntil = 0;
+      this.group.visible = true;
+    }
     if (this.hp <= 0) this.die();
   }
 

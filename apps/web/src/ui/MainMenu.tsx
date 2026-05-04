@@ -49,42 +49,42 @@ function HeroPick({ onPick, onBack }: { onPick: (k: HeroKind) => void; onBack: (
       <div style={pickGridStyle}>
         <HeroCard
           accent="#5fc7ff"
-          name="СТРЕЛОК"
-          subtitle="Дальний бой"
-          desc="Q POWER, E SLOW, C STUN. Стабильный single-target."
-          stats={['HP 520', 'Урон 50', 'Дист 10']}
+          name="АРКШУТЕР"
+          subtitle="Marksman — sustained DPS"
+          desc="Rapid Fire (3-shot burst), Piercing Arrow (пробивает строй), Focus Mode (+40% AS на 4с)."
+          stats={['HP 2200', 'Урон 180', 'Тип: физ']}
           onClick={() => onPick('ranger')}
         />
         <HeroCard
           accent="#ff7a3d"
-          name="МАГ"
-          subtitle="Огненная школа"
-          desc="Q ОГОНЬ, E СТЕНА, C МЕТЕОР со станом 2с и AoE."
-          stats={['HP 380', 'Урон 34', 'Дист 8.5']}
+          name="АРКАНИСТ"
+          subtitle="Mage — burst + AoE"
+          desc="Arcane Burst (300 AoE), Magic Trap (slow 40%), Meteor Call (450 + стан 1.5с)."
+          stats={['HP 2000', 'Урон 220', 'Тип: маг']}
           onClick={() => onPick('mage')}
         />
         <HeroCard
           accent="#e6a648"
-          name="БОЕЦ"
-          subtitle="Воин с мечом"
-          desc="Q СЕЧЕНИЕ + slow, E РЫВОК (AoE), C ВИХРЬ — стан вокруг себя."
-          stats={['HP 600', 'Урон 55', 'Дист 4']}
+          name="ВАРЛОРД"
+          subtitle="Fighter — гибрид"
+          desc="Power Strike (220), Rage Mode (+30% урона 5с), Spin Attack (180 AoE)."
+          stats={['HP 3000', 'Урон 170', 'Тип: смеш']}
           onClick={() => onPick('fighter')}
         />
         <HeroCard
           accent="#a470ff"
-          name="УБИЙЦА"
-          subtitle="Скрытный убийца"
-          desc="Q ЛЕЗВИЯ — огромный single-target burst, E ТЕНЬ, C КАЗНЬ +60% по добиванию."
-          stats={['HP 380', 'Урон 60', 'Дист 4.5']}
+          name="ТЕНЕКЛИНОК"
+          subtitle="Assassin — burst + reset"
+          desc="Shadow Dash (телепорт + AoE), Backstab (350), Invisibility (3с — пропадает с миникарты)."
+          stats={['HP 1800', 'Урон 260', 'Тип: физ']}
           onClick={() => onPick('assassin')}
         />
         <HeroCard
           accent="#9aa6b8"
-          name="ТАНК"
-          subtitle="Защитник линии"
-          desc="Q УДАР + стан 1с, E ЩИТ — хил и ускорение, C ЗЕМЛЕТРЯС — массовый стан 1.5с."
-          stats={['HP 800', 'Урон 38', 'Дист 4']}
+          name="СТРАЖ"
+          subtitle="Tank — frontline + контроль"
+          desc="Shield Slam (стан 1с), Iron Wall (щит 600 HP), Taunt — стан-аура 2с."
+          stats={['HP 4200', 'Урон 120', 'Тип: физ']}
           onClick={() => onPick('tank')}
         />
       </div>

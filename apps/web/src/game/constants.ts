@@ -27,10 +27,11 @@ export const PROJECTILE_LIFETIME_MS = 1500;
 export const PROJECTILE_RADIUS = 0.4;
 
 // Player combat
-// Ranger: standard HP pool, snappy auto-attack rhythm. The fast cooldown is
-// a big part of her identity vs. the mage.
-export const PLAYER_MAX_HP = 520;
-export const PLAYER_ATTACK_DAMAGE = 50;
+// Arcshooter (внутреннее имя ranger): sustained DPS marksman with the
+// fastest auto-attack of all roles. HP/damage anchored to the new five-role
+// balance pass — see balance doc / commit notes for the rationale.
+export const PLAYER_MAX_HP = 2200;
+export const PLAYER_ATTACK_DAMAGE = 180;
 export const PLAYER_ATTACK_RANGE = 10;
 export const PLAYER_ATTACK_COOLDOWN_MS = 360;
 export const PLAYER_RESPAWN_MS = 6000;
@@ -187,19 +188,26 @@ export const SPAWN_RED_X = BASE_RED_X - SPAWN_OFFSET * DIAG;
 export const SPAWN_RED_Z = BASE_RED_Z + SPAWN_OFFSET * DIAG;
 export const SPAWN_ZONE_RADIUS = 6.5;
 
-// Skills
-export const SKILL_Q_DAMAGE = 130;
-export const SKILL_Q_COOLDOWN_MS = 10000;
+// Arcshooter skills.
+// Q "Rapid Fire" — modeled as a single 360-damage burst (3×120 in lore).
+export const SKILL_Q_DAMAGE = 360;
+export const SKILL_Q_COOLDOWN_MS = 7000;
 export const SKILL_Q_RANGE = 16;
-export const SKILL_E_DAMAGE = 30;
-export const SKILL_E_COOLDOWN_MS = 3000;
-export const SKILL_E_RANGE = 14;
+// E "Piercing Arrow" — 250 damage, pierces every enemy on its line.
+export const SKILL_E_DAMAGE = 250;
+export const SKILL_E_COOLDOWN_MS = 8000;
+export const SKILL_E_RANGE = 18;
+// E used to be a slow — kept the constants for now (not used by the new
+// skill, but other code paths reference them) so we don't break imports.
 export const SKILL_E_SLOW_FACTOR = 0.5;
 export const SKILL_E_SLOW_DURATION_MS = 2000;
-export const SKILL_C_DAMAGE = 20;
-export const SKILL_C_COOLDOWN_MS = 5000;
-export const SKILL_C_RANGE = 13;
-export const SKILL_C_STUN_DURATION_MS = 1000;
+// C "Focus Mode" — self-buff: +40% attack speed for 4 seconds.
+export const SKILL_C_DAMAGE = 0;
+export const SKILL_C_COOLDOWN_MS = 18000;
+export const SKILL_C_RANGE = 0;
+export const SKILL_C_STUN_DURATION_MS = 0;
+export const SKILL_C_ATTACK_SPEED_FACTOR = 1.4;
+export const SKILL_C_ATTACK_SPEED_DURATION_MS = 4000;
 
 // Minions
 // Slower waves than before — at the new 5v5 match size, the lanes were
@@ -228,129 +236,142 @@ export const RECALL_COOLDOWN_MS = 30000;
 // the ally is automatically a different archetype to round out the team.
 export type HeroKind = 'ranger' | 'mage' | 'fighter' | 'assassin' | 'tank';
 
-// Mage — fire archetype. Glass cannon: noticeably squishier than the
-// ranger, slow auto-attack, but huge burst on his skills. Player should
-// feel like he kills hard if he lands his spells, dies fast if he doesn't.
-export const MAGE_MAX_HP = 380;
-export const MAGE_ATTACK_DAMAGE = 34;
-export const MAGE_ATTACK_RANGE = 8.5;
-export const MAGE_ATTACK_COOLDOWN_MS = 880;
-export const MAGE_SPEED_3D = 5.4;
+// Arcanist (mage) — burst caster. Lower HP than the marksman, longer
+// auto-attack rhythm, but the highest spell damage in the roster.
+export const MAGE_MAX_HP = 2000;
+export const MAGE_ATTACK_DAMAGE = 220;
+export const MAGE_ATTACK_RANGE = 9;
+export const MAGE_ATTACK_COOLDOWN_MS = 820;
+export const MAGE_SPEED_3D = 5.6;
 
-// Mage skills (огненная школа). Numbers are bigger than the ranger's
-// equivalents — the trade-off for low HP and slow autos is that every
-// spell hurts.
-// Q — fireball: heavy single-target damage with a small AoE splash.
-export const MAGE_Q_DAMAGE = 170;
+// Arcanist skills.
+// Q "Arcane Burst" — 300 damage AoE blast on impact.
+export const MAGE_Q_DAMAGE = 300;
 export const MAGE_Q_COOLDOWN_MS = 7000;
 export const MAGE_Q_RANGE = 14;
-
-// E — fire wall: a slowing flame disc that splashes nearby enemies.
-export const MAGE_E_DAMAGE = 90;
-export const MAGE_E_SLOW_FACTOR = 0.5;
+// E "Magic Trap" — projectile that lingers as a slowing zone on landing.
+//   For MVP it's modeled as a slow projectile with a small splash.
+export const MAGE_E_DAMAGE = 150;
+export const MAGE_E_SLOW_FACTOR = 0.6; // 40% slow → multiplier 0.6
 export const MAGE_E_SLOW_DURATION_MS = 2500;
-export const MAGE_E_COOLDOWN_MS = 8000;
-export const MAGE_E_RANGE = 12;
+export const MAGE_E_COOLDOWN_MS = 11000;
+export const MAGE_E_RANGE = 13;
+// C "Meteor Call" — ult. Massive single-target hit + AoE shockwave.
+export const MAGE_C_DAMAGE = 450;
+export const MAGE_C_AOE_RADIUS = 5;
+export const MAGE_C_AOE_DAMAGE = 220;
+export const MAGE_C_STUN_DURATION_MS = 1500;
+export const MAGE_C_COOLDOWN_MS = 25000;
+export const MAGE_C_RANGE = 16;
 
-// C — meteor: the ult. Slow-falling chunk that crushes a primary target,
-// shockwaves the rest, AND stuns whatever it hits for 2 seconds. AoE
-// damage is dealt to every enemy unit other than the primary target
-// within MAGE_C_AOE_RADIUS of the impact.
-export const MAGE_C_DAMAGE = 240;
-export const MAGE_C_AOE_RADIUS = 4.8;
-export const MAGE_C_AOE_DAMAGE = 140;
-export const MAGE_C_STUN_DURATION_MS = 2000;
-export const MAGE_C_COOLDOWN_MS = 12000;
-export const MAGE_C_RANGE = 14;
-
-// --- Fighter (Боец) -------------------------------------------------------
-// Mid-range warrior with a sword. Solid HP, snappy melee autos, sturdy
-// damage on his skills but short-ranged. The "balanced" pick.
-export const FIGHTER_MAX_HP = 600;
-export const FIGHTER_ATTACK_DAMAGE = 55;
+// --- Warlord (Варлорд / fighter) -----------------------------------------
+// Hybrid bruiser. Solid HP, balanced damage, mixed offence (heavy melee +
+// AoE finisher + self-buff). The "any situation" pick.
+export const FIGHTER_MAX_HP = 3000;
+export const FIGHTER_ATTACK_DAMAGE = 170;
 export const FIGHTER_ATTACK_RANGE = 4;
-export const FIGHTER_ATTACK_COOLDOWN_MS = 500;
+export const FIGHTER_ATTACK_COOLDOWN_MS = 520;
 export const FIGHTER_SPEED_3D = 5.8;
 
-// Q СЕЧЕНИЕ — heavy single-target sword strike with a brief slow on hit.
-export const FIGHTER_Q_DAMAGE = 145;
+// Q "Power Strike" — heavy single-target sword strike.
+export const FIGHTER_Q_DAMAGE = 220;
 export const FIGHTER_Q_SLOW_FACTOR = 0.7;
 export const FIGHTER_Q_SLOW_DURATION_MS = 1500;
 export const FIGHTER_Q_COOLDOWN_MS = 6000;
 export const FIGHTER_Q_RANGE = 5;
 
-// E РЫВОК — fast sword wave that travels and splashes on impact.
-export const FIGHTER_E_DAMAGE = 110;
-export const FIGHTER_E_AOE_RADIUS = 2.4;
-export const FIGHTER_E_AOE_DAMAGE = 60;
-export const FIGHTER_E_COOLDOWN_MS = 9000;
-export const FIGHTER_E_RANGE = 8;
+// E "Rage Mode" — self-buff: +30% outgoing damage for 5s. The "-10%
+// defence" half of the lore is implemented by the buff doing nothing
+// to incoming damage, which leaves the warlord exposed during the
+// damage window. Pure offence trade-off.
+export const FIGHTER_E_DAMAGE_BONUS = 0.3;
+export const FIGHTER_E_BUFF_DURATION_MS = 5000;
+export const FIGHTER_E_COOLDOWN_MS = 16000;
+// Legacy constants — still imported by older code paths to avoid
+// dropping symbols mid-refactor. Effective values for the new skill
+// are above.
+export const FIGHTER_E_RANGE = 0;
+export const FIGHTER_E_AOE_RADIUS = 0;
+export const FIGHTER_E_AOE_DAMAGE = 0;
 
-// C ВИХРЬ — self-cast spin: AoE around the fighter, stuns everyone caught.
+// C "Spin Attack" — self-cast spin around the warlord, AoE on every
+// enemy in radius. Same "vortex" mesh as before — visually identical.
 export const FIGHTER_C_AOE_RADIUS = 4.2;
-export const FIGHTER_C_AOE_DAMAGE = 140;
-export const FIGHTER_C_STUN_DURATION_MS = 1500;
+export const FIGHTER_C_AOE_DAMAGE = 180;
+export const FIGHTER_C_STUN_DURATION_MS = 800;
 export const FIGHTER_C_COOLDOWN_MS = 11000;
 
-// --- Assassin (Убийца) ----------------------------------------------------
-// Glass cannon: lowest HP among melee, fastest, single-target burst king.
-// Rewards picking off isolated targets — execute bonus on low-HP enemies.
-export const ASSASSIN_MAX_HP = 380;
-export const ASSASSIN_ATTACK_DAMAGE = 60;
+// --- Shadowblade (Тенеклинок / assassin) ---------------------------------
+// Glass cannon. Lowest HP, highest single-target damage, fastest movement.
+// Combo loop: Shadow Dash → Backstab → Invisibility for the reset.
+export const ASSASSIN_MAX_HP = 1800;
+export const ASSASSIN_ATTACK_DAMAGE = 260;
 export const ASSASSIN_ATTACK_RANGE = 4.5;
-export const ASSASSIN_ATTACK_COOLDOWN_MS = 420;
+export const ASSASSIN_ATTACK_COOLDOWN_MS = 440;
 export const ASSASSIN_SPEED_3D = 7.0;
 
-// Q ЛЕЗВИЯ — quick dagger throw with extreme single-target damage.
-export const ASSASSIN_Q_DAMAGE = 220;
-export const ASSASSIN_Q_COOLDOWN_MS = 5000;
-export const ASSASSIN_Q_RANGE = 10;
+// Q "Shadow Dash" — short teleport in the aim direction + on-arrival
+// AoE damage at the landing point.
+export const ASSASSIN_Q_DAMAGE = 200;
+export const ASSASSIN_Q_RANGE = 7; // teleport distance
+export const ASSASSIN_Q_AOE_RADIUS = 2.4;
+export const ASSASSIN_Q_COOLDOWN_MS = 7000;
 
-// E ТЕНЬ — fast shadow wave, mid damage with a small splash.
-export const ASSASSIN_E_DAMAGE = 130;
-export const ASSASSIN_E_AOE_RADIUS = 1.8;
-export const ASSASSIN_E_AOE_DAMAGE = 60;
-export const ASSASSIN_E_COOLDOWN_MS = 8000;
-export const ASSASSIN_E_RANGE = 10;
+// E "Backstab" — heavy single-target strike. Directional bonus is
+// stretch-goal; the MVP just deals the base damage.
+export const ASSASSIN_E_DAMAGE = 350;
+export const ASSASSIN_E_COOLDOWN_MS = 6000;
+export const ASSASSIN_E_RANGE = 5;
+// Legacy constants — kept for compatibility while older code paths still
+// import them.
+export const ASSASSIN_E_AOE_RADIUS = 0;
+export const ASSASSIN_E_AOE_DAMAGE = 0;
 
-// C КАЗНЬ — single-target finisher. Below the HP threshold the strike
-// deals an extra (damage × execute_factor); the multiplier is applied
-// per-projectile by ProjectileManager.
-export const ASSASSIN_C_DAMAGE = 200;
+// C "Invisibility" — self-buff: 3 seconds of invisibility. No damage —
+// the value is the reset / reposition for the combo. Implemented in
+// PlayerObject as `invisibleUntil`.
+export const ASSASSIN_C_INVIS_MS = 3000;
+export const ASSASSIN_C_COOLDOWN_MS = 18000;
+// Legacy fields kept for older code paths.
+export const ASSASSIN_C_DAMAGE = 0;
 export const ASSASSIN_C_EXECUTE_HP_PCT = 0.5;
-export const ASSASSIN_C_EXECUTE_BONUS = 0.6; // +60% if target hp <= 50%
-export const ASSASSIN_C_COOLDOWN_MS = 10000;
-export const ASSASSIN_C_RANGE = 8;
+export const ASSASSIN_C_EXECUTE_BONUS = 0;
+export const ASSASSIN_C_RANGE = 0;
 
-// --- Tank (Танк) ----------------------------------------------------------
-// Frontline. Massive HP, slow autos, AoE control. Damage is modest but
-// the stuns keep enemies off the squishy allies.
-export const TANK_MAX_HP = 800;
-export const TANK_ATTACK_DAMAGE = 38;
+// --- Bulwark (Страж / tank) ----------------------------------------------
+// Frontline. Largest HP pool in the game, lowest damage, control kit.
+// Trade single-target burst for "I will not die" vibes.
+export const TANK_MAX_HP = 4200;
+export const TANK_ATTACK_DAMAGE = 120;
 export const TANK_ATTACK_RANGE = 4;
-export const TANK_ATTACK_COOLDOWN_MS = 700;
+export const TANK_ATTACK_COOLDOWN_MS = 720;
 export const TANK_SPEED_3D = 4.8;
 
-// Q УДАР — hammer slam: solid single-target hit + 1s stun.
-export const TANK_Q_DAMAGE = 95;
+// Q "Shield Slam" — single-target slam: 150 damage + 1s stun.
+export const TANK_Q_DAMAGE = 150;
 export const TANK_Q_STUN_DURATION_MS = 1000;
-export const TANK_Q_COOLDOWN_MS = 7000;
+export const TANK_Q_COOLDOWN_MS = 11000;
 export const TANK_Q_RANGE = 5;
 
-// E ЩИТ — self heal + brief armor (modeled here as an instant heal of
-// TANK_E_HEAL plus a small move-speed buff for TANK_E_SPEED_BUFF_MS).
-// Implemented as a self-buff path inside Game.ts/PlayerObject.
-export const TANK_E_HEAL = 280;
-export const TANK_E_SPEED_BUFF_FACTOR = 1.25;
-export const TANK_E_SPEED_BUFF_MS = 4000;
+// E "Iron Wall" — self-shield. Adds 600 HP of absorb that stacks on top
+// of the bulwark's max HP and depletes from incoming damage first.
+// Replaces the previous heal+speed buff.
+export const TANK_E_SHIELD = 600;
+export const TANK_E_SHIELD_DURATION_MS = 6000;
 export const TANK_E_COOLDOWN_MS = 14000;
+// Legacy heal/speed values kept so the bot's tank AI keeps a working
+// fallback for the time being.
+export const TANK_E_HEAL = 0;
+export const TANK_E_SPEED_BUFF_FACTOR = 1;
+export const TANK_E_SPEED_BUFF_MS = 0;
 
-// C ЗЕМЛЕТРЯСЕНИЕ — self-cast giant AoE: medium damage + 1.5s stun on
-// every enemy in radius. The teamfight ult.
-export const TANK_C_AOE_RADIUS = 5.0;
-export const TANK_C_AOE_DAMAGE = 90;
-export const TANK_C_STUN_DURATION_MS = 1500;
-export const TANK_C_COOLDOWN_MS = 14000;
+// C "Taunt" — for the MVP this is implemented as a giant AoE stun that
+// "pulls aggro" by stunning everyone in radius (close enough — every
+// stunned bot can't AI away from the bulwark for the duration).
+export const TANK_C_AOE_RADIUS = 5.5;
+export const TANK_C_AOE_DAMAGE = 60;
+export const TANK_C_STUN_DURATION_MS = 2000;
+export const TANK_C_COOLDOWN_MS = 22000;
 
 // Bot — tuned slightly weaker than the player so 1v1 feels fair.
 export const BOT_MAX_HP = 420;

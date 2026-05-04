@@ -84,6 +84,15 @@ export interface ProjectileSpec {
    */
   executeHpThreshold?: number;
   executeBonus?: number;
+  /**
+   * Piercing flag — when true, the projectile keeps travelling after
+   * hitting a unit instead of despawning, dealing its damage to every
+   * enemy on its path until it expires by maxDistance/lifetime. The
+   * manager tracks a per-projectile "already hit" set so a single
+   * shot can't damage the same unit twice. Used by the arcshooter's
+   * Piercing Arrow.
+   */
+  pierces?: boolean;
 }
 
 interface Projectile {
@@ -108,6 +117,10 @@ interface Projectile {
   selfCastDurationMs?: number;
   executeHpThreshold?: number;
   executeBonus?: number;
+  pierces?: boolean;
+  /** Set of units already damaged by this piercing projectile, so a
+   *  single shot doesn't re-hit a target on subsequent ticks. */
+  pierceHits?: Set<Unit>;
 }
 
 interface Variant {
@@ -232,6 +245,8 @@ export class ProjectileManager {
       selfCastDurationMs: spec.selfCastDurationMs,
       executeHpThreshold: spec.executeHpThreshold,
       executeBonus: spec.executeBonus,
+      pierces: spec.pierces,
+      pierceHits: spec.pierces ? new Set<Unit>() : undefined,
     });
     if (spec.selfCast) {
       // Zero out velocity so the spinning visual stays planted at the
@@ -277,9 +292,19 @@ export class ProjectileManager {
       if (!p.visualOnly) {
         const hit = registry.findHit(p.mesh.position, PROJECTILE_RADIUS, p.team);
         if (hit) {
-          this.hitUnit(p, hit, now, registry);
-          this.removeAt(i);
-          continue;
+          if (p.pierces) {
+            // Piercing projectile — damage the unit if we haven't yet, but
+            // KEEP the projectile flying so it can hit more enemies along
+            // its line. The pierceHits set guarantees one hit per unit.
+            if (!p.pierceHits!.has(hit)) {
+              p.pierceHits!.add(hit);
+              this.hitUnit(p, hit, now, registry);
+            }
+          } else {
+            this.hitUnit(p, hit, now, registry);
+            this.removeAt(i);
+            continue;
+          }
         }
       }
 

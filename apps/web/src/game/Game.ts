@@ -1102,11 +1102,14 @@ export class Game {
   ): number {
     // Returns the new lastAt timestamp on success, or `lastAt` unchanged on
     // cooldown. Branches on the SkillConfig:
-    //   • selfBuff present  → apply instant heal/speed buff to the player,
-    //     play a heal-ring visual, no projectile.
+    //   • selfBuff present  → apply heal/shield/buff to the player, play
+    //     a heal-ring visual, no projectile.
+    //   • teleport=true     → instantly move the player range units along
+    //     the aim direction, then detonate AoE at the landing point.
     //   • selfCast=true     → spawn a stationary projectile at the player's
     //     feet that detonates AoE on the next tick.
-    //   • otherwise         → fire a directional projectile.
+    //   • otherwise         → fire a directional projectile (with optional
+    //     pierce / execute / AoE on impact).
     if (now - lastAt < cfg.cooldownMs) return lastAt;
     if (cfg.selfBuff) {
       this.player.applySelfBuff(cfg.selfBuff, now);
@@ -1116,11 +1119,38 @@ export class Game {
       return now;
     }
     this.player.faceDirection(dirX, dirZ);
+    if (cfg.teleport) {
+      // Move the player along the aim vector by `range` units, clamped by
+      // colliders (so the dash can't punch through walls). After landing,
+      // burst AoE damage at the new position.
+      const start = this.player.position;
+      const dist = cfg.range;
+      const targetX = start.x + dirX * dist;
+      const targetZ = start.z + dirZ * dist;
+      this.player.position.set(targetX, 0, targetZ);
+      this.colliders.resolve(this.player.position, PLAYER_RADIUS);
+      // Spawn the AoE burst as a self-cast projectile at the landing point —
+      // re-uses the existing detonateSelfCast path so the AoE math, effects
+      // and XP logic stay in one place.
+      this.projectiles.spawn(this.player.position, this.player.position, now, {
+        team: this.player.team,
+        damage: 0,
+        kind: cfg.projectileKind,
+        effect: cfg.effect,
+        aoeRadius: cfg.aoeRadius,
+        aoeDamage: cfg.aoeDamage !== undefined
+          ? cfg.aoeDamage * this.player.outgoingDamageMultiplier(now)
+          : undefined,
+        selfCast: true,
+        selfCastDurationMs: 350,
+        owner: this.player,
+        fromPlayer: true,
+      });
+      Sounds.skill(soundId, this.player.heroKind);
+      return now;
+    }
     const origin = this.player.position;
     if (cfg.selfCast) {
-      // Spawn at the caster — no aim direction, no max distance. The
-      // projectile detonates on the first update tick and applies the
-      // skill's effect to every enemy in radius.
       this.projectiles.spawn(origin, origin, now, {
         team: this.player.team,
         damage: 0,
@@ -1154,6 +1184,7 @@ export class Game {
         : undefined,
       executeHpThreshold: cfg.executeHpThreshold,
       executeBonus: cfg.executeBonus,
+      pierces: cfg.pierces,
       owner: this.player,
       maxDistance: cfg.range,
       fromPlayer: true,

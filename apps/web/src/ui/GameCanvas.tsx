@@ -36,30 +36,35 @@ interface SkillProfile {
  * constants — the ring is purely cosmetic and won't gate the actual cast.
  */
 const SKILL_PROFILES: Record<HeroKind, Record<SkillId, SkillProfile>> = {
+  // Arcshooter (ranger): Rapid Fire / Piercing Arrow / Focus Mode.
   ranger: {
-    q: { subtitle: 'POWER', accent: '#ff7a3d', totalMs: 10000 },
-    e: { subtitle: 'SLOW', accent: '#4ec9ff', totalMs: 3000 },
-    c: { subtitle: 'STUN', accent: '#b56cff', totalMs: 5000 },
+    q: { subtitle: 'RAPID', accent: '#ff7a3d', totalMs: 7000 },
+    e: { subtitle: 'PIERCE', accent: '#4ec9ff', totalMs: 8000 },
+    c: { subtitle: 'FOCUS', accent: '#ffd852', totalMs: 18000 },
   },
+  // Arcanist (mage): Arcane Burst / Magic Trap / Meteor Call.
   mage: {
-    q: { subtitle: 'ОГОНЬ', accent: '#ff5a18', totalMs: 7000 },
-    e: { subtitle: 'СТЕНА', accent: '#ff9a3a', totalMs: 8000 },
-    c: { subtitle: 'МЕТЕОР', accent: '#ffd852', totalMs: 12000 },
+    q: { subtitle: 'BURST', accent: '#ff5a18', totalMs: 7000 },
+    e: { subtitle: 'TRAP', accent: '#9b6cff', totalMs: 11000 },
+    c: { subtitle: 'METEOR', accent: '#ffd852', totalMs: 25000 },
   },
+  // Warlord (fighter): Power Strike / Rage Mode / Spin Attack.
   fighter: {
-    q: { subtitle: 'СЕЧЕНИЕ', accent: '#e6a648', totalMs: 6000 },
-    e: { subtitle: 'РЫВОК', accent: '#ffd17a', totalMs: 9000 },
-    c: { subtitle: 'ВИХРЬ', accent: '#dc4f2a', totalMs: 11000 },
+    q: { subtitle: 'POWER', accent: '#e6a648', totalMs: 6000 },
+    e: { subtitle: 'RAGE', accent: '#dc4f2a', totalMs: 16000 },
+    c: { subtitle: 'SPIN', accent: '#ffb238', totalMs: 11000 },
   },
+  // Shadowblade (assassin): Shadow Dash / Backstab / Invisibility.
   assassin: {
-    q: { subtitle: 'ЛЕЗВИЯ', accent: '#a470ff', totalMs: 5000 },
-    e: { subtitle: 'ТЕНЬ', accent: '#7c4ad8', totalMs: 8000 },
-    c: { subtitle: 'КАЗНЬ', accent: '#ff3a86', totalMs: 10000 },
+    q: { subtitle: 'DASH', accent: '#a470ff', totalMs: 7000 },
+    e: { subtitle: 'BACKSTAB', accent: '#7c4ad8', totalMs: 6000 },
+    c: { subtitle: 'INVIS', accent: '#5e3aa6', totalMs: 18000 },
   },
+  // Bulwark (tank): Shield Slam / Iron Wall / Taunt.
   tank: {
-    q: { subtitle: 'УДАР', accent: '#9aa6b8', totalMs: 7000 },
-    e: { subtitle: 'ЩИТ', accent: '#7ee06f', totalMs: 14000 },
-    c: { subtitle: 'ЗЕМЛЕТРЯС', accent: '#c99650', totalMs: 14000 },
+    q: { subtitle: 'SLAM', accent: '#9aa6b8', totalMs: 11000 },
+    e: { subtitle: 'WALL', accent: '#7ee06f', totalMs: 14000 },
+    c: { subtitle: 'TAUNT', accent: '#c99650', totalMs: 22000 },
   },
 };
 

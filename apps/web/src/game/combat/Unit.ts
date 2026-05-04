@@ -21,6 +21,10 @@ export interface Unit {
   alive: boolean;
   slowUntil: number;
   stunnedUntil: number;
+  /** Optional invisibility deadline — units with `now < invisibleUntil` are
+   *  skipped by enemy auto-target logic. Currently set only by PlayerObject
+   *  (Shadowblade's invisibility); other implementors may leave it `0`. */
+  invisibleUntil?: number;
   takeDamage(amount: number): void;
   grantXp?(amount: number): void;
 }
