@@ -202,7 +202,10 @@ export const SKILL_C_RANGE = 13;
 export const SKILL_C_STUN_DURATION_MS = 1000;
 
 // Minions
-export const MINION_WAVE_INTERVAL_MS = 14000;
+// Slower waves than before — at the new 5v5 match size, the lanes were
+// getting crowded and CPU-busy with constant minion spam every 14s. 28s
+// keeps the lanes alive without flooding them.
+export const MINION_WAVE_INTERVAL_MS = 28000;
 export const MINION_WAVE_SIZE = 3;
 export const MINION_SPAWN_SPACING = 2.2;
 export const MINION_MAX_HP = 170;

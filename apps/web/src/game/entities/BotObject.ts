@@ -1,6 +1,19 @@
 import * as THREE from 'three';
 import {
   type HeroKind,
+  ASSASSIN_C_COOLDOWN_MS,
+  ASSASSIN_C_DAMAGE,
+  ASSASSIN_C_EXECUTE_BONUS,
+  ASSASSIN_C_EXECUTE_HP_PCT,
+  ASSASSIN_C_RANGE,
+  ASSASSIN_E_AOE_DAMAGE,
+  ASSASSIN_E_AOE_RADIUS,
+  ASSASSIN_E_COOLDOWN_MS,
+  ASSASSIN_E_DAMAGE,
+  ASSASSIN_E_RANGE,
+  ASSASSIN_Q_COOLDOWN_MS,
+  ASSASSIN_Q_DAMAGE,
+  ASSASSIN_Q_RANGE,
   BOT_ATTACK_COOLDOWN_MS,
   BOT_ATTACK_RANGE,
   BOT_DAMAGE,
@@ -15,12 +28,27 @@ import {
   BASE_BLUE_Z,
   BASE_RED_X,
   BASE_RED_Z,
+  FIGHTER_C_AOE_DAMAGE,
+  FIGHTER_C_AOE_RADIUS,
+  FIGHTER_C_COOLDOWN_MS,
+  FIGHTER_C_STUN_DURATION_MS,
+  FIGHTER_E_AOE_DAMAGE,
+  FIGHTER_E_AOE_RADIUS,
+  FIGHTER_E_COOLDOWN_MS,
+  FIGHTER_E_DAMAGE,
+  FIGHTER_E_RANGE,
+  FIGHTER_Q_COOLDOWN_MS,
+  FIGHTER_Q_DAMAGE,
+  FIGHTER_Q_RANGE,
+  FIGHTER_Q_SLOW_DURATION_MS,
+  FIGHTER_Q_SLOW_FACTOR,
   HERO_BASE_XP_TO_LEVEL,
   HERO_DAMAGE_PER_LEVEL,
   HERO_HP_PER_LEVEL,
   HERO_KILL_XP_REWARD,
   HERO_MAX_LEVEL,
   HERO_XP_LEVEL_GROWTH,
+  LANE_PATHS,
   MAGE_C_AOE_DAMAGE,
   MAGE_C_AOE_RADIUS,
   MAGE_C_COOLDOWN_MS,
@@ -48,6 +76,16 @@ import {
   SKILL_Q_COOLDOWN_MS,
   SKILL_Q_DAMAGE,
   SKILL_Q_RANGE,
+  TANK_C_AOE_DAMAGE,
+  TANK_C_AOE_RADIUS,
+  TANK_C_COOLDOWN_MS,
+  TANK_C_STUN_DURATION_MS,
+  TANK_E_COOLDOWN_MS,
+  TANK_E_HEAL,
+  TANK_Q_COOLDOWN_MS,
+  TANK_Q_DAMAGE,
+  TANK_Q_RANGE,
+  TANK_Q_STUN_DURATION_MS,
 } from '../constants.js';
 import type { Unit, Team } from '../combat/Unit.js';
 import type { UnitRegistry } from '../combat/UnitRegistry.js';
@@ -69,6 +107,12 @@ const TMP_TARGET = new THREE.Vector3();
  *   • enemy in attack range → stop, fire on cooldown
  *   • no enemy in vision → walk toward enemy base
  */
+/** Lane assignment for AI bots — drives the idle "where do I walk?" path.
+ *  • top/mid/bot — fixed lane, follows LANE_PATHS for that lane.
+ *  • roam — cycles between all three lanes (tank archetype).
+ *  • jungle — assassin path, mostly mid with detours through camps. */
+export type BotLane = 'top' | 'mid' | 'bot' | 'roam' | 'jungle';
+
 export class BotObject implements Unit {
   readonly kind = 'hero';
   readonly heroKind: HeroKind;
@@ -83,6 +127,14 @@ export class BotObject implements Unit {
   level = 1;
   xp = 0;
   respawnDelayMs = BOT_RESPAWN_MS;
+  /** Lane the bot pushes through when there's no enemy in vision. Set
+   *  per-archetype by Game on spawn (fighter→top, ranger→bot, mage→mid,
+   *  tank→roam, assassin→jungle). */
+  lane: BotLane = 'mid';
+  /** Current lane waypoint path. Refreshed when the bot exhausts its
+   *  current path (roamer cycles to a new lane). */
+  private path: ReadonlyArray<readonly [number, number]> = [];
+  private pathIdx = 0;
 
   private readonly spawn: THREE.Vector3;
   private readonly healthBar: HealthBar;
@@ -98,22 +150,70 @@ export class BotObject implements Unit {
   private armorMat!: THREE.MeshLambertMaterial;
   private armorDarkMat!: THREE.MeshLambertMaterial;
 
-  constructor(spawn: THREE.Vector3, heroKind: HeroKind = 'ranger', team: Team = 'red') {
+  constructor(
+    spawn: THREE.Vector3,
+    heroKind: HeroKind = 'ranger',
+    team: Team = 'red',
+    lane: BotLane = 'mid',
+  ) {
     this.heroKind = heroKind;
     this.team = team;
     this.spawn = spawn.clone();
+    this.lane = lane;
+    this.refreshLanePath();
     // Bar colour: pick the team's signature so the player can tell ally
     // bots from enemy bots at a glance even before the armour palette
     // takes effect.
     const barColor = team === 'blue' ? 0x44ff66 : 0xff5050;
     this.healthBar = new HealthBar(2.4, 0.22, barColor, true, true);
-    if (heroKind === 'mage') this.buildMageVisual();
-    else this.buildArcherVisual();
+    switch (heroKind) {
+      case 'mage': this.buildMageVisual(); break;
+      case 'fighter': this.buildFighterVisual(); break;
+      case 'assassin': this.buildAssassinVisual(); break;
+      case 'tank': this.buildTankVisual(); break;
+      default: this.buildArcherVisual();
+    }
     this.group.position.copy(spawn);
     this.healthBar.group.position.set(0, 3, 0);
     this.group.add(this.healthBar.group);
     this.refreshLevelBadge();
     this.healthBar.setHp(this.hp, this.maxHp);
+    // Auto-attack range — used in pursue/attack thresholds. Cached here so
+    // the AI loop doesn't re-switch on heroKind every tick.
+    this.botAttackRange = (
+      heroKind === 'mage' ? 8.5
+        : heroKind === 'assassin' ? 4.5
+          : heroKind === 'fighter' || heroKind === 'tank' ? 4
+            : BOT_ATTACK_RANGE
+    );
+  }
+
+  /** Cached attack range — see constructor. */
+  private botAttackRange: number;
+
+  /** Refresh the lane waypoint list from the bot's current `lane` and team. */
+  private refreshLanePath(): void {
+    const baseLane: 'top' | 'mid' | 'bot' = (
+      this.lane === 'roam' || this.lane === 'jungle' ? 'mid' : this.lane
+    );
+    this.path = LANE_PATHS[baseLane][this.team];
+    this.pathIdx = 0;
+  }
+
+  /** Roamer rotation — pick the next lane in a stable cycle so the tank
+   *  visits all three over the course of a match. */
+  private rotateRoamLane(): void {
+    const cycle: Array<'top' | 'mid' | 'bot'> = ['top', 'mid', 'bot'];
+    // Pull current lane from path identity (cheap stand-in).
+    const current = (
+      this.path === LANE_PATHS.top[this.team] ? 'top'
+        : this.path === LANE_PATHS.bot[this.team] ? 'bot'
+          : 'mid'
+    );
+    const idx = cycle.indexOf(current);
+    const next = cycle[(idx + 1) % cycle.length];
+    this.path = LANE_PATHS[next][this.team];
+    this.pathIdx = 0;
   }
 
   get position(): THREE.Vector3 {
@@ -121,19 +221,69 @@ export class BotObject implements Unit {
   }
 
   get maxHp(): number {
-    // Mage trades a slice of HP for spell range/burst — same delta the
-    // player-side mage takes so 2v2 stays balanced.
-    const base = this.heroKind === 'mage' ? Math.round(BOT_MAX_HP * 0.92) : BOT_MAX_HP;
+    // HP scales with role — squishy casters/assassins, beefy fighters,
+    // wall-of-meat tanks. Same shape as the player-side stats but the
+    // multipliers are anchored to BOT_MAX_HP so bots stay slightly
+    // weaker than equivalent player heroes.
+    let base: number;
+    switch (this.heroKind) {
+      case 'mage': base = Math.round(BOT_MAX_HP * 0.92); break;
+      case 'fighter': base = Math.round(BOT_MAX_HP * 1.32); break;
+      case 'assassin': base = Math.round(BOT_MAX_HP * 0.85); break;
+      case 'tank': base = Math.round(BOT_MAX_HP * 1.85); break;
+      default: base = BOT_MAX_HP;
+    }
     return base + (this.level - 1) * HERO_HP_PER_LEVEL;
   }
 
   get attackDamage(): number {
-    return BOT_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL;
+    let mult: number;
+    switch (this.heroKind) {
+      case 'mage': mult = 0.85; break;
+      case 'fighter': mult = 1.15; break;
+      case 'assassin': mult = 1.3; break;
+      case 'tank': mult = 0.85; break;
+      default: mult = 1.0;
+    }
+    return Math.round(BOT_DAMAGE * mult) + (this.level - 1) * HERO_DAMAGE_PER_LEVEL;
   }
 
-  /** Auto-attack visual. Ranger fires arrows, mage flings ember bolts. */
+  /** Auto-attack visual per archetype — distinct projectile keeps the
+   *  bot's role legible at a glance. */
   private get autoAttackKind(): ProjectileKind {
-    return this.heroKind === 'mage' ? 'firebolt' : 'basic';
+    switch (this.heroKind) {
+      case 'mage': return 'firebolt';
+      case 'fighter': return 'blade';
+      case 'assassin': return 'dagger';
+      case 'tank': return 'hammer';
+      default: return 'basic';
+    }
+  }
+
+  /** Per-archetype movement speed — tanks crawl, assassins zip. */
+  private get botSpeed(): number {
+    let mult: number;
+    switch (this.heroKind) {
+      case 'mage': mult = 0.95; break;
+      case 'fighter': mult = 1.05; break;
+      case 'assassin': mult = 1.25; break;
+      case 'tank': mult = 0.85; break;
+      default: mult = 1.0;
+    }
+    return BOT_SPEED_3D * mult;
+  }
+
+  /** Per-archetype auto-attack cooldown. */
+  private get botAttackCooldown(): number {
+    let mult: number;
+    switch (this.heroKind) {
+      case 'mage': mult = 1.25; break;
+      case 'fighter': mult = 0.85; break;
+      case 'assassin': mult = 0.7; break;
+      case 'tank': mult = 1.15; break;
+      default: mult = 1.0;
+    }
+    return BOT_ATTACK_COOLDOWN_MS * mult;
   }
 
   billboardHealthBar(camera: THREE.Camera): void {
@@ -175,7 +325,7 @@ export class BotObject implements Unit {
     if (this.stunnedUntil > now) return;
 
     const slowed = this.slowUntil > now;
-    const speed = slowed ? BOT_SPEED_3D * 0.5 : BOT_SPEED_3D;
+    const speed = slowed ? this.botSpeed * 0.5 : this.botSpeed;
     const lowHp = this.hp / this.maxHp <= BOT_RETREAT_HP_FRACTION;
 
     // Channeling recall: stand still, teleport on success.
@@ -192,7 +342,7 @@ export class BotObject implements Unit {
 
     if (lowHp) {
       // Start a recall channel if safe (out of immediate danger).
-      const threat = registry.findNearestEnemy(this.team, this.position, BOT_ATTACK_RANGE + 2);
+      const threat = registry.findNearestEnemy(this.team, this.position, this.botAttackRange + 2);
       if (!threat) {
         this.recallStartedAt = now;
         return;
@@ -215,13 +365,8 @@ export class BotObject implements Unit {
     // straight past minions at the player.
     const enemy = registry.findNearestEnemy(this.team, this.position, BOT_VISION_RANGE);
     if (!enemy) {
-      // Walk toward the enemy team's base. Blue bots push toward red base
-      // and vice versa — used to be hard-coded to blue base because the bot
-      // was always red.
-      const ex = this.team === 'red' ? BASE_BLUE_X : BASE_RED_X;
-      const ez = this.team === 'red' ? BASE_BLUE_Z : BASE_RED_Z;
-      TMP_TARGET.set(ex, 0, ez);
-      this.moveToward(TMP_TARGET, deltaSec, speed, colliders);
+      // No vision — walk along the assigned lane toward enemy structures.
+      this.walkLane(deltaSec, speed, colliders);
       return;
     }
 
@@ -229,7 +374,7 @@ export class BotObject implements Unit {
     const dz = enemy.position.z - this.position.z;
     const dist = Math.hypot(dx, dz);
 
-    if (dist > BOT_ATTACK_RANGE) {
+    if (dist > this.botAttackRange) {
       this.moveToward(enemy.position, deltaSec, speed, colliders);
       // Try a long-range Q to harass while approaching.
       this.tryCastSkill(enemy, dist, now, projectiles);
@@ -237,7 +382,7 @@ export class BotObject implements Unit {
       this.group.rotation.y = Math.atan2(dx, dz);
       // In melee range — prefer skills first, fall back to auto-attack.
       const cast = this.tryCastSkill(enemy, dist, now, projectiles);
-      if (!cast && now - this.lastAttackAt >= BOT_ATTACK_COOLDOWN_MS) {
+      if (!cast && now - this.lastAttackAt >= this.botAttackCooldown) {
         projectiles.spawn(this.position, enemy.position, now, {
           team: this.team,
           damage: this.attackDamage,
@@ -250,12 +395,42 @@ export class BotObject implements Unit {
     }
   }
 
+  /**
+   * Lane-pathing fallback when nothing is in vision. The bot walks from
+   * waypoint to waypoint along the path picked at construction (or after
+   * a roam rotation). Once the path is exhausted it heads to the enemy
+   * base directly. The roamer (`tank`) cycles to a new lane when its
+   * path runs out, so it visits all three lanes in turn.
+   */
+  private walkLane(deltaSec: number, speed: number, colliders: Colliders): void {
+    if (this.pathIdx < this.path.length) {
+      const [wx, wz] = this.path[this.pathIdx];
+      TMP_TARGET.set(wx, 0, wz);
+      this.moveToward(TMP_TARGET, deltaSec, speed, colliders);
+      const dx = wx - this.position.x;
+      const dz = wz - this.position.z;
+      if (dx * dx + dz * dz < 9) this.pathIdx += 1;
+      return;
+    }
+    if (this.lane === 'roam') {
+      // Tanks rotate to the next lane and start over so they keep
+      // visiting top/mid/bot in a steady cycle.
+      this.rotateRoamLane();
+      return;
+    }
+    // Path exhausted — push the enemy base.
+    const ex = this.team === 'red' ? BASE_BLUE_X : BASE_RED_X;
+    const ez = this.team === 'red' ? BASE_BLUE_Z : BASE_RED_Z;
+    TMP_TARGET.set(ex, 0, ez);
+    this.moveToward(TMP_TARGET, deltaSec, speed, colliders);
+  }
+
   /** Pick the longest-range skill currently available and fire toward `enemy`.
    *  Returns true if a skill was cast (so the caller can skip the auto-attack).
    *  Branches by heroKind so the mage bot uses fireballs and meteors instead
    *  of the ranger's heavy/slow/stun loadout. */
   private tryCastSkill(
-    enemy: { position: THREE.Vector3 },
+    enemy: { position: THREE.Vector3 } & Partial<Unit>,
     dist: number,
     now: number,
     projectiles: ProjectileManager,
@@ -264,8 +439,169 @@ export class BotObject implements Unit {
     const dz = enemy.position.z - this.position.z;
     const len = Math.hypot(dx, dz);
     if (len < 1e-3) return false;
-    if (this.heroKind === 'mage') return this.tryCastMageSkill(enemy, dist, now, projectiles);
-    return this.tryCastRangerSkill(enemy, dist, now, projectiles);
+    switch (this.heroKind) {
+      case 'mage': return this.tryCastMageSkill(enemy, dist, now, projectiles);
+      case 'fighter': return this.tryCastFighterSkill(enemy, dist, now, projectiles);
+      case 'assassin': return this.tryCastAssassinSkill(enemy, dist, now, projectiles);
+      case 'tank': return this.tryCastTankSkill(enemy, dist, now, projectiles);
+      default: return this.tryCastRangerSkill(enemy, dist, now, projectiles);
+    }
+  }
+
+  private tryCastFighterSkill(
+    enemy: { position: THREE.Vector3 } & Partial<Unit>,
+    dist: number,
+    now: number,
+    projectiles: ProjectileManager,
+  ): boolean {
+    // ВИХРЬ — self-cast AoE stun when surrounded. Kicks in even at melee.
+    if (dist <= 4 && now - this.lastCAt >= FIGHTER_C_COOLDOWN_MS) {
+      projectiles.spawn(this.position, this.position, now, {
+        team: this.team,
+        damage: 0,
+        kind: 'vortex',
+        owner: this,
+        selfCast: true,
+        selfCastDurationMs: 700,
+        aoeRadius: FIGHTER_C_AOE_RADIUS,
+        aoeDamage: FIGHTER_C_AOE_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.5),
+        effect: { stun: { durationMs: FIGHTER_C_STUN_DURATION_MS } },
+      });
+      this.lastCAt = now;
+      return true;
+    }
+    // РЫВОК — gap-closer with AoE landing damage.
+    if (dist <= FIGHTER_E_RANGE && now - this.lastEAt >= FIGHTER_E_COOLDOWN_MS) {
+      projectiles.spawn(this.position, enemy.position, now, {
+        team: this.team,
+        damage: FIGHTER_E_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.8),
+        kind: 'blade',
+        owner: this,
+        maxDistance: FIGHTER_E_RANGE,
+        target: enemy as never,
+        aoeRadius: FIGHTER_E_AOE_RADIUS,
+        aoeDamage: FIGHTER_E_AOE_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.3),
+      });
+      this.lastEAt = now;
+      return true;
+    }
+    // СЕЧЕНИЕ — primary single-target hit + small slow.
+    if (dist <= FIGHTER_Q_RANGE && now - this.lastQAt >= FIGHTER_Q_COOLDOWN_MS) {
+      projectiles.spawn(this.position, enemy.position, now, {
+        team: this.team,
+        damage: FIGHTER_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.4,
+        kind: 'blade',
+        owner: this,
+        maxDistance: FIGHTER_Q_RANGE,
+        target: enemy as never,
+        effect: { slow: { factor: FIGHTER_Q_SLOW_FACTOR, durationMs: FIGHTER_Q_SLOW_DURATION_MS } },
+      });
+      this.lastQAt = now;
+      return true;
+    }
+    return false;
+  }
+
+  private tryCastAssassinSkill(
+    enemy: { position: THREE.Vector3 } & Partial<Unit>,
+    dist: number,
+    now: number,
+    projectiles: ProjectileManager,
+  ): boolean {
+    // КАЗНЬ — execute the wounded with the C finisher.
+    const enemyHpFrac = enemy.maxHp && enemy.hp ? enemy.hp / enemy.maxHp : 1;
+    if (
+      dist <= ASSASSIN_C_RANGE &&
+      now - this.lastCAt >= ASSASSIN_C_COOLDOWN_MS &&
+      enemyHpFrac <= 0.6
+    ) {
+      projectiles.spawn(this.position, enemy.position, now, {
+        team: this.team,
+        damage: ASSASSIN_C_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.2,
+        kind: 'shadow',
+        owner: this,
+        maxDistance: ASSASSIN_C_RANGE,
+        target: enemy as never,
+        executeHpThreshold: ASSASSIN_C_EXECUTE_HP_PCT,
+        executeBonus: ASSASSIN_C_EXECUTE_BONUS,
+      });
+      this.lastCAt = now;
+      return true;
+    }
+    // ЛЕЗВИЯ — main single-target burst.
+    if (dist <= ASSASSIN_Q_RANGE && now - this.lastQAt >= ASSASSIN_Q_COOLDOWN_MS) {
+      projectiles.spawn(this.position, enemy.position, now, {
+        team: this.team,
+        damage: ASSASSIN_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.6,
+        kind: 'dagger',
+        owner: this,
+        maxDistance: ASSASSIN_Q_RANGE,
+        target: enemy as never,
+      });
+      this.lastQAt = now;
+      return true;
+    }
+    // ТЕНЬ — dark wave with splash.
+    if (dist <= ASSASSIN_E_RANGE && now - this.lastEAt >= ASSASSIN_E_COOLDOWN_MS) {
+      projectiles.spawn(this.position, enemy.position, now, {
+        team: this.team,
+        damage: ASSASSIN_E_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL,
+        kind: 'shadow',
+        owner: this,
+        maxDistance: ASSASSIN_E_RANGE,
+        target: enemy as never,
+        aoeRadius: ASSASSIN_E_AOE_RADIUS,
+        aoeDamage: ASSASSIN_E_AOE_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.3),
+      });
+      this.lastEAt = now;
+      return true;
+    }
+    return false;
+  }
+
+  private tryCastTankSkill(
+    enemy: { position: THREE.Vector3 } & Partial<Unit>,
+    dist: number,
+    now: number,
+    projectiles: ProjectileManager,
+  ): boolean {
+    // ЩИТ — self-heal when wounded. Triggers below 65% HP.
+    if (now - this.lastEAt >= TANK_E_COOLDOWN_MS && this.hp <= this.maxHp * 0.65) {
+      this.heal(TANK_E_HEAL + (this.level - 1) * 30);
+      this.lastEAt = now;
+      return true;
+    }
+    // ЗЕМЛЕТРЯС — self-cast big AoE stun when in a fight.
+    if (dist <= 5 && now - this.lastCAt >= TANK_C_COOLDOWN_MS) {
+      projectiles.spawn(this.position, this.position, now, {
+        team: this.team,
+        damage: 0,
+        kind: 'quake',
+        owner: this,
+        selfCast: true,
+        selfCastDurationMs: 800,
+        aoeRadius: TANK_C_AOE_RADIUS,
+        aoeDamage: TANK_C_AOE_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
+        effect: { stun: { durationMs: TANK_C_STUN_DURATION_MS } },
+      });
+      this.lastCAt = now;
+      return true;
+    }
+    // УДАР — single-target hammer + 1s stun.
+    if (dist <= TANK_Q_RANGE && now - this.lastQAt >= TANK_Q_COOLDOWN_MS) {
+      projectiles.spawn(this.position, enemy.position, now, {
+        team: this.team,
+        damage: TANK_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL,
+        kind: 'hammer',
+        owner: this,
+        maxDistance: TANK_Q_RANGE,
+        target: enemy as never,
+        effect: { stun: { durationMs: TANK_Q_STUN_DURATION_MS } },
+      });
+      this.lastQAt = now;
+      return true;
+    }
+    return false;
   }
 
   private tryCastRangerSkill(
@@ -716,6 +1052,209 @@ export class BotObject implements Unit {
     staff.position.set(0.65, 0.5, 0.2);
     staff.rotation.z = -0.18;
     this.group.add(staff);
+  }
+
+  /**
+   * Compact humanoid silhouette shared by fighter / assassin / tank bots.
+   * Capsule torso + skirt-cone + helmeted head + cylindrical limbs. The
+   * three callers tint and accessorize this base.
+   */
+  private buildSimpleHumanoid(opts: {
+    primary: THREE.MeshLambertMaterial;
+    dark: THREE.MeshLambertMaterial;
+    accent: THREE.MeshLambertMaterial;
+    skin: THREE.MeshLambertMaterial;
+    helmShape?: 'cone' | 'box';
+    bulk?: number;
+  }): void {
+    this.armorMat = opts.primary;
+    this.armorDarkMat = opts.dark;
+    const bulk = opts.bulk ?? 1;
+
+    // Legs.
+    const legGeom = new THREE.CylinderGeometry(0.21 * bulk, 0.21 * bulk, 0.9, 10);
+    for (const x of [-0.24, 0.24]) {
+      const leg = new THREE.Mesh(legGeom, opts.dark);
+      leg.position.set(x * bulk, 0.45, 0);
+      this.group.add(leg);
+    }
+
+    // Torso.
+    const torso = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.5 * bulk, 0.6, 6, 12),
+      opts.primary,
+    );
+    torso.position.y = 1.55;
+    this.group.add(torso);
+
+    // Belt accent.
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.55 * bulk, 0.07, 8, 24), opts.accent);
+    belt.rotation.x = Math.PI / 2;
+    belt.position.y = 1.3;
+    this.group.add(belt);
+
+    // Arms.
+    const armGeom = new THREE.CylinderGeometry(0.13 * bulk, 0.13 * bulk, 0.7, 10);
+    for (const x of [-0.55, 0.55]) {
+      const arm = new THREE.Mesh(armGeom, opts.primary);
+      arm.position.set(x * bulk, 1.55, 0);
+      this.group.add(arm);
+    }
+
+    // Head + helm.
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.34 * bulk, 14, 14), opts.skin);
+    head.position.y = 2.18;
+    this.group.add(head);
+    if (opts.helmShape === 'box') {
+      const helm = new THREE.Mesh(
+        new THREE.BoxGeometry(0.7 * bulk, 0.4, 0.5),
+        opts.dark,
+      );
+      helm.position.y = 2.5;
+      this.group.add(helm);
+      const visor = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5 * bulk, 0.08, 0.06),
+        opts.accent,
+      );
+      visor.position.set(0, 2.43, 0.27 * bulk);
+      this.group.add(visor);
+    } else {
+      const helm = new THREE.Mesh(
+        new THREE.ConeGeometry(0.4 * bulk, 0.5, 16),
+        opts.dark,
+      );
+      helm.position.y = 2.5;
+      this.group.add(helm);
+      const helmTip = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), opts.accent);
+      helmTip.position.y = 2.78;
+      this.group.add(helmTip);
+    }
+  }
+
+  /** Боец — red/gold armour with a sword in hand. */
+  private buildFighterVisual(): void {
+    const skin = new THREE.MeshLambertMaterial({ color: 0xeec4a4 });
+    const isBlue = this.team === 'blue';
+    const primary = new THREE.MeshLambertMaterial({ color: isBlue ? 0x2a4f8a : 0x8a3a2a });
+    const dark = new THREE.MeshLambertMaterial({ color: isBlue ? 0x141a36 : 0x4a1f15 });
+    const accent = new THREE.MeshLambertMaterial({ color: 0xf3b75a });
+    this.buildSimpleHumanoid({ primary, dark, accent, skin });
+
+    // Sword on the right side.
+    const sword = new THREE.Group();
+    const blade = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.06, 1.2),
+      new THREE.MeshLambertMaterial({
+        color: 0xcfd6e0,
+        emissive: 0x6a86a8,
+        emissiveIntensity: 0.3,
+      }),
+    );
+    blade.position.z = 0.55;
+    sword.add(blade);
+    const tip = new THREE.Mesh(
+      new THREE.ConeGeometry(0.1, 0.28, 6),
+      new THREE.MeshLambertMaterial({ color: 0xeef2f8 }),
+    );
+    tip.rotation.x = Math.PI / 2;
+    tip.position.z = 1.2;
+    sword.add(tip);
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.06, 0.1), accent);
+    guard.position.z = -0.05;
+    sword.add(guard);
+    sword.position.set(0.65, 1.5, 0.25);
+    sword.rotation.z = -Math.PI / 16;
+    sword.rotation.x = -0.2;
+    this.group.add(sword);
+  }
+
+  /** Убийца — black/purple silhouette with a hood and a single dagger. */
+  private buildAssassinVisual(): void {
+    const skin = new THREE.MeshLambertMaterial({ color: 0xe2bd9c });
+    const isBlue = this.team === 'blue';
+    const primary = new THREE.MeshLambertMaterial({ color: isBlue ? 0x1c2a4a : 0x1f1530 });
+    const dark = new THREE.MeshLambertMaterial({ color: isBlue ? 0x0c1224 : 0x09080d });
+    const accent = new THREE.MeshLambertMaterial({
+      color: 0xa470ff,
+      emissive: 0x6a2fc8,
+      emissiveIntensity: 0.5,
+    });
+    this.buildSimpleHumanoid({ primary, dark, accent, skin });
+    // Hood — replaces the helm so the silhouette reads as a robe-and-cowl.
+    const hood = new THREE.Mesh(
+      new THREE.ConeGeometry(0.42, 0.7, 12),
+      dark,
+    );
+    hood.position.set(0, 2.4, -0.06);
+    hood.rotation.x = -0.18;
+    this.group.add(hood);
+
+    // Dagger on the right side.
+    const dagger = new THREE.Group();
+    const blade = new THREE.Mesh(
+      new THREE.ConeGeometry(0.07, 0.55, 6),
+      new THREE.MeshLambertMaterial({
+        color: 0xd8dde6,
+        emissive: 0x6c4ec8,
+        emissiveIntensity: 0.5,
+      }),
+    );
+    blade.rotation.x = Math.PI / 2;
+    blade.position.z = 0.3;
+    dagger.add(blade);
+    const hilt = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 0.18, 6),
+      dark,
+    );
+    hilt.rotation.x = Math.PI / 2;
+    hilt.position.z = -0.05;
+    dagger.add(hilt);
+    dagger.position.set(0.6, 1.4, 0.25);
+    dagger.rotation.z = -0.18;
+    dagger.rotation.x = -0.18;
+    this.group.add(dagger);
+  }
+
+  /** Танк — heavy plate, boxy helm, two-handed war hammer. */
+  private buildTankVisual(): void {
+    const skin = new THREE.MeshLambertMaterial({ color: 0xd9a677 });
+    const isBlue = this.team === 'blue';
+    const primary = new THREE.MeshLambertMaterial({ color: isBlue ? 0x3a5a86 : 0x6c7480 });
+    const dark = new THREE.MeshLambertMaterial({ color: isBlue ? 0x1a2440 : 0x3a4048 });
+    const accent = new THREE.MeshLambertMaterial({
+      color: 0xc99650,
+      emissive: 0x6e4e1a,
+      emissiveIntensity: 0.4,
+    });
+    this.buildSimpleHumanoid({ primary, dark, accent, skin, helmShape: 'box', bulk: 1.25 });
+    // Big rounded pauldrons.
+    for (const side of [-1, 1]) {
+      const pauldron = new THREE.Mesh(
+        new THREE.SphereGeometry(0.32, 10, 10),
+        primary,
+      );
+      pauldron.position.set(0.78 * side, 2.0, 0);
+      this.group.add(pauldron);
+    }
+    // Hammer with chunky head.
+    const hammer = new THREE.Group();
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.45, 0.4), dark);
+    head.position.z = 0.6;
+    hammer.add(head);
+    const headTrim = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 0.42), accent);
+    headTrim.position.set(0, 0.25, 0.6);
+    hammer.add(headTrim);
+    const haft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.07, 0.07, 0.85, 8),
+      new THREE.MeshLambertMaterial({ color: 0x4a2d1c }),
+    );
+    haft.rotation.x = Math.PI / 2;
+    haft.position.z = -0.05;
+    hammer.add(haft);
+    hammer.position.set(0.85, 1.4, 0.2);
+    hammer.rotation.z = -Math.PI / 14;
+    hammer.rotation.x = -0.4;
+    this.group.add(hammer);
   }
 }
 

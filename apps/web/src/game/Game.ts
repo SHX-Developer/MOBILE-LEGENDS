@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import type { MatchCombatEvent, MatchPlayerSnapshot, MatchSnapshot } from '@ml/shared';
 import {
   type HeroKind,
+  MAP_W,
+  MAP_H,
   PLAYER_RADIUS,
   PLAYER_RESPAWN_MS,
   BASE_BLUE_X,
@@ -72,9 +74,9 @@ export class Game {
   private rig: CameraRig;
   private input: InputController;
   private player: PlayerObject;
-  /** Allied AI hero in offline 2v2; null in online or when the player goes solo. */
-  private allyBot: BotObject | null = null;
-  /** Enemy AI heroes. Online has 1 (the opponent); offline has 2 (mage + ranger). */
+  /** Allied AI heroes (one per role except the player's). Empty in online mode. */
+  private allyBotsList: BotObject[] = [];
+  /** Enemy AI heroes. Online has 1 (the opponent); offline has 5 (one of each role). */
   private enemyBots: BotObject[] = [];
   private minions: MinionObject[] = [];
   private projectiles: ProjectileManager;
@@ -182,41 +184,71 @@ export class Game {
       this.registry.add(enemy);
       this.enemyBots = [enemy];
     } else {
-      // Ally archetype:
-      //   ranger → ally mage (caster support for the marksman)
-      //   mage   → ally ranger (sustained DPS for the spell-burst hero)
-      //   melee  → ally caster/marksman that complements the player's role
-      // The bot codepath only supports ranger/mage today, so we always
-      // pick from those two to round out the team.
-      const allyKind: HeroKind = (
-        playerHeroKind === 'mage' ? 'ranger'
-          : playerHeroKind === 'tank' ? 'ranger'
-            : 'mage'
-      );
-      const ally = new BotObject(
-        new THREE.Vector3(SPAWN_BLUE_X + 2.4, 0, SPAWN_BLUE_Z - 2.4),
-        allyKind,
-        'blue',
-      );
-      this.scene.add(ally.group);
-      this.registry.add(ally);
-      this.allyBot = ally;
-
-      const enemyMage = new BotObject(
-        new THREE.Vector3(SPAWN_RED_X, 0, SPAWN_RED_Z),
-        'mage',
-        'red',
-      );
-      const enemyRanger = new BotObject(
-        new THREE.Vector3(SPAWN_RED_X - 2.4, 0, SPAWN_RED_Z + 2.4),
-        'ranger',
-        'red',
-      );
-      this.scene.add(enemyMage.group);
-      this.scene.add(enemyRanger.group);
-      this.registry.add(enemyMage);
-      this.registry.add(enemyRanger);
-      this.enemyBots = [enemyMage, enemyRanger];
+      // 5v5 offline: each team fields one of every archetype except the
+      // player's own (ally team) or all five (enemy team). Lane mapping:
+      //   fighter  → top
+      //   ranger   → bot
+      //   mage     → mid
+      //   tank     → roam (cycles top/mid/bot)
+      //   assassin → jungle (mid path with extra freedom)
+      //
+      // Spawn points fan around the team base spawn so heroes don't
+      // overlap on frame zero. The collider resolution handles the
+      // small remaining overlap once they start walking.
+      const allRoles: HeroKind[] = ['fighter', 'ranger', 'mage', 'assassin', 'tank'];
+      const laneOf = (k: HeroKind): import('./entities/BotObject.js').BotLane => {
+        switch (k) {
+          case 'fighter': return 'top';
+          case 'ranger': return 'bot';
+          case 'mage': return 'mid';
+          case 'tank': return 'roam';
+          case 'assassin': return 'jungle';
+          default: return 'mid';
+        }
+      };
+      // Allies: one bot for each role the player is NOT playing.
+      const allyKinds = allRoles.filter((k) => k !== playerHeroKind);
+      this.allyBotsList = [];
+      for (let i = 0; i < allyKinds.length; i++) {
+        const kind = allyKinds[i];
+        // Fan spawns around the blue base spawn. Each ally a few units
+        // off so they don't all stack on the player.
+        const angle = (i / allyKinds.length) * Math.PI * 0.7 + Math.PI * 0.7;
+        const r = 4.5 + (i % 2) * 0.6;
+        const ally = new BotObject(
+          new THREE.Vector3(
+            SPAWN_BLUE_X + Math.cos(angle) * r,
+            0,
+            SPAWN_BLUE_Z + Math.sin(angle) * r,
+          ),
+          kind,
+          'blue',
+          laneOf(kind),
+        );
+        this.scene.add(ally.group);
+        this.registry.add(ally);
+        this.allyBotsList.push(ally);
+      }
+      // Enemies: one of every role.
+      this.enemyBots = [];
+      for (let i = 0; i < allRoles.length; i++) {
+        const kind = allRoles[i];
+        const angle = (i / allRoles.length) * Math.PI * 0.7 - Math.PI * 0.3;
+        const r = 4.5 + (i % 2) * 0.6;
+        const enemy = new BotObject(
+          new THREE.Vector3(
+            SPAWN_RED_X + Math.cos(angle) * r,
+            0,
+            SPAWN_RED_Z + Math.sin(angle) * r,
+          ),
+          kind,
+          'red',
+          laneOf(kind),
+        );
+        this.scene.add(enemy.group);
+        this.registry.add(enemy);
+        this.enemyBots.push(enemy);
+      }
     }
 
     for (const t of this.towers) this.registry.add(t);
@@ -560,6 +592,40 @@ export class Game {
     return this.online.getStatus();
   }
 
+  /**
+   * Snapshot of current world state for the minimap. Cheap to call — every
+   * frame would be fine, but 5–10 Hz is plenty since the minimap is small.
+   * Coordinates are world-space (x/z) — the React component handles the
+   * map-extent normalisation.
+   */
+  getMinimapState(): {
+    mapW: number;
+    mapH: number;
+    player: { x: number; z: number; team: 'blue' | 'red'; alive: boolean };
+    allies: Array<{ x: number; z: number; alive: boolean }>;
+    enemies: Array<{ x: number; z: number; alive: boolean }>;
+    minions: Array<{ x: number; z: number; team: 'blue' | 'red'; alive: boolean }>;
+    towers: Array<{ x: number; z: number; team: 'blue' | 'red'; alive: boolean }>;
+    bases: Array<{ x: number; z: number; team: 'blue' | 'red'; alive: boolean }>;
+  } {
+    return {
+      mapW: MAP_W,
+      mapH: MAP_H,
+      player: {
+        x: this.player.position.x,
+        z: this.player.position.z,
+        team: this.player.team,
+        alive: this.player.alive,
+      },
+      allies: this.allyBotsList.map((b) => ({ x: b.position.x, z: b.position.z, alive: b.alive })),
+      enemies: this.enemyBots.map((b) => ({ x: b.position.x, z: b.position.z, alive: b.alive })),
+      minions: this.minions.map((m) => ({ x: m.position.x, z: m.position.z, team: m.team, alive: m.alive })),
+      towers: this.towers.map((t) => ({ x: t.position.x, z: t.position.z, team: t.team, alive: t.alive })),
+      bases: this.bases.map((b) => ({ x: b.position.x, z: b.position.z, team: b.team, alive: b.alive })),
+    };
+  }
+
+
   destroy(): void {
     cancelAnimationFrame(this.rafId);
     this.resizeObserver.disconnect();
@@ -719,9 +785,9 @@ export class Game {
       this.player.respawn();
     }
 
-    if (this.allyBot) {
-      this.allyBot.respawnDelayMs = this.getRespawnDelayMs(this.allyBot.level, now);
-      this.allyBot.update(delta, now, this.registry, this.projectiles, this.colliders);
+    for (const ally of this.allyBotsList) {
+      ally.respawnDelayMs = this.getRespawnDelayMs(ally.level, now);
+      ally.update(delta, now, this.registry, this.projectiles, this.colliders);
     }
     for (const enemy of this.enemyBots) {
       enemy.respawnDelayMs = this.getRespawnDelayMs(enemy.level, now);
@@ -763,7 +829,7 @@ export class Game {
 
     const cam = this.rig.camera;
     this.player.billboardHealthBar(cam);
-    if (this.allyBot) this.allyBot.billboardHealthBar(cam);
+    for (const ally of this.allyBotsList) ally.billboardHealthBar(cam);
     for (const enemy of this.enemyBots) enemy.billboardHealthBar(cam);
     for (const m of this.minions) m.billboardHealthBar(cam);
     for (const t of this.towers) t.billboardHealthBar(cam);
@@ -1137,7 +1203,7 @@ export class Game {
     // inside its own team's base. Picking the base by team keeps online
     // mode (where the player can be on red) working without a special case.
     const heroes: Array<PlayerObject | BotObject> = [this.player];
-    if (this.allyBot) heroes.push(this.allyBot);
+    for (const ally of this.allyBotsList) heroes.push(ally);
     for (const enemy of this.enemyBots) heroes.push(enemy);
     for (const hero of heroes) {
       const isBlue = hero.team === 'blue';

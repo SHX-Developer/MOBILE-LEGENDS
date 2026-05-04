@@ -119,32 +119,35 @@ function HeroCard({
       style={{
         background: `radial-gradient(circle at 30% 25%, ${accent}33 0%, #131826 70%)`,
         border: `2px solid ${accent}`,
-        borderRadius: 18,
-        padding: '20px 22px',
+        borderRadius: 16,
+        padding: '14px 16px',
         color: '#fff',
         textAlign: 'left',
         cursor: 'pointer',
-        boxShadow: `0 10px 28px rgba(0,0,0,0.45), 0 0 0 4px ${accent}22`,
-        display: 'grid',
-        gap: 10,
-        minWidth: 240,
-        maxWidth: 280,
+        boxShadow: `0 8px 22px rgba(0,0,0,0.45), 0 0 0 3px ${accent}22`,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        // Keep cards compact so all five fit in a single scrollable row.
+        flex: '0 0 auto',
+        width: 200,
+        scrollSnapAlign: 'start',
       }}
     >
-      <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: 3, color: accent }}>{name}</div>
-      <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: '#a8b8d4' }}>
+      <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: 2.5, color: accent }}>{name}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.2, color: '#a8b8d4' }}>
         {subtitle}
       </div>
-      <div style={{ fontSize: 13, color: '#cbd5ec', lineHeight: 1.4 }}>{desc}</div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+      <div style={{ fontSize: 12, color: '#cbd5ec', lineHeight: 1.35 }}>{desc}</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 'auto' }}>
         {stats.map((s) => (
           <span
             key={s}
             style={{
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: 800,
-              letterSpacing: 0.5,
-              padding: '4px 8px',
+              letterSpacing: 0.4,
+              padding: '3px 7px',
               borderRadius: 999,
               background: 'rgba(255,255,255,0.08)',
               color: '#e7eef9',
@@ -224,10 +227,25 @@ const offlineBtn: React.CSSProperties = {
 };
 
 const pickGridStyle: React.CSSProperties = {
+  // Five hero cards laid out as a single scrollable row. Earlier this
+  // was a wrapping flex grid which clipped the 5th card off-screen on
+  // narrow / rotated viewports. Horizontal scrolling keeps every hero
+  // reachable on every device.
   display: 'flex',
-  gap: 18,
-  flexWrap: 'wrap',
-  justifyContent: 'center',
+  gap: 14,
+  alignItems: 'stretch',
+  overflowX: 'auto',
+  overflowY: 'hidden',
+  paddingBottom: 12,
+  paddingLeft: 16,
+  paddingRight: 16,
+  width: '100%',
+  maxWidth: '100%',
+  // The parent uses display:grid with placeItems:center; tell this row
+  // to stretch horizontally so the scroll surface spans the viewport.
+  justifySelf: 'stretch',
+  scrollSnapType: 'x mandatory',
+  WebkitOverflowScrolling: 'touch',
 };
 
 const teamHintStyle: React.CSSProperties = {

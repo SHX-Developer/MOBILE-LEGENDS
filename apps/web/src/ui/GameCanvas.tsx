@@ -171,6 +171,7 @@ export function GameCanvas({ mode, heroKind = 'ranger', onExit }: GameCanvasProp
         }}
       >
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+        <Minimap getGame={getGame} />
         <MatchTimer elapsedMs={matchMs} respawnMs={respawnMs} />
         {mode === 'online' && <OnlineStatus status={onlineStatus} />}
         {/* Invisible safety nets around the controls — empty taps inside
@@ -602,6 +603,145 @@ function OnlineStatus({ status }: { status: string }) {
     </div>
   );
 }
+
+/**
+ * Top-down minimap pinned to the top-left of the landscape view. Polls the
+ * game's world snapshot ~6 Hz and re-renders dots for every alive hero,
+ * minion, tower and base. Cheap (small SVG, low refresh rate) and lets the
+ * player track lane pressure without panning the camera.
+ */
+const Minimap = memo(function Minimap({ getGame }: { getGame: () => Game | null }) {
+  type Snap = ReturnType<NonNullable<ReturnType<typeof getGame>>['getMinimapState']>;
+  const [snap, setSnap] = useState<Snap | null>(null);
+  useEffect(() => {
+    const tick = () => {
+      const g = getGame();
+      if (!g) return;
+      setSnap(g.getMinimapState());
+    };
+    tick();
+    const handle = window.setInterval(tick, 160);
+    return () => window.clearInterval(handle);
+  }, [getGame]);
+  if (!snap) return null;
+  const size = 132;
+  const padding = 6;
+  const inner = size - padding * 2;
+  const norm = (x: number, z: number): [number, number] => {
+    const nx = (x + snap.mapW / 2) / snap.mapW;
+    // Flip the z axis so blue base (bottom-left of world) ends up at the
+    // BOTTOM-LEFT of the minimap, matching what the player sees in the
+    // tactical camera view.
+    const nz = 1 - (z + snap.mapH / 2) / snap.mapH;
+    return [padding + nx * inner, padding + nz * inner];
+  };
+  const blueColor = '#5fc7ff';
+  const redColor = '#ff6868';
+  const dim = (alive: boolean) => (alive ? 1 : 0.25);
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 14,
+        left: 14,
+        width: size,
+        height: size,
+        zIndex: 10,
+        background: 'rgba(8, 12, 18, 0.78)',
+        border: '1px solid rgba(255, 255, 255, 0.18)',
+        borderRadius: 10,
+        boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
+        pointerEvents: 'none',
+        overflow: 'hidden',
+      }}
+    >
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {/* Diagonal lane hint — single stroke from blue base to red base. */}
+        {(() => {
+          const [bx, bz] = norm(-snap.mapW / 2 * 0.4, snap.mapH / 2 * 0.4);
+          const [rx, rz] = norm(snap.mapW / 2 * 0.4, -snap.mapH / 2 * 0.4);
+          return (
+            <line
+              x1={bx}
+              y1={bz}
+              x2={rx}
+              y2={rz}
+              stroke="rgba(220, 200, 140, 0.18)"
+              strokeWidth={2}
+            />
+          );
+        })()}
+        {/* Bases — square markers, biggest. */}
+        {snap.bases.map((b, i) => {
+          const [x, y] = norm(b.x, b.z);
+          const c = b.team === 'blue' ? blueColor : redColor;
+          return (
+            <rect
+              key={`base-${i}`}
+              x={x - 5}
+              y={y - 5}
+              width={10}
+              height={10}
+              fill={c}
+              opacity={dim(b.alive)}
+              stroke="rgba(0,0,0,0.6)"
+              strokeWidth={1}
+            />
+          );
+        })}
+        {/* Towers — small squares. */}
+        {snap.towers.map((t, i) => {
+          const [x, y] = norm(t.x, t.z);
+          const c = t.team === 'blue' ? blueColor : redColor;
+          return (
+            <rect
+              key={`tower-${i}`}
+              x={x - 2.5}
+              y={y - 2.5}
+              width={5}
+              height={5}
+              fill={c}
+              opacity={dim(t.alive)}
+            />
+          );
+        })}
+        {/* Minions — tiny dots. */}
+        {snap.minions.map((m, i) => {
+          if (!m.alive) return null;
+          const [x, y] = norm(m.x, m.z);
+          const c = m.team === 'blue' ? blueColor : redColor;
+          return <circle key={`minion-${i}`} cx={x} cy={y} r={1.6} fill={c} opacity={0.85} />;
+        })}
+        {/* Allies — slightly bigger green dots. */}
+        {snap.allies.map((a, i) => {
+          if (!a.alive) return null;
+          const [x, y] = norm(a.x, a.z);
+          return <circle key={`ally-${i}`} cx={x} cy={y} r={3} fill="#7be38e" opacity={dim(a.alive)} />;
+        })}
+        {/* Enemies — red dots. */}
+        {snap.enemies.map((e, i) => {
+          if (!e.alive) return null;
+          const [x, y] = norm(e.x, e.z);
+          return <circle key={`enemy-${i}`} cx={x} cy={y} r={3} fill="#ff7373" opacity={dim(e.alive)} />;
+        })}
+        {/* Player — bright bordered dot, drawn last so it sits on top. */}
+        {snap.player.alive && (() => {
+          const [x, y] = norm(snap.player.x, snap.player.z);
+          return (
+            <circle
+              cx={x}
+              cy={y}
+              r={4.5}
+              fill="#ffe066"
+              stroke="rgba(0,0,0,0.6)"
+              strokeWidth={1}
+            />
+          );
+        })()}
+      </svg>
+    </div>
+  );
+});
 
 function MatchTimer({ elapsedMs, respawnMs }: { elapsedMs: number; respawnMs: number }) {
   return (
