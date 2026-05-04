@@ -177,6 +177,7 @@ export function GameCanvas({ mode, heroKind = 'ranger', onExit }: GameCanvasProp
       >
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
         <Minimap getGame={getGame} />
+        <DamageVignette getGame={getGame} />
         <MatchTimer elapsedMs={matchMs} respawnMs={respawnMs} />
         {mode === 'online' && <OnlineStatus status={onlineStatus} />}
         {/* Invisible safety nets around the controls — empty taps inside
@@ -868,6 +869,62 @@ const Minimap = memo(function Minimap({ getGame }: { getGame: () => Game | null 
         })()}
       </svg>
     </div>
+  );
+});
+
+/**
+ * Red-edge "you got hit" vignette. Polls the player's HP each tick; when
+ * it ticks down, briefly pulses the overlay opacity. Pure CSS — a
+ * radial gradient that fades dark red from the screen edges inward.
+ * Cheaper than a render-to-target post-process and reads exactly the
+ * same to the player.
+ */
+const DamageVignette = memo(function DamageVignette({ getGame }: { getGame: () => Game | null }) {
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    let lastHp = -1;
+    let fadeUntil = 0;
+    const tick = () => {
+      const g = getGame();
+      const overlay = overlayRef.current;
+      if (!g || !overlay) return;
+      const { hp, maxHp } = g.getPlayerHp();
+      if (lastHp >= 0 && hp < lastHp) {
+        // Bigger flash for bigger hits, capped so chip damage still
+        // pulses faintly.
+        const lostFrac = (lastHp - hp) / Math.max(1, maxHp);
+        const peak = Math.min(0.55, 0.18 + lostFrac * 1.8);
+        overlay.style.opacity = String(peak);
+        fadeUntil = performance.now() + 380;
+      }
+      lastHp = hp;
+      const now = performance.now();
+      if (fadeUntil > 0 && now < fadeUntil) {
+        const remaining = (fadeUntil - now) / 380;
+        overlay.style.opacity = String(parseFloat(overlay.style.opacity || '0') * remaining);
+      } else if (fadeUntil > 0) {
+        overlay.style.opacity = '0';
+        fadeUntil = 0;
+      }
+    };
+    const handle = window.setInterval(tick, 60);
+    return () => window.clearInterval(handle);
+  }, [getGame]);
+  return (
+    <div
+      ref={overlayRef}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        // Dark red ring fading inward — the centre stays clear so the
+        // hero stays visible during the flash.
+        background: 'radial-gradient(circle at center, transparent 38%, rgba(190, 30, 30, 0.85) 100%)',
+        pointerEvents: 'none',
+        opacity: 0,
+        transition: 'opacity 90ms linear',
+        zIndex: 6,
+      }}
+    />
   );
 });
 

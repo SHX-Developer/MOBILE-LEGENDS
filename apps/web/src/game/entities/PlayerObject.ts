@@ -705,10 +705,19 @@ export class PlayerObject implements Unit {
     this.attackLockUntil = now + 220;
   }
 
+  private idlePhase = 0;
   private animateGait(speed: number, deltaSec: number, now: number): void {
     const drawing = now < this.attackLockUntil;
     const k = Math.min(1, deltaSec * 14);
     const lerp = (a: number, b: number) => a + (b - a) * k;
+    // Idle bob — small vertical wobble when not moving / casting.
+    // Reset when running so it doesn't stack with the gait animation.
+    if (!drawing && speed < 0.3) {
+      this.idlePhase += deltaSec * 2.4;
+      if (this.bodyRoot) this.bodyRoot.position.y = Math.sin(this.idlePhase) * 0.05;
+    } else if (this.bodyRoot) {
+      this.bodyRoot.position.y = lerp(this.bodyRoot.position.y, 0);
+    }
     if (drawing) {
       // Time within the 220ms windup, normalised 0..1.
       const t = 1 - (this.attackLockUntil - now) / 220;

@@ -133,6 +133,8 @@ interface Projectile {
   /** Forces every enemy caught by a self-cast AoE to target `owner` for
    *  the given duration. Used by the bulwark's Taunt. */
   tauntDurationMs?: number;
+  /** Throttle for the trail-particle stream — last emission timestamp. */
+  lastTrailAt?: number;
 }
 
 interface Variant {
@@ -302,6 +304,16 @@ export class ProjectileManager {
       p.mesh.position.x += stepX;
       p.mesh.position.z += stepZ;
       p.distanceTravelled += Math.hypot(stepX, stepZ);
+
+      // Trail particle throttle — drop a fading dot every ~80ms behind the
+      // projectile so the eye reads motion. Cheap (single sphere mesh,
+      // 200ms lifetime) and capped by the global FX_BUDGET.
+      if (!p.lastTrailAt || now - p.lastTrailAt > 80) {
+        p.lastTrailAt = now;
+        if (this.fx.length <= FX_BUDGET) {
+          this.spawnTrailParticle(p.mesh.position, p.team);
+        }
+      }
 
       if (!p.visualOnly) {
         const hit = registry.findHit(p.mesh.position, PROJECTILE_RADIUS, p.team);
@@ -497,11 +509,28 @@ export class ProjectileManager {
     this.projectiles.splice(index, 1);
   }
 
-  /** Brief flash + scatter at the impact point. Pure FX, no damage.
-   *  Skipped when too many bursts are already in flight to keep FPS up. */
+  /** Punchy impact flash — central white core, expanding team-coloured
+   *  ring, and a fan of speck shrapnel. Skipped when the FX budget is
+   *  saturated to keep frame rate stable. */
   spawnHitBurst(at: THREE.Vector3, team: Team): void {
     if (this.fx.length > FX_BUDGET) return;
     const color = team === 'blue' ? 0x9fd8ff : 0xffb37a;
+    const now = performance.now();
+
+    // Central white flash — sells the hit instantly, before the ring
+    // even starts expanding.
+    const flashMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 1,
+      depthWrite: false,
+    });
+    const flash = new THREE.Mesh(HIT_FLASH_GEOM, flashMat);
+    flash.position.set(at.x, 1.1, at.z);
+    this.scene.add(flash);
+    this.fx.push({ mesh: flash, spawnedAt: now, kind: 'flash', durationMs: 160 });
+
+    // Expanding team-coloured ring on the ground.
     const ringMat = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -513,9 +542,11 @@ export class ProjectileManager {
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(at.x, 1.0, at.z);
     this.scene.add(ring);
-    this.fx.push({ mesh: ring, spawnedAt: performance.now(), kind: 'ring', durationMs: 260 });
+    this.fx.push({ mesh: ring, spawnedAt: now, kind: 'ring', durationMs: 320 });
 
-    for (let i = 0; i < 6; i++) {
+    // Shrapnel — bumped from 6 to 10 pieces with more spread for a
+    // beefier impact read.
+    for (let i = 0; i < 10; i++) {
       const speckMat = new THREE.MeshBasicMaterial({
         color,
         transparent: true,
@@ -524,17 +555,38 @@ export class ProjectileManager {
       });
       const speck = new THREE.Mesh(HIT_SPECK_GEOM, speckMat);
       speck.position.set(at.x, 1.2, at.z);
-      const a = (Math.PI * 2 * i) / 6 + Math.random() * 0.4;
-      const v = new THREE.Vector3(Math.cos(a) * 5, 2 + Math.random() * 2, Math.sin(a) * 5);
+      const a = (Math.PI * 2 * i) / 10 + Math.random() * 0.3;
+      const speed = 5 + Math.random() * 3;
+      const v = new THREE.Vector3(Math.cos(a) * speed, 2.5 + Math.random() * 2.5, Math.sin(a) * speed);
       this.scene.add(speck);
       this.fx.push({
         mesh: speck,
-        spawnedAt: performance.now(),
+        spawnedAt: now,
         kind: 'speck',
-        durationMs: 380,
+        durationMs: 420,
         velocity: v,
       });
     }
+  }
+
+  /** Tiny fading dot dropped behind a moving projectile. Team-coloured. */
+  private spawnTrailParticle(at: THREE.Vector3, team: Team): void {
+    const color = team === 'blue' ? 0x9fd8ff : 0xffb37a;
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.7,
+      depthWrite: false,
+    });
+    const dot = new THREE.Mesh(TRAIL_GEOM, mat);
+    dot.position.set(at.x, at.y, at.z);
+    this.scene.add(dot);
+    this.fx.push({
+      mesh: dot,
+      spawnedAt: performance.now(),
+      kind: 'trail',
+      durationMs: 220,
+    });
   }
 
   /** Quick flash at the muzzle when a hero fires. */
@@ -577,6 +629,11 @@ export class ProjectileManager {
         f.mesh.position.z += f.velocity.z * deltaSec;
         f.velocity.y -= 9 * deltaSec;
         mat.opacity = 1 - t;
+      } else if (f.kind === 'trail') {
+        // Stays put, shrinks slightly while fading. Cheap motion-blur.
+        const s = 1 - t * 0.4;
+        f.mesh.scale.set(s, s, s);
+        mat.opacity = (1 - t) * 0.65;
       } else {
         const s = 1 + t * 1.5;
         f.mesh.scale.set(s, s, s);
@@ -589,7 +646,7 @@ export class ProjectileManager {
 interface FxBurst {
   mesh: THREE.Object3D;
   spawnedAt: number;
-  kind: 'ring' | 'speck' | 'flash';
+  kind: 'ring' | 'speck' | 'flash' | 'trail';
   durationMs: number;
   velocity?: THREE.Vector3;
 }
@@ -608,10 +665,14 @@ function applyDef(raw: number, type: DamageType, unit: Unit): number {
 }
 
 // FX cap — beyond this many concurrent sprites we drop new bursts entirely.
-const FX_BUDGET = 80;
+// Bumped after adding bullet trails since trail dots are the chattiest
+// emitter; budget cap throttles automatically when it fills up.
+const FX_BUDGET = 140;
 const HIT_RING_GEOM = new THREE.RingGeometry(0.1, 0.55, 18);
 const HIT_SPECK_GEOM = new THREE.SphereGeometry(0.13, 6, 6);
 const MUZZLE_FLASH_GEOM = new THREE.SphereGeometry(0.28, 8, 8);
+const TRAIL_GEOM = new THREE.SphereGeometry(0.18, 6, 6);
+const HIT_FLASH_GEOM = new THREE.SphereGeometry(0.42, 10, 10);
 
 // --- Cached projectile assets ---------------------------------------------
 // Geometries and materials are immutable per kind, so allocate them once

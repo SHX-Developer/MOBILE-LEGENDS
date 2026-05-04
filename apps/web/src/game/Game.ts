@@ -615,6 +615,11 @@ export class Game {
     return this.online.getStatus();
   }
 
+  /** Player HP snapshot for the HUD damage vignette / status panels. */
+  getPlayerHp(): { hp: number; maxHp: number } {
+    return { hp: this.player.hp, maxHp: this.player.maxHp };
+  }
+
   /**
    * Hold-and-drag minimap focus. The Minimap component drives this with
    * three calls: beginPeek/updatePeek/endPeek. While the player is
@@ -867,8 +872,15 @@ export class Game {
     this.cleanupMinions(now);
     this.floatingText.update(now);
 
-    // Haptic + thump on damage taken (covers bot, tower and base attacks alike).
+    // Haptic + thump + screen shake on damage taken (covers bot, tower
+    // and base attacks alike). Shake amount scales with the size of the
+    // hit so a meteor lands harder than a minion swing.
     if (this.player.alive && this.player.hp < this.lastPlayerHp) {
+      const lostFrac = (this.lastPlayerHp - this.player.hp) / Math.max(1, this.player.maxHp);
+      // Floor at a small shake even for chip damage; big spike caps at
+      // ~0.55 so massive bursts don't yeet the camera off-screen.
+      const shakeAmp = Math.min(0.55, 0.18 + lostFrac * 1.8);
+      this.rig.shake(shakeAmp);
       Haptics.takeDamage();
       Sounds.takeDamage();
       // Damage breaks the recall channel.
@@ -1148,10 +1160,14 @@ export class Game {
       this.player.applySelfBuff(cfg.selfBuff, now);
       // Reuse the heal ring as the visual for any self-buff cast.
       this.spawnHealRing(this.player.position, 700);
+      // Same windup pose as auto-attack so the body reacts even on
+      // selfish skills like Focus Mode / Rage / Iron Wall / Invis.
+      this.player.triggerAttackPose(now);
       Sounds.skill(soundId, this.player.heroKind);
       return now;
     }
     this.player.faceDirection(dirX, dirZ);
+    this.player.triggerAttackPose(now);
     if (cfg.teleport) {
       // Move the player along the aim vector by `range` units, clamped by
       // colliders (so the dash can't punch through walls). After landing,
