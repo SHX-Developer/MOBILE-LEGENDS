@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import {
   type HeroKind,
+  ASSASSIN_ATTACK_COOLDOWN_MS,
+  ASSASSIN_ATTACK_DAMAGE,
+  ASSASSIN_ATTACK_RANGE,
   ASSASSIN_C_COOLDOWN_MS,
   ASSASSIN_C_DAMAGE,
   ASSASSIN_C_EXECUTE_BONUS,
@@ -11,23 +14,25 @@ import {
   ASSASSIN_E_COOLDOWN_MS,
   ASSASSIN_E_DAMAGE,
   ASSASSIN_E_RANGE,
+  ASSASSIN_MAX_HP,
   ASSASSIN_Q_COOLDOWN_MS,
   ASSASSIN_Q_DAMAGE,
   ASSASSIN_Q_RANGE,
-  BOT_ATTACK_COOLDOWN_MS,
-  BOT_ATTACK_RANGE,
-  BOT_DAMAGE,
-  BOT_MAX_HP,
+  ASSASSIN_SPEED_3D,
   BOT_RADIUS,
   BOT_REGEN_PER_SEC,
   BOT_RESPAWN_MS,
   BOT_RETREAT_HP_FRACTION,
-  BOT_SPEED_3D,
   BOT_VISION_RANGE,
   BASE_BLUE_X,
   BASE_BLUE_Z,
   BASE_RED_X,
   BASE_RED_Z,
+  FIGHTER_ATTACK_COOLDOWN_MS,
+  FIGHTER_ATTACK_DAMAGE,
+  FIGHTER_ATTACK_RANGE,
+  FIGHTER_MAX_HP,
+  FIGHTER_SPEED_3D,
   FIGHTER_C_AOE_DAMAGE,
   FIGHTER_C_AOE_RADIUS,
   FIGHTER_C_COOLDOWN_MS,
@@ -44,6 +49,9 @@ import {
   HERO_MAX_LEVEL,
   HERO_XP_LEVEL_GROWTH,
   LANE_PATHS,
+  MAGE_ATTACK_COOLDOWN_MS,
+  MAGE_ATTACK_DAMAGE,
+  MAGE_ATTACK_RANGE,
   MAGE_C_AOE_DAMAGE,
   MAGE_C_AOE_RADIUS,
   MAGE_C_COOLDOWN_MS,
@@ -55,9 +63,16 @@ import {
   MAGE_E_RANGE,
   MAGE_E_SLOW_DURATION_MS,
   MAGE_E_SLOW_FACTOR,
+  MAGE_MAX_HP,
   MAGE_Q_COOLDOWN_MS,
   MAGE_Q_DAMAGE,
   MAGE_Q_RANGE,
+  MAGE_SPEED_3D,
+  PLAYER_ATTACK_COOLDOWN_MS,
+  PLAYER_ATTACK_DAMAGE,
+  PLAYER_ATTACK_RANGE,
+  PLAYER_MAX_HP,
+  PLAYER_SPEED_3D,
   RECALL_CHANNEL_MS,
   SKILL_C_COOLDOWN_MS,
   SKILL_C_DAMAGE,
@@ -71,15 +86,20 @@ import {
   SKILL_Q_COOLDOWN_MS,
   SKILL_Q_DAMAGE,
   SKILL_Q_RANGE,
+  TANK_ATTACK_COOLDOWN_MS,
+  TANK_ATTACK_DAMAGE,
+  TANK_ATTACK_RANGE,
   TANK_C_AOE_DAMAGE,
   TANK_C_AOE_RADIUS,
   TANK_C_COOLDOWN_MS,
   TANK_C_STUN_DURATION_MS,
   TANK_E_COOLDOWN_MS,
+  TANK_MAX_HP,
   TANK_Q_COOLDOWN_MS,
   TANK_Q_DAMAGE,
   TANK_Q_RANGE,
   TANK_Q_STUN_DURATION_MS,
+  TANK_SPEED_3D,
 } from '../constants.js';
 import type { Unit, Team } from '../combat/Unit.js';
 import type { UnitRegistry } from '../combat/UnitRegistry.js';
@@ -114,7 +134,7 @@ export class BotObject implements Unit {
   team: Team;
   readonly radius = BOT_RADIUS;
   readonly xpReward = HERO_KILL_XP_REWARD;
-  hp = BOT_MAX_HP;
+  hp = PLAYER_MAX_HP;
   alive = true;
   slowUntil = 0;
   stunnedUntil = 0;
@@ -172,14 +192,10 @@ export class BotObject implements Unit {
     this.group.add(this.healthBar.group);
     this.refreshLevelBadge();
     this.healthBar.setHp(this.hp, this.maxHp);
-    // Auto-attack range — used in pursue/attack thresholds. Cached here so
-    // the AI loop doesn't re-switch on heroKind every tick.
-    this.botAttackRange = (
-      heroKind === 'mage' ? 8.5
-        : heroKind === 'assassin' ? 4.5
-          : heroKind === 'fighter' || heroKind === 'tank' ? 4
-            : BOT_ATTACK_RANGE
-    );
+    // Auto-attack range mirrors the player-side range for the same role —
+    // see botAttackRangeFor. Cached on construction so the AI loop doesn't
+    // re-switch on heroKind every tick.
+    this.botAttackRange = botAttackRangeFor(heroKind);
   }
 
   /** Cached attack range — see constructor. */
@@ -215,31 +231,31 @@ export class BotObject implements Unit {
   }
 
   get maxHp(): number {
-    // HP scales with role — squishy casters/assassins, beefy fighters,
-    // wall-of-meat tanks. Same shape as the player-side stats but the
-    // multipliers are anchored to BOT_MAX_HP so bots stay slightly
-    // weaker than equivalent player heroes.
+    // Bot HP per role mirrors the player-side stats exactly so a bot
+    // ranger fights a player ranger on equal footing — no more sandbagged
+    // multipliers. Level scaling stays the same.
     let base: number;
     switch (this.heroKind) {
-      case 'mage': base = Math.round(BOT_MAX_HP * 0.92); break;
-      case 'fighter': base = Math.round(BOT_MAX_HP * 1.32); break;
-      case 'assassin': base = Math.round(BOT_MAX_HP * 0.85); break;
-      case 'tank': base = Math.round(BOT_MAX_HP * 1.85); break;
-      default: base = BOT_MAX_HP;
+      case 'mage': base = MAGE_MAX_HP; break;
+      case 'fighter': base = FIGHTER_MAX_HP; break;
+      case 'assassin': base = ASSASSIN_MAX_HP; break;
+      case 'tank': base = TANK_MAX_HP; break;
+      default: base = PLAYER_MAX_HP;
     }
     return base + (this.level - 1) * HERO_HP_PER_LEVEL;
   }
 
   get attackDamage(): number {
-    let mult: number;
+    // Same role-parity rule as maxHp.
+    let base: number;
     switch (this.heroKind) {
-      case 'mage': mult = 0.85; break;
-      case 'fighter': mult = 1.15; break;
-      case 'assassin': mult = 1.3; break;
-      case 'tank': mult = 0.85; break;
-      default: mult = 1.0;
+      case 'mage': base = MAGE_ATTACK_DAMAGE; break;
+      case 'fighter': base = FIGHTER_ATTACK_DAMAGE; break;
+      case 'assassin': base = ASSASSIN_ATTACK_DAMAGE; break;
+      case 'tank': base = TANK_ATTACK_DAMAGE; break;
+      default: base = PLAYER_ATTACK_DAMAGE;
     }
-    return Math.round(BOT_DAMAGE * mult) + (this.level - 1) * HERO_DAMAGE_PER_LEVEL;
+    return base + (this.level - 1) * HERO_DAMAGE_PER_LEVEL;
   }
 
   /** Auto-attack visual per archetype — distinct projectile keeps the
@@ -254,30 +270,26 @@ export class BotObject implements Unit {
     }
   }
 
-  /** Per-archetype movement speed — tanks crawl, assassins zip. */
+  /** Per-role movement speed — same value the player-side hero would use. */
   private get botSpeed(): number {
-    let mult: number;
     switch (this.heroKind) {
-      case 'mage': mult = 0.95; break;
-      case 'fighter': mult = 1.05; break;
-      case 'assassin': mult = 1.25; break;
-      case 'tank': mult = 0.85; break;
-      default: mult = 1.0;
+      case 'mage': return MAGE_SPEED_3D;
+      case 'fighter': return FIGHTER_SPEED_3D;
+      case 'assassin': return ASSASSIN_SPEED_3D;
+      case 'tank': return TANK_SPEED_3D;
+      default: return PLAYER_SPEED_3D;
     }
-    return BOT_SPEED_3D * mult;
   }
 
-  /** Per-archetype auto-attack cooldown. */
+  /** Per-role auto-attack cooldown — same value the player-side hero uses. */
   private get botAttackCooldown(): number {
-    let mult: number;
     switch (this.heroKind) {
-      case 'mage': mult = 1.25; break;
-      case 'fighter': mult = 0.85; break;
-      case 'assassin': mult = 0.7; break;
-      case 'tank': mult = 1.15; break;
-      default: mult = 1.0;
+      case 'mage': return MAGE_ATTACK_COOLDOWN_MS;
+      case 'fighter': return FIGHTER_ATTACK_COOLDOWN_MS;
+      case 'assassin': return ASSASSIN_ATTACK_COOLDOWN_MS;
+      case 'tank': return TANK_ATTACK_COOLDOWN_MS;
+      default: return PLAYER_ATTACK_COOLDOWN_MS;
     }
-    return BOT_ATTACK_COOLDOWN_MS * mult;
   }
 
   billboardHealthBar(camera: THREE.Camera): void {
@@ -1245,6 +1257,17 @@ export class BotObject implements Unit {
 
 function distTo(ax: number, az: number, bx: number, bz: number): number {
   return Math.hypot(bx - ax, bz - az);
+}
+
+/** Auto-attack range matching the player-side hero of the same role. */
+function botAttackRangeFor(kind: HeroKind): number {
+  switch (kind) {
+    case 'mage': return MAGE_ATTACK_RANGE;
+    case 'fighter': return FIGHTER_ATTACK_RANGE;
+    case 'assassin': return ASSASSIN_ATTACK_RANGE;
+    case 'tank': return TANK_ATTACK_RANGE;
+    default: return PLAYER_ATTACK_RANGE;
+  }
 }
 
 function buildBow(

@@ -675,14 +675,41 @@ const Minimap = memo(function Minimap({ getGame }: { getGame: () => Game | null 
       onPointerDown={(e) => {
         e.preventDefault();
         e.stopPropagation();
+        e.currentTarget.setPointerCapture(e.pointerId);
         const rect = e.currentTarget.getBoundingClientRect();
         const lx = e.clientX - rect.left;
         const ly = e.clientY - rect.top;
-        // Ignore taps in the surrounding padding/border area.
-        if (lx < padding || lx > padding + inner) return;
-        if (ly < padding || ly > padding + inner) return;
-        const [wx, wz] = minimapToWorld(lx, ly);
-        getGame()?.peekAt(wx, wz);
+        const cx = Math.min(Math.max(lx, padding), padding + inner);
+        const cy = Math.min(Math.max(ly, padding), padding + inner);
+        const [wx, wz] = minimapToWorld(cx, cy);
+        getGame()?.beginPeek(wx, wz);
+      }}
+      onPointerMove={(e) => {
+        // Pointer is captured on down, so we get moves all the way to
+        // release even if the finger leaves the minimap rectangle.
+        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const lx = e.clientX - rect.left;
+        const ly = e.clientY - rect.top;
+        // Clamp so dragging off the edge keeps the camera at the corner
+        // instead of snapping back as soon as the finger leaves the
+        // minimap rect.
+        const cx = Math.min(Math.max(lx, padding), padding + inner);
+        const cy = Math.min(Math.max(ly, padding), padding + inner);
+        const [wx, wz] = minimapToWorld(cx, cy);
+        getGame()?.updatePeek(wx, wz);
+      }}
+      onPointerUp={(e) => {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+        getGame()?.endPeek();
+      }}
+      onPointerCancel={(e) => {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+        getGame()?.endPeek();
       }}
       style={{
         position: 'absolute',

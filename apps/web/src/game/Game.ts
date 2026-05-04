@@ -592,20 +592,25 @@ export class Game {
     return this.online.getStatus();
   }
 
-  /** Tap-on-minimap focus: ease the camera over to the world point and
-   *  spring back to the player after a couple seconds. Reuses the rig's
-   *  setLookOffset so this plays nicely with the regular drag-pan. */
-  peekAt(worldX: number, worldZ: number): void {
+  /**
+   * Hold-and-drag minimap focus. The Minimap component drives this with
+   * three calls: beginPeek/updatePeek/endPeek. While the player is
+   * holding/dragging, the camera offset tracks the touch in real time;
+   * letting go snaps the camera straight back to the player. Reuses the
+   * rig's setLookOffset so it composes with the regular drag-pan
+   * gesture on the canvas.
+   */
+  beginPeek(worldX: number, worldZ: number): void {
+    this.updatePeek(worldX, worldZ);
+  }
+  updatePeek(worldX: number, worldZ: number): void {
     const dx = worldX - this.player.position.x;
     const dz = worldZ - this.player.position.z;
     this.rig.setLookOffset(dx, dz);
-    if (this.peekTimerId !== 0) window.clearTimeout(this.peekTimerId);
-    this.peekTimerId = window.setTimeout(() => {
-      this.rig.setLookOffset(0, 0);
-      this.peekTimerId = 0;
-    }, 2200);
   }
-  private peekTimerId = 0;
+  endPeek(): void {
+    this.rig.setLookOffset(0, 0);
+  }
 
   /**
    * Snapshot of current world state for the minimap. Cheap to call — every

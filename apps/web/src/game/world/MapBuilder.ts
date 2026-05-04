@@ -56,6 +56,10 @@ export function buildMap(scene: THREE.Scene): MapEntities {
   const towers = buildTowers(scene, colliders);
   buildJungleWalls(scene, colliders);
   buildJungleCamps(scene);
+  buildArenaCenter(scene, colliders);
+  buildTowerPlazas(scene, towers);
+  buildBaseBanners(scene, bases);
+  buildRunePathMarkers(scene);
   buildLandmarks(scene, colliders);
   return { colliders, towers, bases };
 }
@@ -794,4 +798,294 @@ function addCornerMarker(scene: THREE.Scene, cx: number, cz: number, color: numb
   ring.rotation.x = -Math.PI / 2;
   ring.position.set(cx, 0.072, cz);
   scene.add(ring);
+}
+
+// --- MLBB-style decorations ----------------------------------------------
+// These functions add visual interest in the gaps between gameplay
+// landmarks. None of them register colliders by default — the player
+// should never get stuck on a banner.
+
+/**
+ * Central "Lord pit" arena. A sunk stone disc with four pillars and
+ * glowing braziers around the perimeter — same vibe as the boss arena
+ * in MLBB. Sits where the diagonal lanes cross. Pillars register tight
+ * colliders so the player can ring them.
+ */
+function buildArenaCenter(scene: THREE.Scene, colliders: Colliders): void {
+  const stone = new THREE.MeshLambertMaterial({ color: 0x6f6a5c, flatShading: true });
+  const stoneDark = new THREE.MeshLambertMaterial({ color: 0x46412f, flatShading: true });
+  const trim = new THREE.MeshLambertMaterial({
+    color: 0xc99650,
+    emissive: 0x6e4e1a,
+    emissiveIntensity: 0.4,
+  });
+  const ember = new THREE.MeshLambertMaterial({
+    color: 0xffb240,
+    emissive: 0xff5520,
+    emissiveIntensity: 1.6,
+  });
+  const emberGlow = new THREE.MeshBasicMaterial({
+    color: 0xff7a2a,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+  });
+
+  // Stone disc — slightly raised so it reads as a platform.
+  const disc = new THREE.Mesh(
+    new THREE.CylinderGeometry(7.2, 7.6, 0.28, 36),
+    stone,
+  );
+  disc.position.set(0, 0.14, 0);
+  scene.add(disc);
+  // Ringed accent.
+  const discTrim = new THREE.Mesh(
+    new THREE.TorusGeometry(6.8, 0.18, 8, 36),
+    trim,
+  );
+  discTrim.rotation.x = Math.PI / 2;
+  discTrim.position.set(0, 0.32, 0);
+  scene.add(discTrim);
+  // Inner glyph circle — rune-y feel.
+  const glyph = new THREE.Mesh(
+    new THREE.RingGeometry(3.6, 4.2, 48),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd17a,
+      transparent: true,
+      opacity: 0.4,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  glyph.rotation.x = -Math.PI / 2;
+  glyph.position.set(0, 0.31, 0);
+  scene.add(glyph);
+  // Inner radial lines — a tiny spoke pattern that catches the eye.
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const spoke = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.12, 1.4),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd17a,
+        transparent: true,
+        opacity: 0.45,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    spoke.rotation.x = -Math.PI / 2;
+    spoke.rotation.z = a;
+    spoke.position.set(Math.cos(a) * 2.7, 0.31, Math.sin(a) * 2.7);
+    scene.add(spoke);
+  }
+
+  // Four corner pillars.
+  for (let i = 0; i < 4; i++) {
+    const a = i * (Math.PI / 2) + Math.PI / 4;
+    const px = Math.cos(a) * 5.4;
+    const pz = Math.sin(a) * 5.4;
+    const pillar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.55, 3.2, 10),
+      stoneDark,
+    );
+    pillar.position.set(px, 1.6, pz);
+    scene.add(pillar);
+    // Capital — flared top piece.
+    const capital = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.7, 0.45, 0.35, 10),
+      trim,
+    );
+    capital.position.set(px, 3.35, pz);
+    scene.add(capital);
+    // Glowing brazier ember on top.
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 12), ember);
+    orb.position.set(px, 3.7, pz);
+    scene.add(orb);
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 12), emberGlow);
+    halo.position.set(px, 3.7, pz);
+    scene.add(halo);
+    colliders.addCircle(px, pz, 0.55);
+  }
+
+  // A short fence / chain ring made of low boxes between the pillars
+  // — a thin "arena boundary" that blocks LOS without blocking lanes.
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2 + Math.PI / 12;
+    const r = 6.4;
+    const bx = Math.cos(a) * r;
+    const bz = Math.sin(a) * r;
+    const seg = new THREE.Mesh(
+      new THREE.BoxGeometry(0.45, 0.42, 0.18),
+      stoneDark,
+    );
+    seg.position.set(bx, 0.35, bz);
+    seg.rotation.y = -a + Math.PI / 2;
+    scene.add(seg);
+  }
+}
+
+/**
+ * Stone plazas around every tower — circular base pads with banner
+ * pieces. Pure cosmetic but reinforces the "this is a real building"
+ * read at distance.
+ */
+function buildTowerPlazas(scene: THREE.Scene, towers: ReadonlyArray<Tower>): void {
+  const stone = new THREE.MeshLambertMaterial({ color: 0x807868, flatShading: true });
+  const stoneAccent = new THREE.MeshLambertMaterial({
+    color: 0xc99650,
+    emissive: 0x6e4e1a,
+    emissiveIntensity: 0.3,
+  });
+  for (const tower of towers) {
+    const px = tower.position.x;
+    const pz = tower.position.z;
+    const isBlue = tower.team === 'blue';
+    // Plaza disc — slightly larger than the tower base. Sits 0.05 above
+    // the ground texture so it doesn't z-fight the lane stripe.
+    const plaza = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.4, 3.6, 0.12, 24),
+      stone,
+    );
+    plaza.position.set(px, 0.1, pz);
+    scene.add(plaza);
+    // Outer trim ring.
+    const trim = new THREE.Mesh(
+      new THREE.TorusGeometry(3.2, 0.08, 6, 28),
+      stoneAccent,
+    );
+    trim.rotation.x = Math.PI / 2;
+    trim.position.set(px, 0.18, pz);
+    scene.add(trim);
+    // Two short banner poles flanking the tower (front-and-back along
+    // the lane). Banner colour follows the team.
+    const bannerColor = isBlue ? 0x4f9dff : 0xff6b6b;
+    for (const side of [-1, 1] as const) {
+      const offX = px + side * 1.8;
+      const offZ = pz;
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.06, 1.6, 6),
+        new THREE.MeshLambertMaterial({ color: 0x2c1f14 }),
+      );
+      pole.position.set(offX, 0.9, offZ);
+      scene.add(pole);
+      const flag = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.55, 0.9),
+        new THREE.MeshLambertMaterial({
+          color: bannerColor,
+          emissive: bannerColor,
+          emissiveIntensity: 0.4,
+          transparent: true,
+          opacity: 0.92,
+          side: THREE.DoubleSide,
+        }),
+      );
+      flag.position.set(offX + 0.32, 1.4, offZ);
+      flag.rotation.y = side > 0 ? -0.2 : 0.2;
+      scene.add(flag);
+    }
+  }
+}
+
+/**
+ * Tall banner poles around each base — adds an obvious team-identity
+ * landmark visible from across the map.
+ */
+function buildBaseBanners(scene: THREE.Scene, bases: ReadonlyArray<Base>): void {
+  const woodMat = new THREE.MeshLambertMaterial({ color: 0x3a2412 });
+  const trim = new THREE.MeshLambertMaterial({
+    color: 0xc99650,
+    emissive: 0x6e4e1a,
+    emissiveIntensity: 0.4,
+  });
+  for (const base of bases) {
+    const isBlue = base.team === 'blue';
+    const flagColor = isBlue ? 0x4f9dff : 0xff6b6b;
+    const px = base.position.x;
+    const pz = base.position.z;
+    // Six banners arranged around the base on a wide ring.
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const r = 11.5;
+      const bx = px + Math.cos(a) * r;
+      const bz = pz + Math.sin(a) * r;
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.09, 0.11, 4.5, 8),
+        woodMat,
+      );
+      pole.position.set(bx, 2.25, bz);
+      scene.add(pole);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 10), trim);
+      cap.position.set(bx, 4.55, bz);
+      scene.add(cap);
+      // Flag — wide cloth that hangs from the top.
+      const flag = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.3, 1.7),
+        new THREE.MeshLambertMaterial({
+          color: flagColor,
+          emissive: flagColor,
+          emissiveIntensity: 0.35,
+          transparent: true,
+          opacity: 0.95,
+          side: THREE.DoubleSide,
+        }),
+      );
+      flag.position.set(bx + 0.7, 3.5, bz);
+      // Slight ripple — alternating yaw so the banners don't read as
+      // a perfectly straight ring.
+      flag.rotation.y = (i % 2 === 0 ? -0.25 : 0.25);
+      scene.add(flag);
+    }
+  }
+}
+
+/**
+ * Rune-circle markers along each lane mid-section. Small glowing
+ * insets that break up the long stretches of plain ground texture.
+ */
+function buildRunePathMarkers(scene: THREE.Scene): void {
+  const accents = [0x7be38e, 0xffd17a, 0x9fd8ff, 0xff8a4c];
+  // Five runes per lane, fading in opacity as they approach a base.
+  const lanes: Array<{ blue: ReadonlyArray<readonly [number, number]>; red: ReadonlyArray<readonly [number, number]> }> = [
+    LANE_PATHS.top,
+    LANE_PATHS.mid,
+    LANE_PATHS.bot,
+  ];
+  let i = 0;
+  for (const lane of lanes) {
+    const path = lane.blue;
+    for (let p = 0; p < path.length; p++) {
+      const [x, z] = path[p];
+      const color = accents[(p + i) % accents.length];
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(1.2, 1.5, 28),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.4,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(x, 0.07, z);
+      scene.add(ring);
+      // Inner sigil — tiny "+" of crossing planes.
+      const sigilMat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.6,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const a = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.16), sigilMat);
+      a.rotation.x = -Math.PI / 2;
+      a.position.set(x, 0.075, z);
+      scene.add(a);
+      const b = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 1.1), sigilMat);
+      b.rotation.x = -Math.PI / 2;
+      b.position.set(x, 0.075, z);
+      scene.add(b);
+    }
+    i += 1;
+  }
 }
