@@ -608,7 +608,12 @@ function OnlineStatus({ status }: { status: string }) {
  * Top-down minimap pinned to the top-left of the landscape view. Polls the
  * game's world snapshot ~6 Hz and re-renders dots for every alive hero,
  * minion, tower and base. Cheap (small SVG, low refresh rate) and lets the
- * player track lane pressure without panning the camera.
+ * player track lane pressure without panning the camera. Tapping anywhere
+ * inside it eases the camera to that world point for ~2s.
+ *
+ * The 90° rotation that matches in-game camera orientation is BAKED INTO
+ * the world→pixel mapping rather than applied as a CSS transform, so tap
+ * coordinates land in pixel space directly without inverse-rotation math.
  */
 const Minimap = memo(function Minimap({ getGame }: { getGame: () => Game | null }) {
   type Snap = ReturnType<NonNullable<ReturnType<typeof getGame>>['getMinimapState']>;
@@ -627,26 +632,59 @@ const Minimap = memo(function Minimap({ getGame }: { getGame: () => Game | null 
   const size = 132;
   const padding = 6;
   const inner = size - padding * 2;
+  // World → minimap pixel. The "rotate the visual -90deg around the centre"
+  // step is folded into the formula: visualX = inner * (1 - (z + mapH/2)/mapH);
+  // visualY = inner * (1 - (x + mapW/2)/mapW). Result: world +x reads UP on
+  // the minimap, world +z reads LEFT — the same orientation the camera
+  // shows the player.
   const norm = (x: number, z: number): [number, number] => {
-    const nx = (x + snap.mapW / 2) / snap.mapW;
-    // Flip the z axis so blue base (bottom-left of world) ends up at the
-    // BOTTOM-LEFT of the minimap, matching what the player sees in the
-    // tactical camera view.
-    const nz = 1 - (z + snap.mapH / 2) / snap.mapH;
-    return [padding + nx * inner, padding + nz * inner];
+    const px = inner * (1 - (z + snap.mapH / 2) / snap.mapH);
+    const py = inner * (1 - (x + snap.mapW / 2) / snap.mapW);
+    return [padding + px, padding + py];
   };
-  const blueColor = '#5fc7ff';
-  const redColor = '#ff6868';
-  const dim = (alive: boolean) => (alive ? 1 : 0.25);
+  // Inverse of `norm` — converts a minimap-local pixel back to world (x, z).
+  const minimapToWorld = (lx: number, ly: number): [number, number] => {
+    const px = lx - padding;
+    const py = ly - padding;
+    const z = (1 - px / inner) * snap.mapH - snap.mapH / 2;
+    const x = (1 - py / inner) * snap.mapW - snap.mapW / 2;
+    return [x, z];
+  };
+  // Per-role dot colour — distinct hue per archetype so the player can
+  // read the team comp at a glance from the minimap. Allies/enemies get
+  // a coloured fill plus a team-coloured stroke so role AND team both
+  // read.
+  const ROLE_COLOR: Record<string, string> = {
+    ranger: '#5fc7ff',
+    mage: '#ff7a3d',
+    fighter: '#e6a648',
+    assassin: '#a470ff',
+    tank: '#9aa6b8',
+  };
+  const TOWER_COLOR = '#dabd6e';
+  const blueStroke = '#7be38e';
+  const redStroke = '#ff5050';
+  const dim = (alive: boolean) => (alive ? 1 : 0.28);
   return (
     <div
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+        const lx = e.clientX - rect.left;
+        const ly = e.clientY - rect.top;
+        // Ignore taps in the surrounding padding/border area.
+        if (lx < padding || lx > padding + inner) return;
+        if (ly < padding || ly > padding + inner) return;
+        const [wx, wz] = minimapToWorld(lx, ly);
+        getGame()?.peekAt(wx, wz);
+      }}
       style={{
         position: 'absolute',
         top: 14,
-        // Pulled away from the very edge — sits next to the match timer
-        // / online status banners without overlapping the system header
-        // on devices with cutouts.
-        left: 80,
+        // Tucked further from the left edge — clears the system header
+        // / status banners on portrait notch devices.
+        left: 140,
         width: size,
         height: size,
         zIndex: 10,
@@ -654,15 +692,12 @@ const Minimap = memo(function Minimap({ getGame }: { getGame: () => Game | null 
         border: '1px solid rgba(255, 255, 255, 0.18)',
         borderRadius: 10,
         boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
-        pointerEvents: 'none',
+        // Tap-to-peek wants pointer events; the canvas underneath is
+        // protected by the size of the element being small.
+        pointerEvents: 'auto',
+        touchAction: 'none',
         overflow: 'hidden',
-        // Rotated 90° CCW so the player's blue base sits at the bottom
-        // of the minimap regardless of the underlying world axis. With
-        // the rotation, x-world increases visually upward and z-world
-        // increases visually rightward — matches how MOBA players
-        // expect the bottom-left base orientation.
-        transform: 'rotate(-90deg)',
-        transformOrigin: 'center center',
+        cursor: 'pointer',
       }}
     >
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
@@ -681,10 +716,10 @@ const Minimap = memo(function Minimap({ getGame }: { getGame: () => Game | null 
             />
           );
         })()}
-        {/* Bases — square markers, biggest. */}
+        {/* Bases — bigger team-coloured squares with a dark outline. */}
         {snap.bases.map((b, i) => {
           const [x, y] = norm(b.x, b.z);
-          const c = b.team === 'blue' ? blueColor : redColor;
+          const c = b.team === 'blue' ? blueStroke : redStroke;
           return (
             <rect
               key={`base-${i}`}
@@ -699,53 +734,86 @@ const Minimap = memo(function Minimap({ getGame }: { getGame: () => Game | null 
             />
           );
         })}
-        {/* Towers — small squares. */}
+        {/* Towers — stylised turret silhouette in gold. Two-rect "watchtower"
+            shape so they're visibly different from heroes/bases. The thin
+            team-coloured stroke shows whose tower it is. */}
         {snap.towers.map((t, i) => {
           const [x, y] = norm(t.x, t.z);
-          const c = t.team === 'blue' ? blueColor : redColor;
+          const stroke = t.team === 'blue' ? blueStroke : redStroke;
           return (
-            <rect
-              key={`tower-${i}`}
-              x={x - 2.5}
-              y={y - 2.5}
-              width={5}
-              height={5}
-              fill={c}
-              opacity={dim(t.alive)}
-            />
+            <g key={`tower-${i}`} opacity={dim(t.alive)}>
+              <rect
+                x={x - 3}
+                y={y - 1}
+                width={6}
+                height={6}
+                fill={TOWER_COLOR}
+                stroke={stroke}
+                strokeWidth={0.8}
+              />
+              <rect
+                x={x - 2}
+                y={y - 5}
+                width={4}
+                height={4}
+                fill={TOWER_COLOR}
+                stroke={stroke}
+                strokeWidth={0.8}
+              />
+            </g>
           );
         })}
         {/* Minions — tiny dots. */}
         {snap.minions.map((m, i) => {
           if (!m.alive) return null;
           const [x, y] = norm(m.x, m.z);
-          const c = m.team === 'blue' ? blueColor : redColor;
+          const c = m.team === 'blue' ? blueStroke : redStroke;
           return <circle key={`minion-${i}`} cx={x} cy={y} r={1.6} fill={c} opacity={0.85} />;
         })}
-        {/* Allies — slightly bigger green dots. */}
+        {/* Allies — fill is per-role, stroke is the team colour. */}
         {snap.allies.map((a, i) => {
           if (!a.alive) return null;
           const [x, y] = norm(a.x, a.z);
-          return <circle key={`ally-${i}`} cx={x} cy={y} r={3} fill="#7be38e" opacity={dim(a.alive)} />;
+          return (
+            <circle
+              key={`ally-${i}`}
+              cx={x}
+              cy={y}
+              r={3.2}
+              fill={ROLE_COLOR[a.heroKind] ?? '#cfd6e0'}
+              stroke={blueStroke}
+              strokeWidth={1}
+              opacity={dim(a.alive)}
+            />
+          );
         })}
-        {/* Enemies — red dots. */}
+        {/* Enemies — fill is per-role, stroke is the enemy team colour. */}
         {snap.enemies.map((e, i) => {
           if (!e.alive) return null;
           const [x, y] = norm(e.x, e.z);
-          return <circle key={`enemy-${i}`} cx={x} cy={y} r={3} fill="#ff7373" opacity={dim(e.alive)} />;
-        })}
-        {/* Player — bright bordered dot, drawn last so it sits on top. */}
-        {snap.player.alive && (() => {
-          const [x, y] = norm(snap.player.x, snap.player.z);
           return (
             <circle
+              key={`enemy-${i}`}
               cx={x}
               cy={y}
-              r={4.5}
-              fill="#ffe066"
-              stroke="rgba(0,0,0,0.6)"
+              r={3.2}
+              fill={ROLE_COLOR[e.heroKind] ?? '#ffb0b0'}
+              stroke={redStroke}
               strokeWidth={1}
+              opacity={dim(e.alive)}
             />
+          );
+        })}
+        {/* Player — drawn last so it sits on top. Bright yellow halo +
+            the player's own role colour as the inner fill. */}
+        {snap.player.alive && (() => {
+          const [x, y] = norm(snap.player.x, snap.player.z);
+          const fill = ROLE_COLOR[snap.player.heroKind] ?? '#ffe066';
+          return (
+            <g>
+              <circle cx={x} cy={y} r={5.2} fill="none" stroke="#ffe066" strokeWidth={1.6} />
+              <circle cx={x} cy={y} r={3.4} fill={fill} stroke="rgba(0,0,0,0.6)" strokeWidth={1} />
+            </g>
           );
         })()}
       </svg>

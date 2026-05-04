@@ -139,10 +139,10 @@ export class InputController {
     const portrait = window.innerHeight > window.innerWidth;
     const screenX = portrait ? dy : dx;
     const screenZ = portrait ? -dx : dy;
-    // Bumped from 0.06 → 0.11: about 80% more world-units per pixel of finger
-    // travel, so a half-screen swipe now actually scrolls to the next lane
-    // instead of barely peeking past the player.
-    const scale = 0.11;
+    // Bumped to 0.18 (was 0.11) so a short finger drag scrolls deep into
+    // adjacent lanes — easier to peek the enemy backline without losing
+    // touch contact with the screen.
+    const scale = 0.18;
     this.drag.cumX = screenX * scale;
     this.drag.cumZ = screenZ * scale;
     // Clamp so the player can't pan halfway across the world.

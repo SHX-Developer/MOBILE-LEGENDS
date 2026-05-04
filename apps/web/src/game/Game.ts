@@ -592,6 +592,21 @@ export class Game {
     return this.online.getStatus();
   }
 
+  /** Tap-on-minimap focus: ease the camera over to the world point and
+   *  spring back to the player after a couple seconds. Reuses the rig's
+   *  setLookOffset so this plays nicely with the regular drag-pan. */
+  peekAt(worldX: number, worldZ: number): void {
+    const dx = worldX - this.player.position.x;
+    const dz = worldZ - this.player.position.z;
+    this.rig.setLookOffset(dx, dz);
+    if (this.peekTimerId !== 0) window.clearTimeout(this.peekTimerId);
+    this.peekTimerId = window.setTimeout(() => {
+      this.rig.setLookOffset(0, 0);
+      this.peekTimerId = 0;
+    }, 2200);
+  }
+  private peekTimerId = 0;
+
   /**
    * Snapshot of current world state for the minimap. Cheap to call — every
    * frame would be fine, but 5–10 Hz is plenty since the minimap is small.
@@ -601,9 +616,9 @@ export class Game {
   getMinimapState(): {
     mapW: number;
     mapH: number;
-    player: { x: number; z: number; team: 'blue' | 'red'; alive: boolean };
-    allies: Array<{ x: number; z: number; alive: boolean }>;
-    enemies: Array<{ x: number; z: number; alive: boolean }>;
+    player: { x: number; z: number; team: 'blue' | 'red'; alive: boolean; heroKind: HeroKind };
+    allies: Array<{ x: number; z: number; alive: boolean; heroKind: HeroKind }>;
+    enemies: Array<{ x: number; z: number; alive: boolean; heroKind: HeroKind }>;
     minions: Array<{ x: number; z: number; team: 'blue' | 'red'; alive: boolean }>;
     towers: Array<{ x: number; z: number; team: 'blue' | 'red'; alive: boolean }>;
     bases: Array<{ x: number; z: number; team: 'blue' | 'red'; alive: boolean }>;
@@ -616,9 +631,20 @@ export class Game {
         z: this.player.position.z,
         team: this.player.team,
         alive: this.player.alive,
+        heroKind: this.player.heroKind,
       },
-      allies: this.allyBotsList.map((b) => ({ x: b.position.x, z: b.position.z, alive: b.alive })),
-      enemies: this.enemyBots.map((b) => ({ x: b.position.x, z: b.position.z, alive: b.alive })),
+      allies: this.allyBotsList.map((b) => ({
+        x: b.position.x,
+        z: b.position.z,
+        alive: b.alive,
+        heroKind: b.heroKind,
+      })),
+      enemies: this.enemyBots.map((b) => ({
+        x: b.position.x,
+        z: b.position.z,
+        alive: b.alive,
+        heroKind: b.heroKind,
+      })),
       minions: this.minions.map((m) => ({ x: m.position.x, z: m.position.z, team: m.team, alive: m.alive })),
       towers: this.towers.map((t) => ({ x: t.position.x, z: t.position.z, team: t.team, alive: t.alive })),
       bases: this.bases.map((b) => ({ x: b.position.x, z: b.position.z, team: b.team, alive: b.alive })),
