@@ -643,7 +643,10 @@ const Minimap = memo(function Minimap({ getGame }: { getGame: () => Game | null 
       style={{
         position: 'absolute',
         top: 14,
-        left: 14,
+        // Pulled away from the very edge — sits next to the match timer
+        // / online status banners without overlapping the system header
+        // on devices with cutouts.
+        left: 80,
         width: size,
         height: size,
         zIndex: 10,
@@ -653,6 +656,13 @@ const Minimap = memo(function Minimap({ getGame }: { getGame: () => Game | null 
         boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
         pointerEvents: 'none',
         overflow: 'hidden',
+        // Rotated 90° CCW so the player's blue base sits at the bottom
+        // of the minimap regardless of the underlying world axis. With
+        // the rotation, x-world increases visually upward and z-world
+        // increases visually rightward — matches how MOBA players
+        // expect the bottom-left base orientation.
+        transform: 'rotate(-90deg)',
+        transformOrigin: 'center center',
       }}
     >
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>

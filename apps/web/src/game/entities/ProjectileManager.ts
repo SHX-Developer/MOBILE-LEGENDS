@@ -338,8 +338,8 @@ export class ProjectileManager {
         const until = now + p.effect.stun.durationMs;
         if (until > other.stunnedUntil) other.stunnedUntil = until;
       }
-      if (wasAlive && !other.alive && p.owner?.kind === 'hero') {
-        p.owner.grantXp?.(other.xpReward);
+      if (wasAlive && !other.alive) {
+        this.grantKillXp(other, p.owner, registry);
       }
       this.spawnHitBurst(other.position, p.team);
     }
@@ -351,6 +351,39 @@ export class ProjectileManager {
     p.arrived = true;
     this.spawnHitBurst(p.mesh.position, p.team);
     p.onArrive?.();
+  }
+
+  /**
+   * Radius around a dying unit within which every alive enemy hero gets
+   * its xpReward. The killer is always credited too (even if they're at
+   * the far end of an arrow shot), so out-of-radius long-range last-hits
+   * still get rewarded.
+   */
+  private static readonly XP_ASSIST_RADIUS = 9;
+
+  /**
+   * Award XP to every hero who deserves it for `dead`'s death:
+   * the killer (if a hero) plus every alive enemy hero within
+   * XP_ASSIST_RADIUS of the corpse. Mirrors MOBA assist rules — being
+   * "in the fight" is enough, you don't need the last hit.
+   */
+  private grantKillXp(dead: Unit, killer: Unit | undefined, registry: UnitRegistry): void {
+    if (dead.xpReward <= 0) return;
+    const r2 = ProjectileManager.XP_ASSIST_RADIUS * ProjectileManager.XP_ASSIST_RADIUS;
+    const granted = new Set<Unit>();
+    if (killer && killer.kind === 'hero' && killer.alive && killer.team !== dead.team) {
+      killer.grantXp?.(dead.xpReward);
+      granted.add(killer);
+    }
+    for (const u of registry.allUnits()) {
+      if (granted.has(u)) continue;
+      if (u.kind !== 'hero' || !u.alive || u.team === dead.team) continue;
+      const dx = u.position.x - dead.position.x;
+      const dz = u.position.z - dead.position.z;
+      if (dx * dx + dz * dz > r2) continue;
+      u.grantXp?.(dead.xpReward);
+      granted.add(u);
+    }
   }
 
   private hitUnit(p: Projectile, unit: Unit, now: number, registry: UnitRegistry): void {
@@ -374,16 +407,16 @@ export class ProjectileManager {
       const until = now + p.effect.stun.durationMs;
       if (until > unit.stunnedUntil) unit.stunnedUntil = until;
     }
-    if (wasAlive && !unit.alive && p.owner?.kind === 'hero') {
-      p.owner.grantXp?.(unit.xpReward);
+    if (wasAlive && !unit.alive) {
+      this.grantKillXp(unit, p.owner, registry);
     }
     if (p.fromPlayer) this.onPlayerHit?.();
     this.spawnHitBurst(unit.position, p.team);
 
     // AoE shockwave — damage every other enemy of `p.team` within radius.
     // Skips the primary target (already took the full hit) and stationary
-    // structures stay vulnerable too. XP from AoE kills also flows to the
-    // owning hero so meteor wipeouts feed the right player.
+    // structures stay vulnerable too. XP from AoE kills also flows to
+    // every nearby hero so meteor wipeouts feed the whole frontline.
     if (p.aoeRadius && p.aoeDamage && p.aoeDamage > 0) {
       const r2 = p.aoeRadius * p.aoeRadius;
       const cx = unit.position.x;
@@ -398,8 +431,8 @@ export class ProjectileManager {
         const otherDamage = Math.min(other.hp, p.aoeDamage);
         other.takeDamage(p.aoeDamage);
         if (otherDamage > 0) this.onDamage?.(other, otherDamage, p.owner);
-        if (wasOtherAlive && !other.alive && p.owner?.kind === 'hero') {
-          p.owner.grantXp?.(other.xpReward);
+        if (wasOtherAlive && !other.alive) {
+          this.grantKillXp(other, p.owner, registry);
         }
         this.spawnHitBurst(other.position, p.team);
       }

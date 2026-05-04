@@ -23,6 +23,21 @@ export class HealthBar {
 
   readonly group = new THREE.Group();
   private readonly fg: THREE.Mesh;
+  /**
+   * Yellow "ghost" bar that lingers between the previous HP value and the
+   * current one. Sits BEHIND fg (lower renderOrder) so it shows in the gap
+   * created when fg shrinks. Drains toward fgRatio at HealthBar.DRAIN_RATE
+   * per second — same MLBB feel where damage reads as a yellow drain.
+   */
+  private readonly shadow: THREE.Mesh;
+  /** Current target HP fraction (set by setRatio, snaps the fg bar). */
+  private fgRatio = 1;
+  /** Lingering "previous HP" fraction. Drains down toward fgRatio. */
+  private shadowRatio = 1;
+  /** performance.now() of the last animation tick. */
+  private lastAnimAt = 0;
+  /** Yellow shadow drains this fast (in HP-fractions per second). */
+  private static readonly DRAIN_RATE = 0.7;
   private readonly levelTexture?: THREE.CanvasTexture;
   private readonly levelCanvas?: HTMLCanvasElement;
   private readonly levelCtx?: CanvasRenderingContext2D;
@@ -62,6 +77,25 @@ export class HealthBar {
     // mesh is shifted by -longAxis/2 to centre the bar in the group. With
     // that, fg.scale.x in [0,1] keeps the left edge fixed and shrinks the
     // right edge toward it.
+    // Shadow uses an identical geometry — same anchor, same scale-x trick.
+    // Drawn BEFORE fg so the foreground sits visually on top, and the
+    // shadow only peeks out where fg has shrunk.
+    const shadowGeom = new THREE.PlaneGeometry(longAxis, shortAxis);
+    shadowGeom.translate(longAxis / 2, 0, 0);
+    this.shadow = new THREE.Mesh(
+      shadowGeom,
+      new THREE.MeshBasicMaterial({
+        color: 0xffd852,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    this.shadow.position.x = -longAxis / 2;
+    this.shadow.position.z = -0.001;
+    this.shadow.renderOrder = 9999.5;
+    this.group.add(this.shadow);
+
     const fgGeom = new THREE.PlaneGeometry(longAxis, shortAxis);
     fgGeom.translate(longAxis / 2, 0, 0);
     this.fg = new THREE.Mesh(
@@ -147,7 +181,20 @@ export class HealthBar {
 
   setRatio(r: number): void {
     const ratio = r < 0 ? 0 : r > 1 ? 1 : r;
+    if (ratio < this.fgRatio) {
+      // Damage taken — keep the shadow at the OLD HP value (or higher if
+      // earlier damage hasn't drained yet) so it visibly shows the chunk
+      // we just lost. The shadow will drain toward fgRatio over time
+      // inside billboard().
+      this.shadowRatio = Math.max(this.shadowRatio, this.fgRatio);
+    } else if (ratio > this.fgRatio) {
+      // Heal — the shadow snaps up to the new value (no "missing HP"
+      // ghost when refilling).
+      this.shadowRatio = ratio;
+    }
+    this.fgRatio = ratio;
     this.fg.scale.x = Math.max(ratio, 0.0001);
+    this.shadow.scale.x = Math.max(this.shadowRatio, 0.0001);
   }
 
   setHp(current: number, max: number): void {
@@ -238,8 +285,13 @@ export class HealthBar {
    * horizontal. A plain camera quaternion keeps local +X on camera-right.
    * The parent inverse keeps it correct even when the parent group rotates
    * (e.g. PlayerObject yaws on movement).
+   *
+   * Also drives the damage-shadow drain animation on the way through —
+   * billboard runs every frame for visible bars, so it's the natural
+   * place to tick the shadow without plumbing dt from the unit class.
    */
   billboard(camera: THREE.Camera): void {
+    this.tickShadowAnim();
     camera.getWorldQuaternion(_camQuat);
     const parent = this.group.parent;
     if (parent) {
@@ -247,5 +299,27 @@ export class HealthBar {
       _camQuat.premultiply(_parentInv);
     }
     this.group.quaternion.copy(_camQuat);
+  }
+
+  /**
+   * Drain the yellow damage-shadow toward the current foreground ratio.
+   * Computes its own dt off `performance.now()` so callers don't have to
+   * pipe a delta in. Capped at 100ms per tick so a tab regaining focus
+   * doesn't snap the shadow off in one frame.
+   */
+  private tickShadowAnim(): void {
+    const now = performance.now();
+    const last = this.lastAnimAt;
+    this.lastAnimAt = now;
+    if (this.shadowRatio <= this.fgRatio) {
+      this.shadowRatio = this.fgRatio;
+      return;
+    }
+    if (last === 0) return; // first call — no dt
+    const dt = Math.min((now - last) / 1000, 0.1);
+    if (dt <= 0) return;
+    const next = this.shadowRatio - HealthBar.DRAIN_RATE * dt;
+    this.shadowRatio = Math.max(this.fgRatio, next);
+    this.shadow.scale.x = Math.max(this.shadowRatio, 0.0001);
   }
 }
