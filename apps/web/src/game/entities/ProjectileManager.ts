@@ -5,7 +5,7 @@ import {
   PROJECTILE_RADIUS,
   PROJECTILE_SPEED_3D,
 } from '../constants.js';
-import type { Team, Unit } from '../combat/Unit.js';
+import type { DamageType, Team, Unit } from '../combat/Unit.js';
 import type { UnitRegistry } from '../combat/UnitRegistry.js';
 
 export type ProjectileKind =
@@ -37,6 +37,8 @@ export type ProjectileKind =
 export interface ProjectileSpec {
   team: Team;
   damage: number;
+  /** Physical / magic / true. Defaults to physical when omitted. */
+  damageType?: DamageType;
   kind?: ProjectileKind;
   /** Status effect applied to whatever the projectile hits. */
   effect?: {
@@ -101,6 +103,7 @@ interface Projectile {
   spawnedAt: number;
   team: Team;
   damage: number;
+  damageType: DamageType;
   effect?: ProjectileSpec['effect'];
   target?: Unit;
   owner?: Unit;
@@ -225,6 +228,7 @@ export class ProjectileManager {
       spawnedAt: now,
       team: spec.team,
       damage: spec.damage,
+      damageType: spec.damageType ?? 'physical',
       effect: spec.effect,
       target: spec.target,
       owner: spec.owner,
@@ -350,8 +354,9 @@ export class ProjectileManager {
       const dz = other.position.z - cz;
       if (dx * dx + dz * dz > r2) continue;
       const wasAlive = other.alive;
-      const damage = Math.min(other.hp, p.aoeDamage);
-      other.takeDamage(p.aoeDamage);
+      const reduced = applyDef(p.aoeDamage, p.damageType, other);
+      const damage = Math.min(other.hp, reduced);
+      other.takeDamage(reduced, p.damageType);
       if (damage > 0) this.onDamage?.(other, damage, p.owner);
       // Apply on-cast effect (slow / stun) to every caught unit — that's
       // the whole point of vortex/quake.
@@ -421,8 +426,10 @@ export class ProjectileManager {
       const hpFrac = unit.maxHp > 0 ? unit.hp / unit.maxHp : 1;
       if (hpFrac <= p.executeHpThreshold) baseDamage = p.damage * (1 + p.executeBonus);
     }
-    const damage = Math.min(unit.hp, baseDamage);
-    unit.takeDamage(baseDamage);
+    // Armour reduction. `true` damage skips this step entirely.
+    const reduced = applyDef(baseDamage, p.damageType, unit);
+    const damage = Math.min(unit.hp, reduced);
+    unit.takeDamage(reduced, p.damageType);
     if (damage > 0) this.onDamage?.(unit, damage, p.owner);
     if (p.effect?.slow) {
       const until = now + p.effect.slow.durationMs;
@@ -453,8 +460,9 @@ export class ProjectileManager {
         const dz = other.position.z - cz;
         if (dx * dx + dz * dz > r2) continue;
         const wasOtherAlive = other.alive;
-        const otherDamage = Math.min(other.hp, p.aoeDamage);
-        other.takeDamage(p.aoeDamage);
+        const aoeReduced = applyDef(p.aoeDamage, p.damageType, other);
+        const otherDamage = Math.min(other.hp, aoeReduced);
+        other.takeDamage(aoeReduced, p.damageType);
         if (otherDamage > 0) this.onDamage?.(other, otherDamage, p.owner);
         if (wasOtherAlive && !other.alive) {
           this.grantKillXp(other, p.owner, registry);
@@ -564,6 +572,19 @@ interface FxBurst {
   kind: 'ring' | 'speck' | 'flash';
   durationMs: number;
   velocity?: THREE.Vector3;
+}
+
+/**
+ * Reduce `raw` damage by the unit's matching defence. `true` damage
+ * bypasses defences entirely. Defences default to 0 if the unit doesn't
+ * expose a value (minions/structures stay raw-damage-takers).
+ */
+function applyDef(raw: number, type: DamageType, unit: Unit): number {
+  if (type === 'true') return raw;
+  const def = type === 'magic' ? (unit.magicalDef ?? 0) : (unit.physicalDef ?? 0);
+  if (def <= 0) return raw;
+  // Clamp to avoid heroes ever hitting 100% reduction by accident.
+  return raw * Math.max(0.1, 1 - Math.min(0.85, def));
 }
 
 // FX cap — beyond this many concurrent sprites we drop new bursts entirely.

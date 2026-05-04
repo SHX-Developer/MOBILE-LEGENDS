@@ -96,6 +96,9 @@ import type { Unit, Team } from '../combat/Unit.js';
 import { HealthBar } from '../combat/HealthBar.js';
 import type { ProjectileKind } from './ProjectileManager.js';
 
+/** How long after taking damage out-of-combat regeneration kicks in. */
+const OOC_REGEN_DELAY_MS = 4000;
+
 /**
  * Per-skill loadout. Lets `Game` cast Q/E/C uniformly without branching on
  * the hero kind — the hero packages its own ranges, cooldowns, projectile
@@ -104,6 +107,8 @@ import type { ProjectileKind } from './ProjectileManager.js';
 export interface SkillConfig {
   /** Damage at the hero's current level. Read fresh per cast. */
   damage: number;
+  /** Phys/magic/true. Defaults to physical if absent. */
+  damageType?: import('../combat/Unit.js').DamageType;
   cooldownMs: number;
   range: number;
   projectileKind: ProjectileKind;
@@ -332,6 +337,10 @@ export class PlayerObject implements Unit {
   shieldUntil = 0;
   /** Invisibility window (Shadowblade's C). Used by AI to skip targeting. */
   invisibleUntil = 0;
+  /** Last time the hero took damage. Drives the out-of-combat HP regen
+   *  window — when more than {@link OOC_REGEN_DELAY_MS} has passed since
+   *  the last hit, HP refills passively. */
+  private lastHurtAt = 0;
 
   get speed3D(): number {
     let base: number;
@@ -344,6 +353,35 @@ export class PlayerObject implements Unit {
     }
     if (performance.now() < this.speedBuffUntil) return base * this.speedBuffFactor;
     return base;
+  }
+
+  /** Physical damage reduction (0..1). Tanks/fighters take noticeably less
+   *  physical hits than squishies. */
+  get physicalDef(): number {
+    switch (this.heroKind) {
+      case 'tank': return 0.4;
+      case 'fighter': return 0.2;
+      case 'ranger':
+      case 'assassin':
+        return 0.1;
+      default: return 0.05;
+    }
+  }
+
+  /** Magic damage reduction (0..1). The mage shrugs spells off; the tank
+   *  is still pretty resistant; physical-class heroes mostly just eat them. */
+  get magicalDef(): number {
+    switch (this.heroKind) {
+      case 'tank': return 0.3;
+      case 'fighter': return 0.15;
+      case 'mage': return 0.1;
+      default: return 0.05;
+    }
+  }
+
+  /** Auto-attack damage type. Arcanist hits with magic, the rest physical. */
+  get autoAttackDamageType(): import('../combat/Unit.js').DamageType {
+    return this.heroKind === 'mage' ? 'magic' : 'physical';
   }
 
   /** Auto-attack projectile cosmetic per archetype. */
@@ -398,9 +436,10 @@ export class PlayerObject implements Unit {
     const lvl = this.level - 1;
     switch (this.heroKind) {
       case 'mage':
-        // Arcanist — Arcane Burst (300 + AoE on impact).
+        // Arcanist — Arcane Burst (300 + AoE on impact). Magic damage.
         return {
           damage: MAGE_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.5,
+          damageType: 'magic',
           cooldownMs: MAGE_Q_COOLDOWN_MS,
           range: MAGE_Q_RANGE,
           projectileKind: 'fireball',
@@ -454,10 +493,10 @@ export class PlayerObject implements Unit {
     const lvl = this.level - 1;
     switch (this.heroKind) {
       case 'mage':
-        // Arcanist — Magic Trap (slow + small AoE, modeled as a slow
-        // projectile with splash for now).
+        // Arcanist — Magic Trap (slow + small AoE). Magic damage.
         return {
           damage: MAGE_E_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
+          damageType: 'magic',
           cooldownMs: MAGE_E_COOLDOWN_MS,
           range: MAGE_E_RANGE,
           projectileKind: 'flamewave',
@@ -514,9 +553,10 @@ export class PlayerObject implements Unit {
     const lvl = this.level - 1;
     switch (this.heroKind) {
       case 'mage':
-        // Arcanist — Meteor Call (huge ult).
+        // Arcanist — Meteor Call (huge ult). Magic damage.
         return {
           damage: MAGE_C_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.5,
+          damageType: 'magic',
           cooldownMs: MAGE_C_COOLDOWN_MS,
           range: MAGE_C_RANGE,
           projectileKind: 'meteor',
@@ -611,6 +651,14 @@ export class PlayerObject implements Unit {
     }
     // Drop the shield value once the buff window closes.
     if (this.shieldHp > 0 && now >= this.shieldUntil) this.shieldHp = 0;
+
+    // Out-of-combat HP regeneration. Once the hero has gone
+    // OOC_REGEN_DELAY_MS without taking damage, regen ~3.5% max HP per
+    // second (4.5% for tanks who naturally trade DPS for sustain).
+    if (this.hp < this.maxHp && now - this.lastHurtAt >= OOC_REGEN_DELAY_MS) {
+      const fracPerSec = this.heroKind === 'tank' ? 0.045 : 0.035;
+      this.heal(this.maxHp * fracPerSec * deltaSec);
+    }
     if (this.stunnedUntil > now) {
       this.velocity.set(0, 0, 0);
       this.animateGait(0, deltaSec, now);
@@ -707,6 +755,7 @@ export class PlayerObject implements Unit {
     // Shield (Iron Wall) absorbs first. The shield expires by timer too —
     // checking inline keeps the cleanup cheap.
     const now = performance.now();
+    this.lastHurtAt = now;
     if (this.shieldHp > 0 && now < this.shieldUntil) {
       const absorbed = Math.min(this.shieldHp, remaining);
       this.shieldHp -= absorbed;

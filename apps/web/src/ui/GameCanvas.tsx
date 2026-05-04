@@ -188,7 +188,7 @@ export function GameCanvas({ mode, heroKind = 'ranger', onExit }: GameCanvasProp
         <BottomCenterZone />
 
         <Joystick onChange={onJoystickChange} />
-        <FireButton onPress={onFirePress} onRelease={onFireRelease} />
+        <FireButton onPress={onFirePress} onRelease={onFireRelease} getGame={getGame} />
         {/* Skills fan around the action area instead of stacking in one
             row. Anchored to the new (post-swap) MINION/TOWER positions:
               • Q (1st) — to the LEFT of MINION on the same row.
@@ -999,11 +999,36 @@ const Joystick = memo(function Joystick({
 const FireButton = memo(function FireButton({
   onPress,
   onRelease,
+  getGame,
 }: {
   onPress: () => void;
   onRelease: () => void;
+  getGame: () => Game | null;
 }) {
   const activePointer = useRef<number | null>(null);
+  // Poll the game's auto-attack cooldown so the FIRE button shows the
+  // same kind of conic-gradient ring the skill buttons use.
+  const [cooldown, setCooldown] = useState(0);
+  // The "total" cooldown is whatever the hero's current attackCooldownMs
+  // is — it changes with Focus Mode etc. Track it so the conic fills
+  // proportionally instead of jumping when the buff comes on/off.
+  const [totalMs, setTotalMs] = useState(500);
+  useEffect(() => {
+    let last = 0;
+    const tick = () => {
+      const g = getGame();
+      if (!g) return;
+      const cd = g.getAttackCooldownLeft();
+      if (cd > last) setTotalMs(Math.max(cd, 200));
+      last = cd;
+      setCooldown(cd);
+    };
+    tick();
+    const handle = window.setInterval(tick, 90);
+    return () => window.clearInterval(handle);
+  }, [getGame]);
+  const onCd = cooldown > 0;
+  const fillPct = onCd ? Math.min(100, ((totalMs - cooldown) / totalMs) * 100) : 100;
   return (
     <button
       onPointerDown={(e) => {
@@ -1031,9 +1056,10 @@ const FireButton = memo(function FireButton({
         height: 102,
         borderRadius: '50%',
         border: '3px solid rgba(255, 210, 100, 0.8)',
-        background:
-          'radial-gradient(circle at 35% 30%, #ffd96a 0%, #e48a1a 60%, #8a3d00 100%)',
-        color: '#1a1208',
+        background: onCd
+          ? 'rgba(20, 24, 36, 0.7)'
+          : 'radial-gradient(circle at 35% 30%, #ffd96a 0%, #e48a1a 60%, #8a3d00 100%)',
+        color: onCd ? '#fff' : '#1a1208',
         fontWeight: 900,
         fontSize: 18,
         letterSpacing: 2,
@@ -1041,9 +1067,23 @@ const FireButton = memo(function FireButton({
         boxShadow: '0 8px 22px rgba(0,0,0,0.55), 0 0 0 4px rgba(255,206,92,0.18)',
         touchAction: 'none',
         contain: 'layout paint',
+        overflow: 'hidden',
+        display: 'grid',
+        placeItems: 'center',
       }}
     >
-      FIRE
+      {onCd && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: `conic-gradient(rgba(255,206,92,0.55) ${fillPct}%, transparent ${fillPct}%)`,
+            borderRadius: '50%',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+      <span style={{ position: 'relative', pointerEvents: 'none' }}>FIRE</span>
     </button>
   );
 });

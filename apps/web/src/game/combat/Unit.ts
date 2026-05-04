@@ -2,6 +2,9 @@ import * as THREE from 'three';
 
 export type Team = 'blue' | 'red';
 export type UnitKind = 'hero' | 'minion' | 'structure';
+/** Damage flavour used for armour reduction. `true` damage ignores both
+ *  resistances — reserved for execute / fixed-damage edge cases. */
+export type DamageType = 'physical' | 'magic' | 'true';
 
 /**
  * Anything that can take damage and be targeted by auto-aim. Position is
@@ -25,6 +28,10 @@ export interface Unit {
    *  skipped by enemy auto-target logic. Currently set only by PlayerObject
    *  (Shadowblade's invisibility); other implementors may leave it `0`. */
   invisibleUntil?: number;
-  takeDamage(amount: number): void;
+  /** Fraction of physical damage absorbed (0..1). Defaults to 0 if absent. */
+  physicalDef?: number;
+  /** Fraction of magic damage absorbed (0..1). Defaults to 0 if absent. */
+  magicalDef?: number;
+  takeDamage(amount: number, type?: DamageType): void;
   grantXp?(amount: number): void;
 }

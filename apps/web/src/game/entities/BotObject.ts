@@ -270,6 +270,31 @@ export class BotObject implements Unit {
     }
   }
 
+  /** Per-role armour mirrors the player-side defence values. */
+  get physicalDef(): number {
+    switch (this.heroKind) {
+      case 'tank': return 0.4;
+      case 'fighter': return 0.2;
+      case 'ranger':
+      case 'assassin':
+        return 0.1;
+      default: return 0.05;
+    }
+  }
+  get magicalDef(): number {
+    switch (this.heroKind) {
+      case 'tank': return 0.3;
+      case 'fighter': return 0.15;
+      case 'mage': return 0.1;
+      default: return 0.05;
+    }
+  }
+
+  /** Magic for the arcanist, physical for the rest. */
+  private get autoAttackDamageType(): import('../combat/Unit.js').DamageType {
+    return this.heroKind === 'mage' ? 'magic' : 'physical';
+  }
+
   /** Per-role movement speed — same value the player-side hero would use. */
   private get botSpeed(): number {
     switch (this.heroKind) {
@@ -329,6 +354,17 @@ export class BotObject implements Unit {
       return;
     }
     if (this.stunnedUntil > now) return;
+
+    // Out-of-combat HP regen — same shape as the player-side regen.
+    // After 4s without taking damage, refill ~3.5% max HP per second (4.5%
+    // for the bulwark tank). Keeps idle bots topped up between fights.
+    if (this.hp < this.maxHp && now - this.lastHurtAt >= 4000) {
+      const fracPerSec = this.heroKind === 'tank' ? 0.045 : 0.035;
+      const heal = this.maxHp * fracPerSec * deltaSec;
+      this.hp = Math.min(this.maxHp, this.hp + heal);
+      this.healthBar.setRatio(this.hp / this.maxHp);
+      this.healthBar.setHp(this.hp, this.maxHp);
+    }
 
     const slowed = this.slowUntil > now;
     const speed = slowed ? this.botSpeed * 0.5 : this.botSpeed;
@@ -392,6 +428,7 @@ export class BotObject implements Unit {
         projectiles.spawn(this.position, enemy.position, now, {
           team: this.team,
           damage: this.attackDamage,
+          damageType: this.autoAttackDamageType,
           kind: this.autoAttackKind,
           target: enemy,
           owner: this,
@@ -663,6 +700,7 @@ export class BotObject implements Unit {
       projectiles.spawn(this.position, enemy.position, now, {
         team: this.team,
         damage,
+        damageType: 'magic',
         kind: 'meteor',
         effect: { stun: { durationMs: MAGE_C_STUN_DURATION_MS } },
         owner: this,
@@ -681,6 +719,7 @@ export class BotObject implements Unit {
       projectiles.spawn(this.position, enemy.position, now, {
         team: this.team,
         damage,
+        damageType: 'magic',
         kind: 'fireball',
         owner: this,
         maxDistance: MAGE_Q_RANGE,
@@ -698,6 +737,7 @@ export class BotObject implements Unit {
       projectiles.spawn(this.position, enemy.position, now, {
         team: this.team,
         damage,
+        damageType: 'magic',
         kind: 'flamewave',
         effect: { slow: { factor: MAGE_E_SLOW_FACTOR, durationMs: MAGE_E_SLOW_DURATION_MS } },
         owner: this,
@@ -714,11 +754,13 @@ export class BotObject implements Unit {
 
   takeDamage(amount: number): void {
     if (!this.alive) return;
+    this.lastHurtAt = performance.now();
     this.hp = Math.max(0, this.hp - amount);
     this.healthBar.setRatio(this.hp / this.maxHp);
     this.healthBar.setHp(this.hp, this.maxHp);
     if (this.hp <= 0) this.die();
   }
+  private lastHurtAt = 0;
 
   heal(amount: number): void {
     if (!this.alive || amount <= 0 || this.hp >= this.maxHp) return;

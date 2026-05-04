@@ -909,6 +909,7 @@ export class Game {
     this.projectiles.spawn(this.player.position, target.position, now, {
       team: this.player.team,
       damage,
+      damageType: this.player.autoAttackDamageType,
       kind: this.player.autoAttackKind,
       target,
       owner: this.player,
@@ -1140,6 +1141,7 @@ export class Game {
       this.projectiles.spawn(this.player.position, this.player.position, now, {
         team: this.player.team,
         damage: 0,
+        damageType: cfg.damageType ?? 'physical',
         kind: cfg.projectileKind,
         effect: cfg.effect,
         aoeRadius: cfg.aoeRadius,
@@ -1159,6 +1161,7 @@ export class Game {
       this.projectiles.spawn(origin, origin, now, {
         team: this.player.team,
         damage: 0,
+        damageType: cfg.damageType ?? 'physical',
         kind: cfg.projectileKind,
         effect: cfg.effect,
         aoeRadius: cfg.aoeRadius,
@@ -1181,6 +1184,7 @@ export class Game {
     this.projectiles.spawn(origin, target, now, {
       team: this.player.team,
       damage: cfg.damage * this.player.outgoingDamageMultiplier(now),
+      damageType: cfg.damageType ?? 'physical',
       kind: cfg.projectileKind,
       effect: cfg.effect,
       aoeRadius: cfg.aoeRadius,
