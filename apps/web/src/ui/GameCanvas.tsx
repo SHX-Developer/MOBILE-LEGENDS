@@ -46,6 +46,21 @@ const SKILL_PROFILES: Record<HeroKind, Record<SkillId, SkillProfile>> = {
     e: { subtitle: 'СТЕНА', accent: '#ff9a3a', totalMs: 8000 },
     c: { subtitle: 'МЕТЕОР', accent: '#ffd852', totalMs: 12000 },
   },
+  fighter: {
+    q: { subtitle: 'СЕЧЕНИЕ', accent: '#e6a648', totalMs: 6000 },
+    e: { subtitle: 'РЫВОК', accent: '#ffd17a', totalMs: 9000 },
+    c: { subtitle: 'ВИХРЬ', accent: '#dc4f2a', totalMs: 11000 },
+  },
+  assassin: {
+    q: { subtitle: 'ЛЕЗВИЯ', accent: '#a470ff', totalMs: 5000 },
+    e: { subtitle: 'ТЕНЬ', accent: '#7c4ad8', totalMs: 8000 },
+    c: { subtitle: 'КАЗНЬ', accent: '#ff3a86', totalMs: 10000 },
+  },
+  tank: {
+    q: { subtitle: 'УДАР', accent: '#9aa6b8', totalMs: 7000 },
+    e: { subtitle: 'ЩИТ', accent: '#7ee06f', totalMs: 14000 },
+    c: { subtitle: 'ЗЕМЛЕТРЯС', accent: '#c99650', totalMs: 14000 },
+  },
 };
 
 function computeFrame(): Frame {

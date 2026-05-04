@@ -20,7 +20,19 @@ export type ProjectileKind =
   /** Flat ring of flame. Mage E — wide horizontal disc that travels. */
   | 'flamewave'
   /** Tiny fire bolt. Mage auto-attack — small spark instead of arrow. */
-  | 'firebolt';
+  | 'firebolt'
+  /** Sword slash arc. Fighter Q — wide forward swing. */
+  | 'blade'
+  /** Spinning blade-vortex. Fighter C self-cast AoE FX. */
+  | 'vortex'
+  /** Slim spinning dagger. Assassin Q. */
+  | 'dagger'
+  /** Dark wave with purple energy. Assassin E. */
+  | 'shadow'
+  /** Heavy mace bolt. Tank Q. */
+  | 'hammer'
+  /** Ground shockwave AoE FX. Tank C self-cast. */
+  | 'quake';
 
 export interface ProjectileSpec {
   team: Team;
@@ -53,6 +65,25 @@ export interface ProjectileSpec {
    */
   aoeRadius?: number;
   aoeDamage?: number;
+  /**
+   * Self-cast AoE — no travel, no primary target. The projectile spawns at
+   * the caster, immediately detonates within `aoeRadius`, and lingers for
+   * a brief visual. Used for fighter's vortex and tank's earthquake. When
+   * set, `effect` (slow/stun) is applied to every caught unit, not just
+   * a primary target.
+   */
+  selfCast?: boolean;
+  /** Visual lifetime for self-cast skills, ms. Defaults to 600ms. */
+  selfCastDurationMs?: number;
+  /**
+   * Execute bonus — if the primary target's HP fraction is at or below
+   * `executeHpThreshold`, the dealt damage is multiplied by
+   * `(1 + executeBonus)`. Used for the assassin's finisher. Applied
+   * inside ProjectileManager.hitUnit, so the bonus also boosts XP
+   * rewards if the strike kills.
+   */
+  executeHpThreshold?: number;
+  executeBonus?: number;
 }
 
 interface Projectile {
@@ -73,6 +104,10 @@ interface Projectile {
   arrived: boolean;
   aoeRadius?: number;
   aoeDamage?: number;
+  selfCast?: boolean;
+  selfCastDurationMs?: number;
+  executeHpThreshold?: number;
+  executeBonus?: number;
 }
 
 interface Variant {
@@ -124,6 +159,30 @@ export class ProjectileManager {
         // FIREBOLT — tiny ember sphere for the mage's auto-attack.
         create: createFireboltProjectile,
       },
+      blade: {
+        // BLADE — wide steel slash arc, fighter's bread-and-butter.
+        create: createBladeProjectile,
+      },
+      vortex: {
+        // VORTEX — spinning blade ring planted at the fighter's feet.
+        create: createVortexProjectile,
+      },
+      dagger: {
+        // DAGGER — slim spinning knife for the assassin's Q.
+        create: createDaggerProjectile,
+      },
+      shadow: {
+        // SHADOW — dark purple wave, assassin's E.
+        create: createShadowProjectile,
+      },
+      hammer: {
+        // HAMMER — chunky stone-and-steel mace, tank's Q.
+        create: createHammerProjectile,
+      },
+      quake: {
+        // QUAKE — ground shockwave at the tank's feet.
+        create: createQuakeProjectile,
+      },
     };
   }
 
@@ -156,16 +215,30 @@ export class ProjectileManager {
       effect: spec.effect,
       target: spec.target,
       owner: spec.owner,
-      maxDistance: spec.maxDistance,
+      // Self-cast skills don't travel — they detonate at the caster the
+      // first update tick after spawn. We force maxDistance=0 so the
+      // expiry path triggers the AoE detonation immediately, and clear
+      // velocity so the visual stays put.
+      maxDistance: spec.selfCast ? 0 : spec.maxDistance,
       distanceTravelled: 0,
-      speed,
+      speed: spec.selfCast ? 0 : speed,
       fromPlayer: spec.fromPlayer === true,
       visualOnly: spec.visualOnly === true,
       onArrive: spec.onArrive,
       arrived: false,
       aoeRadius: spec.aoeRadius,
       aoeDamage: spec.aoeDamage,
+      selfCast: spec.selfCast,
+      selfCastDurationMs: spec.selfCastDurationMs,
+      executeHpThreshold: spec.executeHpThreshold,
+      executeBonus: spec.executeBonus,
     });
+    if (spec.selfCast) {
+      // Zero out velocity so the spinning visual stays planted at the
+      // caster's feet — `update()` would otherwise apply one tick of
+      // movement before the expiry check fires.
+      this.projectiles[this.projectiles.length - 1].velocity.set(0, 0, 0);
+    }
   }
 
   update(deltaSec: number, now: number, registry: UnitRegistry): void {
@@ -211,11 +284,66 @@ export class ProjectileManager {
       }
 
       const exceededRange = p.maxDistance !== undefined && p.distanceTravelled >= p.maxDistance;
-      if (exceededRange || now - p.spawnedAt > PROJECTILE_LIFETIME_MS) {
+      const lifetimeOver = now - p.spawnedAt > PROJECTILE_LIFETIME_MS;
+      if (exceededRange || lifetimeOver) {
         if (p.visualOnly) this.fireOnArrive(p);
+        else if (p.selfCast && p.aoeRadius && p.aoeDamage) {
+          // Self-cast detonation. Splash everyone in radius and apply the
+          // skill's effect to each caught unit (different from the
+          // primary-target AoE path, which only damages secondaries).
+          this.detonateSelfCast(p, now, registry);
+          // Keep the spinning/quake mesh visible for the configured tail
+          // window so the player sees the AoE landing. We do this by
+          // postponing removal — but since we're inside the loop, just
+          // leave the mesh in scene and remove it on the next tick by
+          // marking arrived=true and zeroing the AoE so we don't re-hit.
+          p.arrived = true;
+          p.aoeDamage = 0;
+          p.aoeRadius = 0;
+          p.spawnedAt = now - PROJECTILE_LIFETIME_MS + (p.selfCastDurationMs ?? 600);
+          continue;
+        }
         this.removeAt(i);
       }
     }
+  }
+
+  /**
+   * Self-cast AoE detonation. Damages and applies effect to every alive
+   * enemy within radius of the caster's spawn position. Mirrors the
+   * primary-target AoE branch in hitUnit but treats every unit equally —
+   * there's no "primary target" for self-cast skills.
+   */
+  private detonateSelfCast(p: Projectile, now: number, registry: UnitRegistry): void {
+    if (!p.aoeRadius || !p.aoeDamage) return;
+    const r2 = p.aoeRadius * p.aoeRadius;
+    const cx = p.mesh.position.x;
+    const cz = p.mesh.position.z;
+    for (const other of registry.allUnits()) {
+      if (!other.alive || other.team === p.team) continue;
+      const dx = other.position.x - cx;
+      const dz = other.position.z - cz;
+      if (dx * dx + dz * dz > r2) continue;
+      const wasAlive = other.alive;
+      const damage = Math.min(other.hp, p.aoeDamage);
+      other.takeDamage(p.aoeDamage);
+      if (damage > 0) this.onDamage?.(other, damage, p.owner);
+      // Apply on-cast effect (slow / stun) to every caught unit — that's
+      // the whole point of vortex/quake.
+      if (p.effect?.slow) {
+        const until = now + p.effect.slow.durationMs;
+        if (until > other.slowUntil) other.slowUntil = until;
+      }
+      if (p.effect?.stun) {
+        const until = now + p.effect.stun.durationMs;
+        if (until > other.stunnedUntil) other.stunnedUntil = until;
+      }
+      if (wasAlive && !other.alive && p.owner?.kind === 'hero') {
+        p.owner.grantXp?.(other.xpReward);
+      }
+      this.spawnHitBurst(other.position, p.team);
+    }
+    if (p.fromPlayer) this.onPlayerHit?.();
   }
 
   private fireOnArrive(p: Projectile): void {
@@ -227,8 +355,16 @@ export class ProjectileManager {
 
   private hitUnit(p: Projectile, unit: Unit, now: number, registry: UnitRegistry): void {
     const wasAlive = unit.alive;
-    const damage = Math.min(unit.hp, p.damage);
-    unit.takeDamage(p.damage);
+    // Execute bonus — when the assassin's finisher lands on a wounded
+    // target, multiply the damage. The threshold/bonus are per-projectile
+    // so future heroes can have their own "execute" rules.
+    let baseDamage = p.damage;
+    if (p.executeHpThreshold !== undefined && p.executeBonus !== undefined) {
+      const hpFrac = unit.maxHp > 0 ? unit.hp / unit.maxHp : 1;
+      if (hpFrac <= p.executeHpThreshold) baseDamage = p.damage * (1 + p.executeBonus);
+    }
+    const damage = Math.min(unit.hp, baseDamage);
+    unit.takeDamage(baseDamage);
     if (damage > 0) this.onDamage?.(unit, damage, p.owner);
     if (p.effect?.slow) {
       const until = now + p.effect.slow.durationMs;
@@ -597,5 +733,202 @@ function createFireboltProjectile(): THREE.Object3D {
   g.add(halo);
   const core = new THREE.Mesh(FIREBOLT_CORE_GEOM, FIREBOLT_CORE_MAT);
   g.add(core);
+  return g;
+}
+
+// --- Fighter projectiles --------------------------------------------------
+const BLADE_GEOM = new THREE.BoxGeometry(0.18, 0.06, 1.4);
+const BLADE_GUARD_GEOM = new THREE.BoxGeometry(0.42, 0.06, 0.12);
+const BLADE_TIP_GEOM = new THREE.ConeGeometry(0.14, 0.32, 6);
+const BLADE_MAT = new THREE.MeshLambertMaterial({
+  color: 0xcfd6e0,
+  emissive: 0x88a0c0,
+  emissiveIntensity: 0.6,
+});
+const BLADE_GUARD_MAT = new THREE.MeshLambertMaterial({
+  color: 0xb78a3a,
+  emissive: 0x000000,
+});
+
+/** Wide steel slash — fighter Q. Sword-shaped projectile with gold guard. */
+function createBladeProjectile(): THREE.Object3D {
+  const g = new THREE.Group();
+  const blade = new THREE.Mesh(BLADE_GEOM, BLADE_MAT);
+  g.add(blade);
+  const tip = new THREE.Mesh(BLADE_TIP_GEOM, BLADE_MAT);
+  tip.rotation.x = Math.PI / 2;
+  tip.position.z = 0.85;
+  g.add(tip);
+  const guard = new THREE.Mesh(BLADE_GUARD_GEOM, BLADE_GUARD_MAT);
+  guard.position.z = -0.55;
+  g.add(guard);
+  return g;
+}
+
+const VORTEX_RING_GEOM = new THREE.TorusGeometry(1.6, 0.12, 8, 30);
+const VORTEX_BLADE_GEOM = new THREE.BoxGeometry(0.7, 0.08, 0.12);
+const VORTEX_RING_MAT = new THREE.MeshLambertMaterial({
+  color: 0xc9d3e0,
+  emissive: 0x6e89b0,
+  emissiveIntensity: 1.0,
+  transparent: true,
+  opacity: 0.85,
+});
+const VORTEX_BLADE_MAT = new THREE.MeshLambertMaterial({
+  color: 0xe0e6f2,
+  emissive: 0x88a0c0,
+  emissiveIntensity: 0.7,
+});
+
+/** Spinning blade ring at the fighter's feet — fighter C self-cast. */
+function createVortexProjectile(): THREE.Object3D {
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(VORTEX_RING_GEOM, VORTEX_RING_MAT);
+  ring.rotation.x = Math.PI / 2;
+  g.add(ring);
+  // Three blades flaring out from the centre — visual only, no extra hits.
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    const blade = new THREE.Mesh(VORTEX_BLADE_GEOM, VORTEX_BLADE_MAT);
+    blade.position.set(Math.cos(a) * 0.85, 0.12, Math.sin(a) * 0.85);
+    blade.rotation.y = a;
+    g.add(blade);
+  }
+  return g;
+}
+
+// --- Assassin projectiles -------------------------------------------------
+const DAGGER_BLADE_GEOM = new THREE.ConeGeometry(0.07, 0.7, 6);
+const DAGGER_HILT_GEOM = new THREE.CylinderGeometry(0.05, 0.05, 0.18, 6);
+const DAGGER_BLADE_MAT = new THREE.MeshLambertMaterial({
+  color: 0xd8dde6,
+  emissive: 0x4a4d72,
+  emissiveIntensity: 0.5,
+});
+const DAGGER_HILT_MAT = new THREE.MeshLambertMaterial({ color: 0x1f1c30 });
+
+/** Slim spinning knife — assassin Q. */
+function createDaggerProjectile(): THREE.Object3D {
+  const g = new THREE.Group();
+  const blade = new THREE.Mesh(DAGGER_BLADE_GEOM, DAGGER_BLADE_MAT);
+  blade.rotation.x = Math.PI / 2;
+  blade.position.z = 0.2;
+  g.add(blade);
+  const hilt = new THREE.Mesh(DAGGER_HILT_GEOM, DAGGER_HILT_MAT);
+  hilt.rotation.x = Math.PI / 2;
+  hilt.position.z = -0.3;
+  g.add(hilt);
+  return g;
+}
+
+const SHADOW_CORE_GEOM = new THREE.SphereGeometry(0.36, 12, 12);
+const SHADOW_OUTER_GEOM = new THREE.SphereGeometry(0.62, 12, 12);
+const SHADOW_HALO_GEOM = new THREE.TorusGeometry(0.6, 0.1, 8, 22);
+const SHADOW_CORE_MAT = new THREE.MeshLambertMaterial({
+  color: 0x6a45c8,
+  emissive: 0x9b6cff,
+  emissiveIntensity: 1.6,
+});
+const SHADOW_OUTER_MAT = new THREE.MeshLambertMaterial({
+  color: 0x3a1f70,
+  emissive: 0x4a2a90,
+  emissiveIntensity: 0.9,
+  transparent: true,
+  opacity: 0.78,
+});
+const SHADOW_HALO_MAT = new THREE.MeshBasicMaterial({
+  color: 0x4a2a90,
+  transparent: true,
+  opacity: 0.5,
+  depthWrite: false,
+});
+
+/** Dark purple wave — assassin E. */
+function createShadowProjectile(): THREE.Object3D {
+  const g = new THREE.Group();
+  const halo = new THREE.Mesh(SHADOW_HALO_GEOM, SHADOW_HALO_MAT);
+  halo.rotation.x = Math.PI / 2;
+  g.add(halo);
+  const outer = new THREE.Mesh(SHADOW_OUTER_GEOM, SHADOW_OUTER_MAT);
+  g.add(outer);
+  const core = new THREE.Mesh(SHADOW_CORE_GEOM, SHADOW_CORE_MAT);
+  g.add(core);
+  return g;
+}
+
+// --- Tank projectiles -----------------------------------------------------
+const HAMMER_HEAD_GEOM = new THREE.BoxGeometry(0.7, 0.6, 0.45);
+const HAMMER_SHAFT_GEOM = new THREE.CylinderGeometry(0.08, 0.08, 0.9, 8);
+const HAMMER_BAND_GEOM = new THREE.BoxGeometry(0.74, 0.08, 0.49);
+const HAMMER_HEAD_MAT = new THREE.MeshLambertMaterial({
+  color: 0x6c6e72,
+  emissive: 0x202428,
+});
+const HAMMER_SHAFT_MAT = new THREE.MeshLambertMaterial({ color: 0x4d2f1c });
+const HAMMER_BAND_MAT = new THREE.MeshLambertMaterial({
+  color: 0xd0a050,
+  emissive: 0x7a5520,
+  emissiveIntensity: 0.6,
+});
+
+/** Heavy mace — tank Q. */
+function createHammerProjectile(): THREE.Object3D {
+  const g = new THREE.Group();
+  const head = new THREE.Mesh(HAMMER_HEAD_GEOM, HAMMER_HEAD_MAT);
+  head.position.z = 0.45;
+  g.add(head);
+  const bandTop = new THREE.Mesh(HAMMER_BAND_GEOM, HAMMER_BAND_MAT);
+  bandTop.position.set(0, 0.34, 0.45);
+  g.add(bandTop);
+  const bandBot = new THREE.Mesh(HAMMER_BAND_GEOM, HAMMER_BAND_MAT);
+  bandBot.position.set(0, -0.34, 0.45);
+  g.add(bandBot);
+  const shaft = new THREE.Mesh(HAMMER_SHAFT_GEOM, HAMMER_SHAFT_MAT);
+  shaft.rotation.x = Math.PI / 2;
+  shaft.position.z = -0.35;
+  g.add(shaft);
+  return g;
+}
+
+const QUAKE_RING_GEOM = new THREE.TorusGeometry(2.0, 0.16, 8, 28);
+const QUAKE_INNER_GEOM = new THREE.TorusGeometry(1.2, 0.12, 8, 24);
+const QUAKE_DUST_GEOM = new THREE.CylinderGeometry(0.18, 0.05, 0.55, 6);
+const QUAKE_RING_MAT = new THREE.MeshLambertMaterial({
+  color: 0xb8985a,
+  emissive: 0x7a5a1f,
+  emissiveIntensity: 0.8,
+  transparent: true,
+  opacity: 0.9,
+});
+const QUAKE_INNER_MAT = new THREE.MeshLambertMaterial({
+  color: 0xe7c878,
+  emissive: 0xa68440,
+  emissiveIntensity: 0.6,
+  transparent: true,
+  opacity: 0.7,
+});
+const QUAKE_DUST_MAT = new THREE.MeshLambertMaterial({
+  color: 0x9c7c52,
+  transparent: true,
+  opacity: 0.6,
+});
+
+/** Ground shockwave at the tank's feet — tank C self-cast. */
+function createQuakeProjectile(): THREE.Object3D {
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(QUAKE_RING_GEOM, QUAKE_RING_MAT);
+  ring.rotation.x = Math.PI / 2;
+  g.add(ring);
+  const inner = new THREE.Mesh(QUAKE_INNER_GEOM, QUAKE_INNER_MAT);
+  inner.rotation.x = Math.PI / 2;
+  inner.position.y = 0.05;
+  g.add(inner);
+  // Dust plumes around the rim.
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const dust = new THREE.Mesh(QUAKE_DUST_GEOM, QUAKE_DUST_MAT);
+    dust.position.set(Math.cos(a) * 1.5, 0.25, Math.sin(a) * 1.5);
+    g.add(dust);
+  }
   return g;
 }

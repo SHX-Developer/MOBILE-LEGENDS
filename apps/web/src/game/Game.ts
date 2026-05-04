@@ -182,7 +182,17 @@ export class Game {
       this.registry.add(enemy);
       this.enemyBots = [enemy];
     } else {
-      const allyKind: HeroKind = playerHeroKind === 'mage' ? 'ranger' : 'mage';
+      // Ally archetype:
+      //   ranger → ally mage (caster support for the marksman)
+      //   mage   → ally ranger (sustained DPS for the spell-burst hero)
+      //   melee  → ally caster/marksman that complements the player's role
+      // The bot codepath only supports ranger/mage today, so we always
+      // pick from those two to round out the team.
+      const allyKind: HeroKind = (
+        playerHeroKind === 'mage' ? 'ranger'
+          : playerHeroKind === 'tank' ? 'ranger'
+            : 'mage'
+      );
       const ally = new BotObject(
         new THREE.Vector3(SPAWN_BLUE_X + 2.4, 0, SPAWN_BLUE_Z - 2.4),
         allyKind,
@@ -999,12 +1009,43 @@ export class Game {
     lastAt: number,
   ): number {
     // Returns the new lastAt timestamp on success, or `lastAt` unchanged on
-    // cooldown. The hero's skill loadout (range, cooldown, projectile kind,
-    // status effect, AoE radius) all come from the SkillConfig — keeps this
-    // path agnostic of which hero is casting.
+    // cooldown. Branches on the SkillConfig:
+    //   • selfBuff present  → apply instant heal/speed buff to the player,
+    //     play a heal-ring visual, no projectile.
+    //   • selfCast=true     → spawn a stationary projectile at the player's
+    //     feet that detonates AoE on the next tick.
+    //   • otherwise         → fire a directional projectile.
     if (now - lastAt < cfg.cooldownMs) return lastAt;
+    if (cfg.selfBuff) {
+      this.player.applySelfBuff(cfg.selfBuff, now);
+      // Reuse the heal ring as the visual for any self-buff cast.
+      this.spawnHealRing(this.player.position, 700);
+      Sounds.skill(soundId, this.player.heroKind);
+      return now;
+    }
     this.player.faceDirection(dirX, dirZ);
     const origin = this.player.position;
+    if (cfg.selfCast) {
+      // Spawn at the caster — no aim direction, no max distance. The
+      // projectile detonates on the first update tick and applies the
+      // skill's effect to every enemy in radius.
+      this.projectiles.spawn(origin, origin, now, {
+        team: this.player.team,
+        damage: 0,
+        kind: cfg.projectileKind,
+        effect: cfg.effect,
+        aoeRadius: cfg.aoeRadius,
+        aoeDamage: cfg.aoeDamage !== undefined
+          ? cfg.aoeDamage * this.player.outgoingDamageMultiplier(now)
+          : undefined,
+        selfCast: true,
+        selfCastDurationMs: cfg.selfCastDurationMs,
+        owner: this.player,
+        fromPlayer: true,
+      });
+      Sounds.skill(soundId, this.player.heroKind);
+      return now;
+    }
     const target = new THREE.Vector3(
       origin.x + dirX * cfg.range,
       origin.y,
@@ -1019,6 +1060,8 @@ export class Game {
       aoeDamage: cfg.aoeDamage !== undefined
         ? cfg.aoeDamage * this.player.outgoingDamageMultiplier(now)
         : undefined,
+      executeHpThreshold: cfg.executeHpThreshold,
+      executeBonus: cfg.executeBonus,
       owner: this.player,
       maxDistance: cfg.range,
       fromPlayer: true,

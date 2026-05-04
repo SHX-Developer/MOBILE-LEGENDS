@@ -1,6 +1,43 @@
 import * as THREE from 'three';
 import {
   type HeroKind,
+  ASSASSIN_ATTACK_COOLDOWN_MS,
+  ASSASSIN_ATTACK_DAMAGE,
+  ASSASSIN_ATTACK_RANGE,
+  ASSASSIN_C_COOLDOWN_MS,
+  ASSASSIN_C_DAMAGE,
+  ASSASSIN_C_EXECUTE_BONUS,
+  ASSASSIN_C_EXECUTE_HP_PCT,
+  ASSASSIN_C_RANGE,
+  ASSASSIN_E_AOE_DAMAGE,
+  ASSASSIN_E_AOE_RADIUS,
+  ASSASSIN_E_COOLDOWN_MS,
+  ASSASSIN_E_DAMAGE,
+  ASSASSIN_E_RANGE,
+  ASSASSIN_MAX_HP,
+  ASSASSIN_Q_COOLDOWN_MS,
+  ASSASSIN_Q_DAMAGE,
+  ASSASSIN_Q_RANGE,
+  ASSASSIN_SPEED_3D,
+  FIGHTER_ATTACK_COOLDOWN_MS,
+  FIGHTER_ATTACK_DAMAGE,
+  FIGHTER_ATTACK_RANGE,
+  FIGHTER_C_AOE_DAMAGE,
+  FIGHTER_C_AOE_RADIUS,
+  FIGHTER_C_COOLDOWN_MS,
+  FIGHTER_C_STUN_DURATION_MS,
+  FIGHTER_E_AOE_DAMAGE,
+  FIGHTER_E_AOE_RADIUS,
+  FIGHTER_E_COOLDOWN_MS,
+  FIGHTER_E_DAMAGE,
+  FIGHTER_E_RANGE,
+  FIGHTER_MAX_HP,
+  FIGHTER_Q_COOLDOWN_MS,
+  FIGHTER_Q_DAMAGE,
+  FIGHTER_Q_RANGE,
+  FIGHTER_Q_SLOW_DURATION_MS,
+  FIGHTER_Q_SLOW_FACTOR,
+  FIGHTER_SPEED_3D,
   HERO_BASE_XP_TO_LEVEL,
   HERO_DAMAGE_PER_LEVEL,
   HERO_HP_PER_LEVEL,
@@ -47,6 +84,23 @@ import {
   SKILL_Q_COOLDOWN_MS,
   SKILL_Q_DAMAGE,
   SKILL_Q_RANGE,
+  TANK_ATTACK_COOLDOWN_MS,
+  TANK_ATTACK_DAMAGE,
+  TANK_ATTACK_RANGE,
+  TANK_C_AOE_DAMAGE,
+  TANK_C_AOE_RADIUS,
+  TANK_C_COOLDOWN_MS,
+  TANK_C_STUN_DURATION_MS,
+  TANK_E_COOLDOWN_MS,
+  TANK_E_HEAL,
+  TANK_E_SPEED_BUFF_FACTOR,
+  TANK_E_SPEED_BUFF_MS,
+  TANK_MAX_HP,
+  TANK_Q_COOLDOWN_MS,
+  TANK_Q_DAMAGE,
+  TANK_Q_RANGE,
+  TANK_Q_STUN_DURATION_MS,
+  TANK_SPEED_3D,
 } from '../constants.js';
 import type { Unit, Team } from '../combat/Unit.js';
 import { HealthBar } from '../combat/HealthBar.js';
@@ -71,6 +125,21 @@ export interface SkillConfig {
   aoeRadius?: number;
   /** Damage dealt to other enemies inside the AoE radius. */
   aoeDamage?: number;
+  /** Self-cast skills detonate at the caster's feet — used by fighter
+   *  vortex and tank earthquake. */
+  selfCast?: boolean;
+  /** Visual lifetime for self-cast effects. */
+  selfCastDurationMs?: number;
+  /** Execute mechanic — bonus damage when target is below the threshold. */
+  executeHpThreshold?: number;
+  executeBonus?: number;
+  /** Self-only buff (heal + speed) — used by the tank's shield button. No
+   *  projectile is fired when this is set. */
+  selfBuff?: {
+    heal?: number;
+    speedFactor?: number;
+    speedDurationMs?: number;
+  };
 }
 
 /**
@@ -126,8 +195,13 @@ export class PlayerObject implements Unit {
   constructor(spawn: THREE.Vector3, heroKind: HeroKind = 'ranger') {
     this.heroKind = heroKind;
     this.spawn = spawn.clone();
-    if (heroKind === 'mage') this.buildMage();
-    else this.buildMia();
+    switch (heroKind) {
+      case 'mage': this.buildMage(); break;
+      case 'fighter': this.buildFighter(); break;
+      case 'assassin': this.buildAssassin(); break;
+      case 'tank': this.buildTank(); break;
+      default: this.buildMia();
+    }
     this.hp = this.maxHp;
     this.group.position.copy(spawn);
     this.healthBar.group.position.set(0, 3, 0);
@@ -178,101 +252,258 @@ export class PlayerObject implements Unit {
   }
 
   get maxHp(): number {
-    const base = this.heroKind === 'mage' ? MAGE_MAX_HP : PLAYER_MAX_HP;
+    let base: number;
+    switch (this.heroKind) {
+      case 'mage': base = MAGE_MAX_HP; break;
+      case 'fighter': base = FIGHTER_MAX_HP; break;
+      case 'assassin': base = ASSASSIN_MAX_HP; break;
+      case 'tank': base = TANK_MAX_HP; break;
+      default: base = PLAYER_MAX_HP;
+    }
     return base + (this.level - 1) * HERO_HP_PER_LEVEL;
   }
 
   get attackDamage(): number {
-    const base = this.heroKind === 'mage' ? MAGE_ATTACK_DAMAGE : PLAYER_ATTACK_DAMAGE;
+    let base: number;
+    switch (this.heroKind) {
+      case 'mage': base = MAGE_ATTACK_DAMAGE; break;
+      case 'fighter': base = FIGHTER_ATTACK_DAMAGE; break;
+      case 'assassin': base = ASSASSIN_ATTACK_DAMAGE; break;
+      case 'tank': base = TANK_ATTACK_DAMAGE; break;
+      default: base = PLAYER_ATTACK_DAMAGE;
+    }
     return base + (this.level - 1) * HERO_DAMAGE_PER_LEVEL;
   }
 
   get attackRange(): number {
-    return this.heroKind === 'mage' ? MAGE_ATTACK_RANGE : PLAYER_ATTACK_RANGE;
+    switch (this.heroKind) {
+      case 'mage': return MAGE_ATTACK_RANGE;
+      case 'fighter': return FIGHTER_ATTACK_RANGE;
+      case 'assassin': return ASSASSIN_ATTACK_RANGE;
+      case 'tank': return TANK_ATTACK_RANGE;
+      default: return PLAYER_ATTACK_RANGE;
+    }
   }
 
   get attackCooldownMs(): number {
-    return this.heroKind === 'mage' ? MAGE_ATTACK_COOLDOWN_MS : PLAYER_ATTACK_COOLDOWN_MS;
+    switch (this.heroKind) {
+      case 'mage': return MAGE_ATTACK_COOLDOWN_MS;
+      case 'fighter': return FIGHTER_ATTACK_COOLDOWN_MS;
+      case 'assassin': return ASSASSIN_ATTACK_COOLDOWN_MS;
+      case 'tank': return TANK_ATTACK_COOLDOWN_MS;
+      default: return PLAYER_ATTACK_COOLDOWN_MS;
+    }
   }
+
+  /** Speed buff granted by tank's E. Decays back to base when expired. */
+  speedBuffUntil = 0;
+  speedBuffFactor = 1;
 
   get speed3D(): number {
-    return this.heroKind === 'mage' ? MAGE_SPEED_3D : PLAYER_SPEED_3D;
+    let base: number;
+    switch (this.heroKind) {
+      case 'mage': base = MAGE_SPEED_3D; break;
+      case 'fighter': base = FIGHTER_SPEED_3D; break;
+      case 'assassin': base = ASSASSIN_SPEED_3D; break;
+      case 'tank': base = TANK_SPEED_3D; break;
+      default: base = PLAYER_SPEED_3D;
+    }
+    if (performance.now() < this.speedBuffUntil) return base * this.speedBuffFactor;
+    return base;
   }
 
-  /** Auto-attack projectile cosmetic. Ranger: arrow, mage: ember firebolt. */
+  /** Auto-attack projectile cosmetic per archetype. */
   get autoAttackKind(): ProjectileKind {
-    return this.heroKind === 'mage' ? 'firebolt' : 'basic';
+    switch (this.heroKind) {
+      case 'mage': return 'firebolt';
+      case 'fighter': return 'blade';
+      case 'assassin': return 'dagger';
+      case 'tank': return 'hammer';
+      default: return 'basic';
+    }
+  }
+
+  /** Apply tank-style self buff: instant heal + temporary speed multiplier. */
+  applySelfBuff(buff: { heal?: number; speedFactor?: number; speedDurationMs?: number }, now: number): void {
+    if (buff.heal && buff.heal > 0) this.heal(buff.heal);
+    if (buff.speedFactor && buff.speedFactor > 1 && buff.speedDurationMs) {
+      this.speedBuffFactor = buff.speedFactor;
+      this.speedBuffUntil = now + buff.speedDurationMs;
+    }
   }
 
   /** Q skill loadout — fresh per cast (damage scales with level). */
   get skillQ(): SkillConfig {
-    if (this.heroKind === 'mage') {
-      // FIREBALL — bursting flame sphere with a small splash on impact.
-      // Splash radius is short (1.8u) so it isn't a free wave-clear, just a
-      // little overflow onto adjacent targets.
-      return {
-        damage: MAGE_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.5,
-        cooldownMs: MAGE_Q_COOLDOWN_MS,
-        range: MAGE_Q_RANGE,
-        projectileKind: 'fireball',
-        aoeRadius: 1.8,
-        aoeDamage: 35 + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
-      };
+    const lvl = this.level - 1;
+    switch (this.heroKind) {
+      case 'mage':
+        // FIREBALL — bursting flame sphere with a small splash on impact.
+        return {
+          damage: MAGE_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.5,
+          cooldownMs: MAGE_Q_COOLDOWN_MS,
+          range: MAGE_Q_RANGE,
+          projectileKind: 'fireball',
+          aoeRadius: 1.8,
+          aoeDamage: 35 + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
+        };
+      case 'fighter':
+        // СЕЧЕНИЕ — heavy sword strike with a brief slow on impact.
+        return {
+          damage: FIGHTER_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.4,
+          cooldownMs: FIGHTER_Q_COOLDOWN_MS,
+          range: FIGHTER_Q_RANGE,
+          projectileKind: 'blade',
+          effect: { slow: { factor: FIGHTER_Q_SLOW_FACTOR, durationMs: FIGHTER_Q_SLOW_DURATION_MS } },
+        };
+      case 'assassin':
+        // ЛЕЗВИЯ — single fast dagger throw with extreme single-target damage.
+        return {
+          damage: ASSASSIN_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.6,
+          cooldownMs: ASSASSIN_Q_COOLDOWN_MS,
+          range: ASSASSIN_Q_RANGE,
+          projectileKind: 'dagger',
+        };
+      case 'tank':
+        // УДАР — hammer slam: solid hit + 1s stun.
+        return {
+          damage: TANK_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL,
+          cooldownMs: TANK_Q_COOLDOWN_MS,
+          range: TANK_Q_RANGE,
+          projectileKind: 'hammer',
+          effect: { stun: { durationMs: TANK_Q_STUN_DURATION_MS } },
+        };
+      default:
+        // Ranger POWER — heavy arrow.
+        return {
+          damage: SKILL_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.5,
+          cooldownMs: SKILL_Q_COOLDOWN_MS,
+          range: SKILL_Q_RANGE,
+          projectileKind: 'heavy',
+        };
     }
-    return {
-      damage: SKILL_Q_DAMAGE + (this.level - 1) * HERO_DAMAGE_PER_LEVEL * 1.5,
-      cooldownMs: SKILL_Q_COOLDOWN_MS,
-      range: SKILL_Q_RANGE,
-      projectileKind: 'heavy',
-    };
   }
 
   get skillE(): SkillConfig {
-    if (this.heroKind === 'mage') {
-      // FLAME WAVE — wide flame disc that slows on impact and chips a
-      // medium AoE around the hit. Lower direct damage than the fireball
-      // but it lights up groups.
-      return {
-        damage: MAGE_E_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
-        cooldownMs: MAGE_E_COOLDOWN_MS,
-        range: MAGE_E_RANGE,
-        projectileKind: 'flamewave',
-        effect: { slow: { factor: MAGE_E_SLOW_FACTOR, durationMs: MAGE_E_SLOW_DURATION_MS } },
-        aoeRadius: 2.6,
-        aoeDamage: 28 + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
-      };
+    const lvl = this.level - 1;
+    switch (this.heroKind) {
+      case 'mage':
+        // FLAME WAVE — wide flame disc that slows on impact and chips AoE.
+        return {
+          damage: MAGE_E_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
+          cooldownMs: MAGE_E_COOLDOWN_MS,
+          range: MAGE_E_RANGE,
+          projectileKind: 'flamewave',
+          effect: { slow: { factor: MAGE_E_SLOW_FACTOR, durationMs: MAGE_E_SLOW_DURATION_MS } },
+          aoeRadius: 2.6,
+          aoeDamage: 28 + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
+        };
+      case 'fighter':
+        // РЫВОК — fast sword wave that splashes on impact.
+        return {
+          damage: FIGHTER_E_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.8),
+          cooldownMs: FIGHTER_E_COOLDOWN_MS,
+          range: FIGHTER_E_RANGE,
+          projectileKind: 'blade',
+          aoeRadius: FIGHTER_E_AOE_RADIUS,
+          aoeDamage: FIGHTER_E_AOE_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.3),
+        };
+      case 'assassin':
+        // ТЕНЬ — fast shadow wave with small splash.
+        return {
+          damage: ASSASSIN_E_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL,
+          cooldownMs: ASSASSIN_E_COOLDOWN_MS,
+          range: ASSASSIN_E_RANGE,
+          projectileKind: 'shadow',
+          aoeRadius: ASSASSIN_E_AOE_RADIUS,
+          aoeDamage: ASSASSIN_E_AOE_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.3),
+        };
+      case 'tank':
+        // ЩИТ — self-buff: instant heal + brief speed boost. No projectile,
+        // Game.tryUseSkill takes the selfBuff branch and applies it directly.
+        return {
+          damage: 0,
+          cooldownMs: TANK_E_COOLDOWN_MS,
+          range: 0,
+          // projectileKind is unused for selfBuff; pick something cheap.
+          projectileKind: 'basic',
+          selfBuff: {
+            heal: TANK_E_HEAL + lvl * 30,
+            speedFactor: TANK_E_SPEED_BUFF_FACTOR,
+            speedDurationMs: TANK_E_SPEED_BUFF_MS,
+          },
+        };
+      default:
+        // Ranger SLOW.
+        return {
+          damage: SKILL_E_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
+          cooldownMs: SKILL_E_COOLDOWN_MS,
+          range: SKILL_E_RANGE,
+          projectileKind: 'slow',
+          effect: { slow: { factor: SKILL_E_SLOW_FACTOR, durationMs: SKILL_E_SLOW_DURATION_MS } },
+        };
     }
-    return {
-      damage: SKILL_E_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
-      cooldownMs: SKILL_E_COOLDOWN_MS,
-      range: SKILL_E_RANGE,
-      projectileKind: 'slow',
-      effect: { slow: { factor: SKILL_E_SLOW_FACTOR, durationMs: SKILL_E_SLOW_DURATION_MS } },
-    };
   }
 
   get skillC(): SkillConfig {
-    if (this.heroKind === 'mage') {
-      // Meteor — chunky direct hit + AoE shockwave + 2-second stun on the
-      // primary target. The mage's signature ult: lands a spell, locks the
-      // target down long enough for the follow-up combo.
-      return {
-        damage: MAGE_C_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
-        cooldownMs: MAGE_C_COOLDOWN_MS,
-        range: MAGE_C_RANGE,
-        projectileKind: 'meteor',
-        effect: { stun: { durationMs: MAGE_C_STUN_DURATION_MS } },
-        aoeRadius: MAGE_C_AOE_RADIUS,
-        aoeDamage: MAGE_C_AOE_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
-      };
+    const lvl = this.level - 1;
+    switch (this.heroKind) {
+      case 'mage':
+        // Meteor — primary stun + AoE.
+        return {
+          damage: MAGE_C_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.6),
+          cooldownMs: MAGE_C_COOLDOWN_MS,
+          range: MAGE_C_RANGE,
+          projectileKind: 'meteor',
+          effect: { stun: { durationMs: MAGE_C_STUN_DURATION_MS } },
+          aoeRadius: MAGE_C_AOE_RADIUS,
+          aoeDamage: MAGE_C_AOE_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
+        };
+      case 'fighter':
+        // ВИХРЬ — self-cast spin AoE with stun.
+        return {
+          damage: 0,
+          cooldownMs: FIGHTER_C_COOLDOWN_MS,
+          range: 0,
+          projectileKind: 'vortex',
+          selfCast: true,
+          selfCastDurationMs: 700,
+          aoeRadius: FIGHTER_C_AOE_RADIUS,
+          aoeDamage: FIGHTER_C_AOE_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.5),
+          effect: { stun: { durationMs: FIGHTER_C_STUN_DURATION_MS } },
+        };
+      case 'assassin':
+        // КАЗНЬ — single-target finisher with execute bonus on low HP.
+        return {
+          damage: ASSASSIN_C_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.2,
+          cooldownMs: ASSASSIN_C_COOLDOWN_MS,
+          range: ASSASSIN_C_RANGE,
+          projectileKind: 'shadow',
+          executeHpThreshold: ASSASSIN_C_EXECUTE_HP_PCT,
+          executeBonus: ASSASSIN_C_EXECUTE_BONUS,
+        };
+      case 'tank':
+        // ЗЕМЛЕТРЯСЕНИЕ — self-cast big AoE stun.
+        return {
+          damage: 0,
+          cooldownMs: TANK_C_COOLDOWN_MS,
+          range: 0,
+          projectileKind: 'quake',
+          selfCast: true,
+          selfCastDurationMs: 800,
+          aoeRadius: TANK_C_AOE_RADIUS,
+          aoeDamage: TANK_C_AOE_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
+          effect: { stun: { durationMs: TANK_C_STUN_DURATION_MS } },
+        };
+      default:
+        // Ranger STUN.
+        return {
+          damage: SKILL_C_DAMAGE + lvl * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
+          cooldownMs: SKILL_C_COOLDOWN_MS,
+          range: SKILL_C_RANGE,
+          projectileKind: 'control',
+          effect: { stun: { durationMs: SKILL_C_STUN_DURATION_MS } },
+        };
     }
-    return {
-      damage: SKILL_C_DAMAGE + (this.level - 1) * Math.round(HERO_DAMAGE_PER_LEVEL * 0.4),
-      cooldownMs: SKILL_C_COOLDOWN_MS,
-      range: SKILL_C_RANGE,
-      projectileKind: 'control',
-      effect: { stun: { durationMs: SKILL_C_STUN_DURATION_MS } },
-    };
   }
 
   /** Called by Game whenever a tower projectile lands on the player. */
@@ -857,6 +1088,315 @@ export class PlayerObject implements Unit {
     // (scale.x lerp on the bow) animates the staff harmlessly without any
     // extra bookkeeping. Visually it just adds a subtle pulse on cast.
     this.bowGroup = staff;
+  }
+
+  /**
+   * Reusable humanoid skeleton — legs, torso, head, arms — used by the
+   * three "simple" hero builds (fighter, assassin, tank). The visual
+   * differentiation between them then lives in the colour palette and
+   * the held weapon, not in the body proportions.
+   *
+   * Returns the body group plus references to limb pivots so death and
+   * gait animations can drive them just like the ranger/mage builds.
+   */
+  private buildHumanoid(opts: {
+    primary: THREE.MeshLambertMaterial;
+    secondary: THREE.MeshLambertMaterial;
+    skin: THREE.MeshLambertMaterial;
+    boot: THREE.MeshLambertMaterial;
+    helm?: THREE.MeshLambertMaterial;
+    /** Bigger characters (tank) push the silhouette out — the rest stay 1.0. */
+    bulk?: number;
+  }): { body: THREE.Group; rightHand: THREE.Group } {
+    const bulk = opts.bulk ?? 1;
+    const body = new THREE.Group();
+    this.group.add(body);
+    this.bodyRoot = body;
+    this.cloakMat = opts.primary;
+    this.cloakLightMat = opts.secondary;
+
+    // Legs.
+    const thighGeom = new THREE.CylinderGeometry(0.16 * bulk, 0.14 * bulk, 0.65, 10);
+    thighGeom.translate(0, -0.32, 0);
+    const calfGeom = new THREE.CylinderGeometry(0.13 * bulk, 0.11 * bulk, 0.55, 10);
+    calfGeom.translate(0, -0.28, 0);
+    for (const side of [-1, 1] as const) {
+      const hip = new THREE.Group();
+      hip.position.set(0.18 * bulk * side, 0.95, 0);
+      const thigh = new THREE.Mesh(thighGeom, opts.secondary);
+      hip.add(thigh);
+      const calf = new THREE.Mesh(calfGeom, opts.secondary);
+      calf.position.y = -0.62;
+      hip.add(calf);
+      const boot = new THREE.Mesh(
+        new THREE.BoxGeometry(0.26 * bulk, 0.18, 0.4),
+        opts.boot,
+      );
+      boot.position.set(0, -1.12, 0.05);
+      hip.add(boot);
+      body.add(hip);
+      if (side < 0) this.leftLeg = hip;
+      else this.rightLeg = hip;
+    }
+
+    // Torso.
+    const torso = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.4 * bulk, 0.55, 6, 12),
+      opts.primary,
+    );
+    torso.position.y = 1.6;
+    body.add(torso);
+
+    // Belt.
+    const belt = new THREE.Mesh(
+      new THREE.TorusGeometry(0.38 * bulk, 0.06, 8, 22),
+      opts.boot,
+    );
+    belt.rotation.x = Math.PI / 2;
+    belt.position.y = 1.3;
+    body.add(belt);
+
+    // Arms — simple cylinders. Right hand returned as a group so callers
+    // can attach a weapon to it.
+    const upperArmGeom = new THREE.CylinderGeometry(0.1 * bulk, 0.09 * bulk, 0.45, 10);
+    upperArmGeom.translate(0, -0.22, 0);
+    const forearmGeom = new THREE.CylinderGeometry(0.08 * bulk, 0.075 * bulk, 0.42, 10);
+    forearmGeom.translate(0, -0.21, 0);
+    const armMat = opts.skin;
+    let rightHand = new THREE.Group();
+    for (const side of [-1, 1] as const) {
+      const shoulder = new THREE.Group();
+      shoulder.position.set(0.42 * bulk * side, 1.82, 0);
+      const upper = new THREE.Mesh(upperArmGeom, armMat);
+      shoulder.add(upper);
+      const forearm = new THREE.Mesh(forearmGeom, armMat);
+      forearm.position.y = -0.42;
+      shoulder.add(forearm);
+      const hand = new THREE.Group();
+      hand.position.y = -0.82;
+      const handMesh = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), armMat);
+      hand.add(handMesh);
+      shoulder.add(hand);
+      body.add(shoulder);
+      if (side < 0) this.leftArm = shoulder;
+      else {
+        this.rightArm = shoulder;
+        rightHand = hand;
+      }
+    }
+
+    // Head.
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.3 * bulk, 14, 14), opts.skin);
+    head.position.y = 2.18;
+    body.add(head);
+    // Eye dots so faces read at distance.
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x202434 });
+    for (const ex of [-0.08, 0.08]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.026, 6, 6), eyeMat);
+      eye.position.set(ex, 2.2, 0.24);
+      body.add(eye);
+    }
+
+    if (opts.helm) {
+      const helm = new THREE.Mesh(new THREE.ConeGeometry(0.34 * bulk, 0.55, 14), opts.helm);
+      helm.position.y = 2.5;
+      body.add(helm);
+      const helmTip = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), opts.helm);
+      helmTip.position.y = 2.85;
+      body.add(helmTip);
+    }
+
+    return { body, rightHand };
+  }
+
+  /** Боец — warrior with a long sword and ember-trim armour. */
+  private buildFighter(): void {
+    const skin = new THREE.MeshLambertMaterial({ color: 0xeec4a4 });
+    const armor = new THREE.MeshLambertMaterial({ color: 0x8a3a2a });
+    const armorDark = new THREE.MeshLambertMaterial({ color: 0x4a1f15 });
+    const trim = new THREE.MeshLambertMaterial({
+      color: 0xf3b75a,
+      emissive: 0xb6730a,
+      emissiveIntensity: 0.4,
+    });
+    const boot = new THREE.MeshLambertMaterial({ color: 0x1f1410 });
+    const { body, rightHand } = this.buildHumanoid({
+      primary: armor,
+      secondary: armorDark,
+      skin,
+      boot,
+      helm: trim,
+    });
+    // Pauldrons — boxy shoulder pads to bulk the silhouette.
+    for (const side of [-1, 1]) {
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.3), armorDark);
+      pad.position.set(0.5 * side, 1.95, 0);
+      body.add(pad);
+    }
+    // Cross-belt accent.
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.7, 0.06), trim);
+    strap.position.set(-0.05, 1.55, 0.4);
+    strap.rotation.z = 0.4;
+    body.add(strap);
+
+    // Long sword in the right hand. Pommel + guard + blade.
+    const sword = new THREE.Group();
+    const swordBlade = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.06, 1.4),
+      new THREE.MeshLambertMaterial({
+        color: 0xcfd6e0,
+        emissive: 0x8aa0c0,
+        emissiveIntensity: 0.3,
+      }),
+    );
+    swordBlade.position.z = 0.65;
+    sword.add(swordBlade);
+    const swordTip = new THREE.Mesh(
+      new THREE.ConeGeometry(0.1, 0.28, 6),
+      new THREE.MeshLambertMaterial({ color: 0xeef2f8 }),
+    );
+    swordTip.rotation.x = Math.PI / 2;
+    swordTip.position.z = 1.4;
+    sword.add(swordTip);
+    const swordGuard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.4, 0.06, 0.1),
+      trim,
+    );
+    swordGuard.position.z = -0.05;
+    sword.add(swordGuard);
+    const swordGrip = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 0.26, 6),
+      armorDark,
+    );
+    swordGrip.rotation.x = Math.PI / 2;
+    swordGrip.position.z = -0.2;
+    sword.add(swordGrip);
+    sword.rotation.x = -0.4;
+    sword.position.set(0, 0, 0.05);
+    rightHand.add(sword);
+    this.bowGroup = sword;
+  }
+
+  /** Убийца — slim assassin with hood and twin daggers. */
+  private buildAssassin(): void {
+    const skin = new THREE.MeshLambertMaterial({ color: 0xe6c0a0 });
+    const cloth = new THREE.MeshLambertMaterial({ color: 0x1a1722 });
+    const clothLight = new THREE.MeshLambertMaterial({ color: 0x2a2640 });
+    const trim = new THREE.MeshLambertMaterial({
+      color: 0xa470ff,
+      emissive: 0x6a2fc8,
+      emissiveIntensity: 0.6,
+    });
+    const boot = new THREE.MeshLambertMaterial({ color: 0x09080d });
+    const { body, rightHand } = this.buildHumanoid({
+      primary: cloth,
+      secondary: clothLight,
+      skin,
+      boot,
+    });
+    // Hood — covers the top of the head.
+    const hood = new THREE.Mesh(
+      new THREE.ConeGeometry(0.4, 0.65, 12),
+      cloth,
+    );
+    hood.position.set(0, 2.32, -0.05);
+    hood.rotation.x = -0.18;
+    body.add(hood);
+    // Sash + belt accent.
+    const sash = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.06), trim);
+    sash.position.set(0, 1.32, 0.4);
+    body.add(sash);
+    // Dagger in the right hand.
+    const dagger = new THREE.Group();
+    const blade = new THREE.Mesh(
+      new THREE.ConeGeometry(0.07, 0.55, 6),
+      new THREE.MeshLambertMaterial({
+        color: 0xd8dde6,
+        emissive: 0x6c4ec8,
+        emissiveIntensity: 0.5,
+      }),
+    );
+    blade.rotation.x = Math.PI / 2;
+    blade.position.z = 0.32;
+    dagger.add(blade);
+    const hilt = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 0.18, 6),
+      cloth,
+    );
+    hilt.rotation.x = Math.PI / 2;
+    hilt.position.z = -0.05;
+    dagger.add(hilt);
+    dagger.rotation.x = -0.2;
+    rightHand.add(dagger);
+    this.bowGroup = dagger;
+  }
+
+  /** Танк — heavy plate armour with a war hammer. */
+  private buildTank(): void {
+    const skin = new THREE.MeshLambertMaterial({ color: 0xd9a677 });
+    const plate = new THREE.MeshLambertMaterial({ color: 0x6c7480 });
+    const plateDark = new THREE.MeshLambertMaterial({ color: 0x3a4048 });
+    const trim = new THREE.MeshLambertMaterial({
+      color: 0xc99650,
+      emissive: 0x6e4e1a,
+      emissiveIntensity: 0.4,
+    });
+    const boot = new THREE.MeshLambertMaterial({ color: 0x1a1714 });
+    const { body, rightHand } = this.buildHumanoid({
+      primary: plate,
+      secondary: plateDark,
+      skin,
+      boot,
+      helm: plate,
+      bulk: 1.25,
+    });
+    // Beefy pauldrons + chest plate.
+    for (const side of [-1, 1]) {
+      const pauldron = new THREE.Mesh(
+        new THREE.SphereGeometry(0.32, 10, 10),
+        plate,
+      );
+      pauldron.position.set(0.62 * side, 2.0, 0);
+      body.add(pauldron);
+    }
+    const chest = new THREE.Mesh(
+      new THREE.BoxGeometry(0.7, 0.5, 0.16),
+      plateDark,
+    );
+    chest.position.set(0, 1.6, 0.36);
+    body.add(chest);
+    const chestTrim = new THREE.Mesh(
+      new THREE.BoxGeometry(0.5, 0.08, 0.04),
+      trim,
+    );
+    chestTrim.position.set(0, 1.4, 0.45);
+    body.add(chestTrim);
+    // Visor — narrow band across helm.
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.12), plateDark);
+    visor.position.set(0, 2.2, 0.27);
+    body.add(visor);
+    // Massive war hammer in the right hand.
+    const hammer = new THREE.Group();
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.45, 0.4), plateDark);
+    head.position.z = 0.7;
+    hammer.add(head);
+    const headTrim = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 0.42), trim);
+    headTrim.position.set(0, 0.25, 0.7);
+    hammer.add(headTrim);
+    const headTrim2 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 0.42), trim);
+    headTrim2.position.set(0, -0.25, 0.7);
+    hammer.add(headTrim2);
+    const haft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.07, 0.07, 0.85, 8),
+      new THREE.MeshLambertMaterial({ color: 0x4a2d1c }),
+    );
+    haft.rotation.x = Math.PI / 2;
+    haft.position.z = 0.05;
+    hammer.add(haft);
+    hammer.rotation.x = -0.5;
+    hammer.position.set(0, 0, 0);
+    rightHand.add(hammer);
+    this.bowGroup = hammer;
   }
 }
 

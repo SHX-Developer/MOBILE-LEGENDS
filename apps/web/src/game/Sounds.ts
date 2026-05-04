@@ -120,10 +120,12 @@ export const Sounds = {
   skill(id: 'q' | 'e' | 'c', hero: HeroKind = 'ranger'): void {
     const ac = ensureCtx();
     if (!ac) return;
-    if (hero === 'mage') {
-      playMageSkill(ac, id);
-    } else {
-      playRangerSkill(ac, id);
+    switch (hero) {
+      case 'mage': playMageSkill(ac, id); return;
+      case 'fighter': playFighterSkill(ac, id); return;
+      case 'assassin': playAssassinSkill(ac, id); return;
+      case 'tank': playTankSkill(ac, id); return;
+      default: playRangerSkill(ac, id);
     }
   },
 };
@@ -267,4 +269,207 @@ function playMageSkill(ac: AudioContext, id: 'q' | 'e' | 'c'): void {
   envelope(cg, ac, 0.22, 0.005, 0.45);
   crash.connect(cf).connect(cg).connect(ac.destination);
   crash.start();
+}
+
+/** Fighter SFX. Steel-and-grit — sword swings, cloth wave, blade vortex. */
+function playFighterSkill(ac: AudioContext, id: 'q' | 'e' | 'c'): void {
+  if (id === 'q') {
+    // СЕЧЕНИЕ — sword swing: short noise whoosh + metal ring.
+    const swoosh = ac.createBufferSource();
+    swoosh.buffer = noiseBuffer(ac, 0.18);
+    const sf = ac.createBiquadFilter();
+    sf.type = 'bandpass';
+    sf.frequency.setValueAtTime(900, ac.currentTime);
+    sf.frequency.exponentialRampToValueAtTime(1800, ac.currentTime + 0.14);
+    sf.Q.value = 0.7;
+    const sg = ac.createGain();
+    envelope(sg, ac, 0.18, 0.005, 0.16);
+    swoosh.connect(sf).connect(sg).connect(ac.destination);
+    swoosh.start();
+
+    const ring = ac.createOscillator();
+    const rg = ac.createGain();
+    ring.type = 'triangle';
+    ring.frequency.setValueAtTime(1100, ac.currentTime + 0.06);
+    ring.frequency.exponentialRampToValueAtTime(680, ac.currentTime + 0.18);
+    envelope(rg, ac, 0.16, 0.004, 0.14);
+    ring.connect(rg).connect(ac.destination);
+    ring.start(ac.currentTime + 0.06);
+    ring.stop(ac.currentTime + 0.22);
+    return;
+  }
+  if (id === 'e') {
+    // РЫВОК — quick travel + impact: rising whoosh then clang.
+    const whoosh = ac.createOscillator();
+    const wg = ac.createGain();
+    whoosh.type = 'sawtooth';
+    whoosh.frequency.setValueAtTime(160, ac.currentTime);
+    whoosh.frequency.exponentialRampToValueAtTime(900, ac.currentTime + 0.16);
+    envelope(wg, ac, 0.2, 0.005, 0.18);
+    whoosh.connect(wg).connect(ac.destination);
+    whoosh.start();
+    whoosh.stop(ac.currentTime + 0.22);
+
+    const clang = ac.createOscillator();
+    const cg = ac.createGain();
+    clang.type = 'square';
+    clang.frequency.setValueAtTime(620, ac.currentTime + 0.16);
+    clang.frequency.exponentialRampToValueAtTime(360, ac.currentTime + 0.28);
+    envelope(cg, ac, 0.2, 0.003, 0.12);
+    clang.connect(cg).connect(ac.destination);
+    clang.start(ac.currentTime + 0.16);
+    clang.stop(ac.currentTime + 0.32);
+    return;
+  }
+  // c — ВИХРЬ: spinning blades — fast pulsing tone.
+  for (let i = 0; i < 5; i++) {
+    const t = ac.currentTime + i * 0.06;
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(380 + i * 60, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.16, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+    osc.connect(g).connect(ac.destination);
+    osc.start(t);
+    osc.stop(t + 0.1);
+  }
+}
+
+/** Assassin SFX. Crisp, metallic, dark-magic. */
+function playAssassinSkill(ac: AudioContext, id: 'q' | 'e' | 'c'): void {
+  if (id === 'q') {
+    // ЛЕЗВИЯ — quick "shink": short bright pluck + metal shimmer.
+    const shink = ac.createOscillator();
+    const sg = ac.createGain();
+    shink.type = 'triangle';
+    shink.frequency.setValueAtTime(2200, ac.currentTime);
+    shink.frequency.exponentialRampToValueAtTime(1400, ac.currentTime + 0.08);
+    envelope(sg, ac, 0.16, 0.003, 0.08);
+    shink.connect(sg).connect(ac.destination);
+    shink.start();
+    shink.stop(ac.currentTime + 0.12);
+
+    const tail = ac.createOscillator();
+    const tg = ac.createGain();
+    tail.type = 'sine';
+    tail.frequency.setValueAtTime(900, ac.currentTime + 0.04);
+    envelope(tg, ac, 0.1, 0.005, 0.18);
+    tail.connect(tg).connect(ac.destination);
+    tail.start(ac.currentTime + 0.04);
+    tail.stop(ac.currentTime + 0.24);
+    return;
+  }
+  if (id === 'e') {
+    // ТЕНЬ — dark wave: detuned sweep + soft noise hiss.
+    const sweep = ac.createOscillator();
+    const sg = ac.createGain();
+    sweep.type = 'sawtooth';
+    sweep.frequency.setValueAtTime(220, ac.currentTime);
+    sweep.frequency.exponentialRampToValueAtTime(80, ac.currentTime + 0.3);
+    envelope(sg, ac, 0.2, 0.01, 0.32);
+    sweep.connect(sg).connect(ac.destination);
+    sweep.start();
+    sweep.stop(ac.currentTime + 0.36);
+
+    const hiss = ac.createBufferSource();
+    hiss.buffer = noiseBuffer(ac, 0.32);
+    const hf = ac.createBiquadFilter();
+    hf.type = 'highpass';
+    hf.frequency.value = 1800;
+    const hg = ac.createGain();
+    envelope(hg, ac, 0.06, 0.02, 0.28);
+    hiss.connect(hf).connect(hg).connect(ac.destination);
+    hiss.start();
+    return;
+  }
+  // c — КАЗНЬ: brutal finisher: heavy thunk + dissonant ring.
+  const thunk = ac.createOscillator();
+  const tg = ac.createGain();
+  thunk.type = 'sine';
+  thunk.frequency.setValueAtTime(220, ac.currentTime);
+  thunk.frequency.exponentialRampToValueAtTime(60, ac.currentTime + 0.3);
+  envelope(tg, ac, 0.3, 0.005, 0.32);
+  thunk.connect(tg).connect(ac.destination);
+  thunk.start();
+  thunk.stop(ac.currentTime + 0.36);
+
+  const ring = ac.createOscillator();
+  const rg = ac.createGain();
+  ring.type = 'square';
+  ring.frequency.setValueAtTime(540, ac.currentTime + 0.04);
+  ring.frequency.exponentialRampToValueAtTime(380, ac.currentTime + 0.34);
+  envelope(rg, ac, 0.16, 0.003, 0.32);
+  ring.connect(rg).connect(ac.destination);
+  ring.start(ac.currentTime + 0.04);
+  ring.stop(ac.currentTime + 0.4);
+}
+
+/** Tank SFX. Heavy, bassy, earthy — hammer and stone. */
+function playTankSkill(ac: AudioContext, id: 'q' | 'e' | 'c'): void {
+  if (id === 'q') {
+    // УДАР — hammer slam: deep thud + low-mid metal ring.
+    const thud = ac.createOscillator();
+    const tg = ac.createGain();
+    thud.type = 'sine';
+    thud.frequency.setValueAtTime(160, ac.currentTime);
+    thud.frequency.exponentialRampToValueAtTime(60, ac.currentTime + 0.22);
+    envelope(tg, ac, 0.32, 0.005, 0.26);
+    thud.connect(tg).connect(ac.destination);
+    thud.start();
+    thud.stop(ac.currentTime + 0.3);
+
+    const tone = ac.createOscillator();
+    const tng = ac.createGain();
+    tone.type = 'square';
+    tone.frequency.setValueAtTime(520, ac.currentTime + 0.04);
+    tone.frequency.exponentialRampToValueAtTime(220, ac.currentTime + 0.22);
+    envelope(tng, ac, 0.2, 0.005, 0.18);
+    tone.connect(tng).connect(ac.destination);
+    tone.start(ac.currentTime + 0.04);
+    tone.stop(ac.currentTime + 0.26);
+    return;
+  }
+  if (id === 'e') {
+    // ЩИТ — protective hum: soft warm chord pulse.
+    for (const [freq, peak] of [
+      [220, 0.18],
+      [330, 0.14],
+      [440, 0.1],
+    ] as Array<[number, number]>) {
+      const osc = ac.createOscillator();
+      const g = ac.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, ac.currentTime);
+      g.gain.setValueAtTime(0.0001, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(peak, ac.currentTime + 0.06);
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.45);
+      osc.connect(g).connect(ac.destination);
+      osc.start();
+      osc.stop(ac.currentTime + 0.5);
+    }
+    return;
+  }
+  // c — ЗЕМЛЕТРЯС: ground pound: massive sub-bass + filtered rumble.
+  const sub = ac.createOscillator();
+  const sg = ac.createGain();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(80, ac.currentTime);
+  sub.frequency.exponentialRampToValueAtTime(28, ac.currentTime + 0.6);
+  envelope(sg, ac, 0.4, 0.01, 0.6);
+  sub.connect(sg).connect(ac.destination);
+  sub.start();
+  sub.stop(ac.currentTime + 0.66);
+
+  const rumble = ac.createBufferSource();
+  rumble.buffer = noiseBuffer(ac, 0.7);
+  const rf = ac.createBiquadFilter();
+  rf.type = 'lowpass';
+  rf.frequency.setValueAtTime(800, ac.currentTime);
+  rf.frequency.exponentialRampToValueAtTime(140, ac.currentTime + 0.5);
+  const rg = ac.createGain();
+  envelope(rg, ac, 0.24, 0.01, 0.6);
+  rumble.connect(rf).connect(rg).connect(ac.destination);
+  rumble.start();
 }

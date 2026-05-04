@@ -50,18 +50,42 @@ function HeroPick({ onPick, onBack }: { onPick: (k: HeroKind) => void; onBack: (
         <HeroCard
           accent="#5fc7ff"
           name="СТРЕЛОК"
-          subtitle="Layla — лучник"
-          desc="Дальние выстрелы, мощный Q (POWER), замедление E, оглушение C."
-          stats={['HP 500', 'Урон 50', 'Дистанция 10']}
+          subtitle="Дальний бой"
+          desc="Q POWER, E SLOW, C STUN. Стабильный single-target."
+          stats={['HP 520', 'Урон 50', 'Дист 10']}
           onClick={() => onPick('ranger')}
         />
         <HeroCard
           accent="#ff7a3d"
           name="МАГ"
           subtitle="Огненная школа"
-          desc="Q фаербол, E огненная стена со замедлением, C метеор по области (AoE)."
-          stats={['HP 460', 'Урон 38', 'Дистанция 8.5']}
+          desc="Q ОГОНЬ, E СТЕНА, C МЕТЕОР со станом 2с и AoE."
+          stats={['HP 380', 'Урон 34', 'Дист 8.5']}
           onClick={() => onPick('mage')}
+        />
+        <HeroCard
+          accent="#e6a648"
+          name="БОЕЦ"
+          subtitle="Воин с мечом"
+          desc="Q СЕЧЕНИЕ + slow, E РЫВОК (AoE), C ВИХРЬ — стан вокруг себя."
+          stats={['HP 600', 'Урон 55', 'Дист 4']}
+          onClick={() => onPick('fighter')}
+        />
+        <HeroCard
+          accent="#a470ff"
+          name="УБИЙЦА"
+          subtitle="Скрытный убийца"
+          desc="Q ЛЕЗВИЯ — огромный single-target burst, E ТЕНЬ, C КАЗНЬ +60% по добиванию."
+          stats={['HP 380', 'Урон 60', 'Дист 4.5']}
+          onClick={() => onPick('assassin')}
+        />
+        <HeroCard
+          accent="#9aa6b8"
+          name="ТАНК"
+          subtitle="Защитник линии"
+          desc="Q УДАР + стан 1с, E ЩИТ — хил и ускорение, C ЗЕМЛЕТРЯС — массовый стан 1.5с."
+          stats={['HP 800', 'Урон 38', 'Дист 4']}
+          onClick={() => onPick('tank')}
         />
       </div>
       <div style={{ ...buttonsStyle, alignSelf: 'start' }}>

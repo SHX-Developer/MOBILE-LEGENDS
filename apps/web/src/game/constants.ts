@@ -221,9 +221,9 @@ export const RECALL_CHANNEL_MS = 5000;
 export const RECALL_COOLDOWN_MS = 30000;
 
 // --- Heroes ---------------------------------------------------------------
-// The game now ships two heroes; the player picks one in offline mode and
-// the other rounds out the team.
-export type HeroKind = 'ranger' | 'mage';
+// The game now ships five heroes. The player picks one in offline mode;
+// the ally is automatically a different archetype to round out the team.
+export type HeroKind = 'ranger' | 'mage' | 'fighter' | 'assassin' | 'tank';
 
 // Mage — fire archetype. Glass cannon: noticeably squishier than the
 // ranger, slow auto-attack, but huge burst on his skills. Player should
@@ -259,6 +259,95 @@ export const MAGE_C_AOE_DAMAGE = 140;
 export const MAGE_C_STUN_DURATION_MS = 2000;
 export const MAGE_C_COOLDOWN_MS = 12000;
 export const MAGE_C_RANGE = 14;
+
+// --- Fighter (Боец) -------------------------------------------------------
+// Mid-range warrior with a sword. Solid HP, snappy melee autos, sturdy
+// damage on his skills but short-ranged. The "balanced" pick.
+export const FIGHTER_MAX_HP = 600;
+export const FIGHTER_ATTACK_DAMAGE = 55;
+export const FIGHTER_ATTACK_RANGE = 4;
+export const FIGHTER_ATTACK_COOLDOWN_MS = 500;
+export const FIGHTER_SPEED_3D = 5.8;
+
+// Q СЕЧЕНИЕ — heavy single-target sword strike with a brief slow on hit.
+export const FIGHTER_Q_DAMAGE = 145;
+export const FIGHTER_Q_SLOW_FACTOR = 0.7;
+export const FIGHTER_Q_SLOW_DURATION_MS = 1500;
+export const FIGHTER_Q_COOLDOWN_MS = 6000;
+export const FIGHTER_Q_RANGE = 5;
+
+// E РЫВОК — fast sword wave that travels and splashes on impact.
+export const FIGHTER_E_DAMAGE = 110;
+export const FIGHTER_E_AOE_RADIUS = 2.4;
+export const FIGHTER_E_AOE_DAMAGE = 60;
+export const FIGHTER_E_COOLDOWN_MS = 9000;
+export const FIGHTER_E_RANGE = 8;
+
+// C ВИХРЬ — self-cast spin: AoE around the fighter, stuns everyone caught.
+export const FIGHTER_C_AOE_RADIUS = 4.2;
+export const FIGHTER_C_AOE_DAMAGE = 140;
+export const FIGHTER_C_STUN_DURATION_MS = 1500;
+export const FIGHTER_C_COOLDOWN_MS = 11000;
+
+// --- Assassin (Убийца) ----------------------------------------------------
+// Glass cannon: lowest HP among melee, fastest, single-target burst king.
+// Rewards picking off isolated targets — execute bonus on low-HP enemies.
+export const ASSASSIN_MAX_HP = 380;
+export const ASSASSIN_ATTACK_DAMAGE = 60;
+export const ASSASSIN_ATTACK_RANGE = 4.5;
+export const ASSASSIN_ATTACK_COOLDOWN_MS = 420;
+export const ASSASSIN_SPEED_3D = 7.0;
+
+// Q ЛЕЗВИЯ — quick dagger throw with extreme single-target damage.
+export const ASSASSIN_Q_DAMAGE = 220;
+export const ASSASSIN_Q_COOLDOWN_MS = 5000;
+export const ASSASSIN_Q_RANGE = 10;
+
+// E ТЕНЬ — fast shadow wave, mid damage with a small splash.
+export const ASSASSIN_E_DAMAGE = 130;
+export const ASSASSIN_E_AOE_RADIUS = 1.8;
+export const ASSASSIN_E_AOE_DAMAGE = 60;
+export const ASSASSIN_E_COOLDOWN_MS = 8000;
+export const ASSASSIN_E_RANGE = 10;
+
+// C КАЗНЬ — single-target finisher. Below the HP threshold the strike
+// deals an extra (damage × execute_factor); the multiplier is applied
+// per-projectile by ProjectileManager.
+export const ASSASSIN_C_DAMAGE = 200;
+export const ASSASSIN_C_EXECUTE_HP_PCT = 0.5;
+export const ASSASSIN_C_EXECUTE_BONUS = 0.6; // +60% if target hp <= 50%
+export const ASSASSIN_C_COOLDOWN_MS = 10000;
+export const ASSASSIN_C_RANGE = 8;
+
+// --- Tank (Танк) ----------------------------------------------------------
+// Frontline. Massive HP, slow autos, AoE control. Damage is modest but
+// the stuns keep enemies off the squishy allies.
+export const TANK_MAX_HP = 800;
+export const TANK_ATTACK_DAMAGE = 38;
+export const TANK_ATTACK_RANGE = 4;
+export const TANK_ATTACK_COOLDOWN_MS = 700;
+export const TANK_SPEED_3D = 4.8;
+
+// Q УДАР — hammer slam: solid single-target hit + 1s stun.
+export const TANK_Q_DAMAGE = 95;
+export const TANK_Q_STUN_DURATION_MS = 1000;
+export const TANK_Q_COOLDOWN_MS = 7000;
+export const TANK_Q_RANGE = 5;
+
+// E ЩИТ — self heal + brief armor (modeled here as an instant heal of
+// TANK_E_HEAL plus a small move-speed buff for TANK_E_SPEED_BUFF_MS).
+// Implemented as a self-buff path inside Game.ts/PlayerObject.
+export const TANK_E_HEAL = 280;
+export const TANK_E_SPEED_BUFF_FACTOR = 1.25;
+export const TANK_E_SPEED_BUFF_MS = 4000;
+export const TANK_E_COOLDOWN_MS = 14000;
+
+// C ЗЕМЛЕТРЯСЕНИЕ — self-cast giant AoE: medium damage + 1.5s stun on
+// every enemy in radius. The teamfight ult.
+export const TANK_C_AOE_RADIUS = 5.0;
+export const TANK_C_AOE_DAMAGE = 90;
+export const TANK_C_STUN_DURATION_MS = 1500;
+export const TANK_C_COOLDOWN_MS = 14000;
 
 // Bot — tuned slightly weaker than the player so 1v1 feels fair.
 export const BOT_MAX_HP = 420;
