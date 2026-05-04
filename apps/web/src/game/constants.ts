@@ -91,8 +91,13 @@ export const TOWER_RED_MID_X = S(22);
 export const TOWER_RED_MID_Z = S(-22);
 export const TOWER_RED_BOT_X = S(48);
 export const TOWER_RED_BOT_Z = S(-12);
-export const TOWER_MAX_HP = 1000;
-export const TOWER_DAMAGE = 65;
+// Tower HP scaled up to match the new hero damage tier (autos in the
+// 120-260 range, ult bursts up to 450). At 4500 HP a marksman needs
+// ~25 attacks (≈9 seconds at 360ms cd) to chew through a tower —
+// long enough that diving alone is suicidal but a wave of minions +
+// hero pressure can crack one in a reasonable window.
+export const TOWER_MAX_HP = 4500;
+export const TOWER_DAMAGE = 95;
 export const TOWER_ATTACK_RANGE = 11;
 export const TOWER_ATTACK_COOLDOWN_MS = 1100;
 /** Tower escalation: each consecutive shot at the SAME hero adds this much
@@ -171,11 +176,13 @@ export const BASE_BLUE_X = S(-46);
 export const BASE_BLUE_Z = S(46);
 export const BASE_RED_X = S(46);
 export const BASE_RED_Z = S(-46);
-export const BASE_MAX_HP = 1500;
+// Same scale-up as towers — bases are the win condition, should be
+// the toughest siege in the match.
+export const BASE_MAX_HP = 7500;
 export const BASE_HIT_RADIUS = 5;
 export const BASE_REGEN_RADIUS = 12;
 // Base attacks like a tower — slightly stronger and longer-ranged.
-export const BASE_DAMAGE = 55;
+export const BASE_DAMAGE = 85;
 export const BASE_ATTACK_RANGE = 16;
 export const BASE_ATTACK_COOLDOWN_MS = 800;
 

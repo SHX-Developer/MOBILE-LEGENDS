@@ -72,7 +72,6 @@ export function buildMap(scene: THREE.Scene): MapEntities {
   const colliders = new Colliders();
   buildGround(scene);
   buildLanes(scene);
-  buildRiver(scene);
   buildSpawnZones(scene);
   buildPerimeterColliders(colliders);
   const bases = buildBases(scene, colliders);
@@ -145,7 +144,14 @@ function buildLanes(scene: THREE.Scene): void {
   }
 }
 
-/** Flat slab between two waypoints, oriented along the (dx, dz) vector. */
+/**
+ * Lanes are drawn as razor-thin slabs sitting just above the ground. The
+ * old version used 0.05u-tall boxes centred at y=0.03 — that pushed the
+ * lane body up to ~y=0.055, where it was z-fighting with base plazas /
+ * spawn zones / tower bases and visually showing through them. Anything
+ * with y >= 0.012 (patches, plazas, spawn pads) now draws cleanly on
+ * top.
+ */
 function addLaneSegment(
   scene: THREE.Scene,
   mat: THREE.Material,
@@ -158,10 +164,8 @@ function addLaneSegment(
   const dz = z2 - z1;
   const len = Math.hypot(dx, dz);
   if (len < 0.01) return;
-  // Box length along Z (the geometry's depth). Y rotation aligns Z with
-  // the (dx, dz) direction.
-  const seg = new THREE.Mesh(new THREE.BoxGeometry(LANE_WIDTH, 0.05, len), mat);
-  seg.position.set((x1 + x2) / 2, 0.03, (z1 + z2) / 2);
+  const seg = new THREE.Mesh(new THREE.BoxGeometry(LANE_WIDTH, 0.001, len), mat);
+  seg.position.set((x1 + x2) / 2, 0.005, (z1 + z2) / 2);
   seg.rotation.y = Math.atan2(dx, dz);
   scene.add(seg);
 }
@@ -170,57 +174,10 @@ function addLaneSegment(
 function addLaneCap(scene: THREE.Scene, mat: THREE.Material, x: number, z: number): void {
   const cap = new THREE.Mesh(new THREE.CircleGeometry(LANE_WIDTH / 2, 22), mat);
   cap.rotation.x = -Math.PI / 2;
-  cap.position.set(x, 0.035, z);
+  cap.position.set(x, 0.006, z);
   scene.add(cap);
 }
 
-/**
- * Wavy blue river that crosses the diagonal between the two team
- * sides. Approximated by a series of narrow box segments along a sine
- * curve so it reads as a flowing line, not a perfectly straight stripe.
- */
-function buildRiver(scene: THREE.Scene): void {
-  const riverMat = new THREE.MeshLambertMaterial({
-    color: 0x3d7fc4,
-    emissive: 0x1c4f80,
-    emissiveIntensity: 0.25,
-  });
-  // The river runs from the (−x, +z) base corner toward the (+x, −z)
-  // corner, so it crosses behind the mid lane diagonally.
-  const startX = -HALF_W * 0.55;
-  const startZ = HALF_H * 0.55;
-  const endX = HALF_W * 0.55;
-  const endZ = -HALF_H * 0.55;
-  const dx = endX - startX;
-  const dz = endZ - startZ;
-  const len = Math.hypot(dx, dz);
-  // Unit perpendicular for the sine wiggle.
-  const perpX = -dz / len;
-  const perpZ = dx / len;
-  const N = 24;
-  // Pre-compute the path points so each segment can use the next one.
-  const pts: Array<[number, number]> = [];
-  for (let i = 0; i <= N; i++) {
-    const t = i / N;
-    const wave = Math.sin(t * Math.PI * 2.4) * 6;
-    const px = startX + dx * t + perpX * wave;
-    const pz = startZ + dz * t + perpZ * wave;
-    pts.push([px, pz]);
-  }
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [a, b] = [pts[i], pts[i + 1]];
-    const segDx = b[0] - a[0];
-    const segDz = b[1] - a[1];
-    const segLen = Math.hypot(segDx, segDz);
-    const seg = new THREE.Mesh(
-      new THREE.BoxGeometry(3.2, 0.04, segLen + 0.4),
-      riverMat,
-    );
-    seg.position.set((a[0] + b[0]) / 2, 0.045, (a[1] + b[1]) / 2);
-    seg.rotation.y = Math.atan2(segDx, segDz);
-    scene.add(seg);
-  }
-}
 
 /** Lightweight base markings — a saturated disc and a soft outer ring. */
 function addBasePlaza(

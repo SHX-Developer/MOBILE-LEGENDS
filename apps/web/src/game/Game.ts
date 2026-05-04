@@ -29,14 +29,13 @@ import {
   SPAWN_RED_Z,
   LANE_PATHS,
 } from './constants.js';
-import { buildMap, JUNGLE_CAMPS } from './world/MapBuilder.js';
+import { buildMap } from './world/MapBuilder.js';
 import type { Colliders } from './world/Colliders.js';
 import type { Tower } from './world/Towers.js';
 import type { Base } from './world/Bases.js';
 import { PlayerObject } from './entities/PlayerObject.js';
 import { BotObject } from './entities/BotObject.js';
 import { MinionObject, MINION_CONFIGS, type MinionVariant } from './entities/MinionObject.js';
-import { JungleCreep } from './entities/JungleCreep.js';
 import { ProjectileManager } from './entities/ProjectileManager.js';
 import { CameraRig } from './CameraRig.js';
 import { InputController } from './InputController.js';
@@ -91,10 +90,6 @@ export class Game {
   /** Enemy AI heroes. Online has 1 (the opponent); offline has 5 (one of each role). */
   private enemyBots: BotObject[] = [];
   private minions: MinionObject[] = [];
-  /** Jungle camps — neutral-ish stationary creeps. Half are flagged red so
-   *  blue heroes can farm them; half are flagged blue so the red side has
-   *  its own jungle. Drop XP via the standard kill-grant path. */
-  private jungleCreeps: JungleCreep[] = [];
   private projectiles: ProjectileManager;
   private floatingText: FloatingTextManager;
   private online = new OnlineClient();
@@ -271,24 +266,9 @@ export class Game {
 
     for (const t of this.towers) this.registry.add(t);
     for (const b of this.bases) this.registry.add(b);
-
-    // Spawn jungle creeps at every camp position. Camps with z>0 are
-    // tagged 'red' so the blue team's heroes can farm them; the rest
-    // are tagged 'blue' so the red team has its own jungle. This stops
-    // one team from owning all the neutral XP and gives both teams a
-    // safe-side farm option.
-    for (let i = 0; i < JUNGLE_CAMPS.length; i++) {
-      const camp = JUNGLE_CAMPS[i];
-      const team: Team = camp.z > 0 ? 'red' : 'blue';
-      const creep = new JungleCreep(
-        this.scene,
-        new THREE.Vector3(camp.x, 0, camp.z),
-        team,
-        camp.color,
-      );
-      this.registry.add(creep);
-      this.jungleCreeps.push(creep);
-    }
+    // Jungle creeps removed at the user's request — playing field stays
+    // a pure 5v5 lane fight without neutral camps. The JUNGLE_CAMPS
+    // export is left in MapBuilder for future re-introduction.
 
     // Match end via base destruction is offline-only. Online uses
     // server-driven kill score so client base sims can drift cosmetically
@@ -699,7 +679,7 @@ export class Game {
       minions: this.minions.map((m) => ({ x: m.position.x, z: m.position.z, team: m.team, alive: m.alive })),
       towers: this.towers.map((t) => ({ x: t.position.x, z: t.position.z, team: t.team, alive: t.alive })),
       bases: this.bases.map((b) => ({ x: b.position.x, z: b.position.z, team: b.team, alive: b.alive })),
-      jungle: this.jungleCreeps.map((c) => ({ x: c.position.x, z: c.position.z, alive: c.alive })),
+      jungle: [],
     };
   }
 
@@ -884,7 +864,6 @@ export class Game {
 
     for (const t of this.towers) t.update(now, this.registry, this.projectiles);
     for (const b of this.bases) b.update(now, this.registry, this.projectiles);
-    for (const c of this.jungleCreeps) c.update(now, this.registry, this.projectiles);
 
     this.projectiles.update(delta, now, this.registry);
     this.projectiles.updateFx(delta, now);
@@ -927,7 +906,6 @@ export class Game {
     for (const m of this.minions) m.billboardHealthBar(cam);
     for (const t of this.towers) t.billboardHealthBar(cam);
     for (const b of this.bases) b.billboardHealthBar(cam);
-    for (const c of this.jungleCreeps) c.billboardHealthBar(cam);
 
     this.renderer.render(this.scene, this.rig.camera);
   };

@@ -406,6 +406,17 @@ export class BotObject implements Unit {
       return;
     }
 
+    // Per-archetype "engagement vision". The full BOT_VISION_RANGE
+    // pulls bots from across the map and turns the lanes into a
+    // single mid-blob. Lane-anchored bots (top/mid/bot) only fight
+    // what's right next to them so they keep pushing their lane;
+    // tank roamer + assassin junglers get a bigger vision so they
+    // can actually rotate to fights.
+    const engageRange = (
+      this.lane === 'roam' || this.lane === 'jungle'
+        ? BOT_VISION_RANGE
+        : 14
+    );
     // Honour active taunt — the bulwark's C forces nearby enemies to
     // target him for a few seconds even if a closer/squishier target
     // exists. Falls back to the regular nearest-enemy search if the
@@ -419,11 +430,11 @@ export class BotObject implements Unit {
     } else {
       this.tauntedBy = undefined;
       this.tauntedUntil = 0;
-      // Pick the nearest enemy of ANY kind — no hero priority. The bot
-      // will chew on minions when minions are closer, only locking onto
-      // a hero when it's the nearest threat. Stops the AI from running
-      // straight past minions at the player.
-      enemy = registry.findNearestEnemy(this.team, this.position, BOT_VISION_RANGE);
+      // Pick the nearest enemy of ANY kind in engagement range.
+      // No hero priority — the bot will chew on minions when minions
+      // are closer, only locking onto a hero when it's the nearest
+      // threat. Stops the AI from running past the minion wave.
+      enemy = registry.findNearestEnemy(this.team, this.position, engageRange);
     }
     if (!enemy) {
       // No vision — walk along the assigned lane toward enemy structures.

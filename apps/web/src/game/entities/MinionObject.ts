@@ -25,41 +25,46 @@ export interface MinionConfig {
   rangedProjectile: boolean;
 }
 
+// Minion HP/damage scaled up under the post-rebalance hero damage
+// tier. Heroes now do 120-260 per auto + 200-450 burst on skills, so
+// the old minion HP (220 / 110 / 520) was 1-2 hits per kill — they
+// felt like paper. Tripled HP + bumped damage so a minion wave is
+// actually a meaningful obstacle on the lane.
 export const MINION_CONFIGS: Record<MinionVariant, MinionConfig> = {
   melee: {
     variant: 'melee',
-    maxHp: 220,
-    damage: 26,
+    maxHp: 700,
+    damage: 60,
     attackRange: 2.4,
     attackCooldownMs: 900,
     speed: 3.4,
     radius: 0.75,
     scale: 1.0,
-    xpReward: 52,
+    xpReward: 70,
     rangedProjectile: false,
   },
   ranged: {
     variant: 'ranged',
-    maxHp: 110,
-    damage: 14,
+    maxHp: 400,
+    damage: 38,
     attackRange: 7.5,
     attackCooldownMs: 1100,
     speed: 3.6,
     radius: 0.55,
     scale: 0.85,
-    xpReward: 32,
+    xpReward: 50,
     rangedProjectile: true,
   },
   tank: {
     variant: 'tank',
-    maxHp: 520,
-    damage: 38,
+    maxHp: 1600,
+    damage: 80,
     attackRange: 2.6,
     attackCooldownMs: 1300,
     speed: 2.6,
     radius: 0.95,
     scale: 1.3,
-    xpReward: 118,
+    xpReward: 140,
     rangedProjectile: false,
   },
 };
