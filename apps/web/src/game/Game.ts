@@ -66,9 +66,20 @@ interface AimState {
   range: number;
 }
 
+/** Result payload reported when a match ends. Drives the post-match
+ *  reward overlay and progression updates. */
+export interface MatchResult {
+  winner: Team;
+  /** True if the LOCAL player won (their team is the winner). */
+  victory: boolean;
+  durationMs: number;
+  kills: number;
+  heroKind: HeroKind;
+}
+
 export class Game {
-  /** Called once when one base falls. `winner` is the team whose base survived. */
-  onMatchEnd?: (winner: Team) => void;
+  /** Called once when one base falls. */
+  onMatchEnd?: (result: MatchResult) => void;
 
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -116,6 +127,8 @@ export class Game {
   private gameOver = false;
   private lastPlayerHp = 0;
   private lastMinionWaveAt = -Infinity;
+  /** Player kills this match — fed by ProjectileManager.onHeroKill. */
+  private playerKills = 0;
 
   private aimIndicator: THREE.Mesh;
   // Initial range placeholders are zero — startAim() refreshes them from the
@@ -291,6 +304,10 @@ export class Game {
       Sounds.hit();
     };
     this.floatingText = new FloatingTextManager(this.scene);
+    // Tally player kills for the post-match progression rewards.
+    this.projectiles.onHeroKill = (killer, _target) => {
+      if (killer === this.player) this.playerKills += 1;
+    };
     this.projectiles.onDamage = (target, amount, owner) => {
       this.floatingText.spawnDamage(target.position, amount, target.team, owner?.team);
       // Tower-focus stack: every time a tower projectile lands on the local
@@ -719,7 +736,14 @@ export class Game {
   private endMatch(winner: Team): void {
     if (this.gameOver) return;
     this.gameOver = true;
-    this.onMatchEnd?.(winner);
+    const durationMs = performance.now() - this.matchStartedAt;
+    this.onMatchEnd?.({
+      winner,
+      victory: winner === this.player.team,
+      durationMs,
+      kills: this.playerKills,
+      heroKind: this.player.heroKind,
+    });
   }
 
   private aimMat!: THREE.MeshBasicMaterial;

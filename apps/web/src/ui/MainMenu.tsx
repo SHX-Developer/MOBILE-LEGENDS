@@ -2,6 +2,13 @@ import { useEffect, useState } from 'react';
 import { useUserStore } from '../store/userStore.js';
 import { Sounds } from '../game/Sounds.js';
 import type { HeroKind } from '../game/constants.js';
+import {
+  HERO_NAMES,
+  accountXpToNext,
+  heroXpToNext,
+  rankTierFor,
+  useProgressionStore,
+} from '../store/progressionStore.js';
 
 interface MainMenuProps {
   onPlay: (mode: 'online' | 'offline', heroKind: HeroKind) => void;
@@ -172,16 +179,130 @@ function SettingsView() {
   );
 }
 
-/** Tiny profile pane — shows nickname for now. Hook for future stats. */
+/** Profile pane — nickname, account level, rank, lifetime stats and a
+ *  per-hero mastery list. All values come from the progression store
+ *  which is persisted to localStorage between sessions. */
 function ProfileView({ nickname }: { nickname: string }) {
+  const accountLevel = useProgressionStore((s) => s.accountLevel);
+  const accountXp = useProgressionStore((s) => s.accountXp);
+  const mmr = useProgressionStore((s) => s.mmr);
+  const matchesPlayed = useProgressionStore((s) => s.matchesPlayed);
+  const wins = useProgressionStore((s) => s.wins);
+  const losses = useProgressionStore((s) => s.losses);
+  const heroes = useProgressionStore((s) => s.heroes);
+  const tier = rankTierFor(mmr);
+  const winRate = matchesPlayed > 0 ? Math.round((wins / matchesPlayed) * 100) : 0;
+  const heroEntries = (Object.entries(heroes) as Array<[HeroKind, typeof heroes[HeroKind]]>)
+    .sort((a, b) => b[1].level - a[1].level || b[1].xp - a[1].xp);
+  const acctNext = accountXpToNext(accountLevel);
   return (
-    <div style={settingsStyle}>
-      <div style={{ fontSize: 12, letterSpacing: 4, color: '#7a8aab', fontWeight: 800 }}>НИК</div>
-      <div style={{ fontSize: 32, fontWeight: 900, letterSpacing: 2, marginTop: 8 }}>{nickname}</div>
-      <div style={{ ...hintStyle, marginTop: 16 }}>
-        Статистика боёв и предметы появятся позже. Сейчас профиль — это
-        просто твоё имя в лобби.
+    <div style={profileStyle}>
+      {/* Top header: nickname + level + rank badge. */}
+      <div style={profileHeaderStyle}>
+        <div>
+          <div style={{ fontSize: 11, letterSpacing: 4, color: '#7a8aab', fontWeight: 800 }}>НИК</div>
+          <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: 2 }}>{nickname}</div>
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            placeItems: 'center',
+            background: `radial-gradient(circle at 35% 30%, ${tier.color} 0%, #1a1825 70%)`,
+            border: `2px solid ${tier.color}`,
+            borderRadius: 12,
+            padding: '6px 14px',
+            color: '#0a0e15',
+            fontWeight: 900,
+            letterSpacing: 2,
+          }}
+        >
+          <div style={{ fontSize: 11, color: '#0a0e15' }}>{tier.name}</div>
+          <div style={{ fontSize: 16, color: '#0a0e15' }}>{mmr} MMR</div>
+        </div>
       </div>
+
+      {/* Account level progress. */}
+      <div>
+        <div style={profileRowStyle}>
+          <span style={{ fontSize: 12, letterSpacing: 1.5, color: '#a8b8d4', fontWeight: 700 }}>
+            УРОВЕНЬ АККАУНТА
+          </span>
+          <span style={{ fontSize: 18, fontWeight: 900, color: '#ffd17a' }}>LV {accountLevel}</span>
+        </div>
+        <ProfileBar value={accountXp} max={acctNext} color="#9fd8ff" />
+      </div>
+
+      {/* Lifetime stat tiles. */}
+      <div style={statRowStyle}>
+        <StatTile label="МАТЧИ" value={String(matchesPlayed)} />
+        <StatTile label="ПОБЕДЫ" value={String(wins)} accent="#7be38e" />
+        <StatTile label="ПОРАЖЕНИЯ" value={String(losses)} accent="#ff8a8a" />
+        <StatTile label="WIN RATE" value={`${winRate}%`} accent="#ffd17a" />
+      </div>
+
+      {/* Per-hero mastery. */}
+      <div style={{ display: 'grid', gap: 6 }}>
+        <div style={{ fontSize: 12, letterSpacing: 2, color: '#a8b8d4', fontWeight: 800 }}>
+          МАСТЕРСТВО ГЕРОЕВ
+        </div>
+        {heroEntries.map(([kind, stats]) => {
+          const next = heroXpToNext(stats.level);
+          return (
+            <div key={kind} style={heroRowStyle}>
+              <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: 1.2, minWidth: 100 }}>
+                {HERO_NAMES[kind]}
+              </div>
+              <div style={{ flex: 1, padding: '0 10px' }}>
+                <ProfileBar value={stats.xp} max={next} color="#ffce5c" />
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: '#dfe4ee', minWidth: 60, textAlign: 'right' }}>
+                LV {stats.level} · {stats.matches}м
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function StatTile({ label, value, accent = '#dfe4ee' }: { label: string; value: string; accent?: string }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        background: 'rgba(20, 24, 36, 0.7)',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        borderRadius: 12,
+        padding: '8px 6px',
+        textAlign: 'center',
+      }}
+    >
+      <div style={{ fontSize: 9, color: '#7a8aab', letterSpacing: 1.4, fontWeight: 800 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 900, color: accent, marginTop: 2 }}>{value}</div>
+    </div>
+  );
+}
+
+function ProfileBar({ value, max, color }: { value: number; max: number; color: string }) {
+  const pct = Math.max(0, Math.min(100, (value / Math.max(1, max)) * 100));
+  return (
+    <div
+      style={{
+        height: 8,
+        borderRadius: 999,
+        background: 'rgba(255,255,255,0.08)',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          width: `${pct}%`,
+          height: '100%',
+          background: color,
+          transition: 'width 400ms ease-out',
+        }}
+      />
     </div>
   );
 }
@@ -464,4 +585,47 @@ const hintStyle: React.CSSProperties = {
   color: '#7a8aab',
   letterSpacing: 1,
   lineHeight: 1.4,
+};
+
+const profileStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 14,
+  padding: '0 16px',
+  alignSelf: 'center',
+  width: 'min(460px, 92vw)',
+  color: '#fff',
+};
+
+const profileHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  padding: '12px 16px',
+  background: 'rgba(20, 24, 36, 0.7)',
+  border: '1px solid rgba(255, 255, 255, 0.1)',
+  borderRadius: 14,
+};
+
+const profileRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  marginBottom: 6,
+};
+
+const statRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+};
+
+const heroRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '6px 10px',
+  background: 'rgba(20, 24, 36, 0.55)',
+  border: '1px solid rgba(255, 255, 255, 0.08)',
+  borderRadius: 10,
+  color: '#dfe4ee',
 };

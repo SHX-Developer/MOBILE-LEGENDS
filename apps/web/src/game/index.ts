@@ -4,4 +4,4 @@ export function createGame(container: HTMLElement, opts: GameOptions): Game {
   return new Game(container, opts);
 }
 
-export type { Game, GameOptions, GameMode } from './Game.js';
+export type { Game, GameOptions, GameMode, MatchResult } from './Game.js';

@@ -1,6 +1,14 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { createGame, type Game } from '../game/index.js';
+import { createGame, type Game, type MatchResult } from '../game/index.js';
 import type { HeroKind } from '../game/constants.js';
+import {
+  HERO_NAMES,
+  accountXpToNext,
+  heroXpToNext,
+  rankTierFor,
+  useProgressionStore,
+  type MatchReward,
+} from '../store/progressionStore.js';
 
 interface Frame {
   logicalW: number;
@@ -92,6 +100,9 @@ export function GameCanvas({ mode, heroKind = 'ranger', onExit }: GameCanvasProp
   const [frame, setFrame] = useState<Frame>(() => computeFrame());
   const [gameKey, setGameKey] = useState(0);
   const [matchEnd, setMatchEnd] = useState<Team | null>(null);
+  const awardMatchResult = useProgressionStore((s) => s.awardMatchResult);
+  const lastMatchReward = useProgressionStore((s) => s.lastMatchReward);
+  const clearLastMatchReward = useProgressionStore((s) => s.clearLastMatchReward);
   const [matchMs, setMatchMs] = useState(0);
   const [respawnMs, setRespawnMs] = useState(0);
   const [onlineStatus, setOnlineStatus] = useState('connecting');
@@ -109,13 +120,22 @@ export function GameCanvas({ mode, heroKind = 'ranger', onExit }: GameCanvasProp
   useEffect(() => {
     if (!containerRef.current) return;
     const game = createGame(containerRef.current, { mode, heroKind });
-    game.onMatchEnd = (winner) => setMatchEnd(winner);
+    game.onMatchEnd = (result: MatchResult) => {
+      // Persist progression first so the overlay reads the fresh state.
+      awardMatchResult({
+        hero: result.heroKind,
+        victory: result.victory,
+        durationMs: result.durationMs,
+        kills: result.kills,
+      });
+      setMatchEnd(result.winner);
+    };
     gameRef.current = game;
     return () => {
       game.destroy();
       gameRef.current = null;
     };
-  }, [gameKey, mode, heroKind]);
+  }, [gameKey, mode, heroKind, awardMatchResult]);
 
   useEffect(() => {
     setMatchMs(0);
@@ -279,7 +299,18 @@ export function GameCanvas({ mode, heroKind = 'ranger', onExit }: GameCanvasProp
           />
         )}
         {matchEnd && (
-          <MatchEndOverlay winner={matchEnd} onRestart={restart} onExit={onExit} />
+          <MatchEndOverlay
+            winner={matchEnd}
+            reward={lastMatchReward}
+            onRestart={() => {
+              clearLastMatchReward();
+              restart();
+            }}
+            onExit={() => {
+              clearLastMatchReward();
+              onExit?.();
+            }}
+          />
         )}
         {mode === 'online' && !matchEnd && onlineStatus !== 'playing' && (
           <QueueOverlay status={onlineStatus} onCancel={onExit} />
@@ -1385,10 +1416,12 @@ const SkillButton = memo(function SkillButton({
 
 function MatchEndOverlay({
   winner,
+  reward,
   onRestart,
   onExit,
 }: {
   winner: Team;
+  reward: MatchReward | null;
   onRestart: () => void;
   onExit?: () => void;
 }) {
@@ -1409,17 +1442,18 @@ function MatchEndOverlay({
         style={{
           display: 'grid',
           placeItems: 'center',
-          gap: 24,
-          padding: '32px 56px',
+          gap: 16,
+          padding: '24px 48px',
           borderRadius: 20,
           background: 'rgba(20, 22, 36, 0.88)',
           border: `2px solid ${isVictory ? '#7be38e' : '#e36b6b'}`,
           boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+          minWidth: 360,
         }}
       >
         <div
           style={{
-            fontSize: 56,
+            fontSize: 44,
             fontWeight: 900,
             letterSpacing: 4,
             color: isVictory ? '#7be38e' : '#e36b6b',
@@ -1428,14 +1462,15 @@ function MatchEndOverlay({
         >
           {isVictory ? 'VICTORY' : 'DEFEAT'}
         </div>
-        <div style={{ display: 'flex', gap: 16 }}>
+        {reward && <RewardPanel reward={reward} />}
+        <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
           <button
             onClick={onRestart}
             style={{
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: 700,
               letterSpacing: 2,
-              padding: '12px 36px',
+              padding: '11px 30px',
               borderRadius: 999,
               border: '2px solid #ffce5c',
               background:
@@ -1451,10 +1486,10 @@ function MatchEndOverlay({
             <button
               onClick={onExit}
               style={{
-                fontSize: 18,
+                fontSize: 16,
                 fontWeight: 700,
                 letterSpacing: 2,
-                padding: '12px 36px',
+                padding: '11px 30px',
                 borderRadius: 999,
                 border: '2px solid rgba(255,255,255,0.4)',
                 background: 'rgba(20, 22, 36, 0.7)',
@@ -1467,6 +1502,126 @@ function MatchEndOverlay({
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Match-end reward summary card. Shows the XP breakdown (base / win
+ * bonus / daily login), MMR delta, and account/hero level bars
+ * "old → new" so the player can see the progress they just made.
+ */
+function RewardPanel({ reward }: { reward: MatchReward }) {
+  // Read fresh state from the store for the post-bar display.
+  const accountLevel = useProgressionStore((s) => s.accountLevel);
+  const accountXp = useProgressionStore((s) => s.accountXp);
+  const heroes = useProgressionStore((s) => s.heroes);
+  const mmr = useProgressionStore((s) => s.mmr);
+  const tier = rankTierFor(mmr);
+  const heroStats = heroes[reward.hero];
+  const acctNext = accountXpToNext(accountLevel);
+  const heroNext = heroXpToNext(heroStats.level);
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gap: 10,
+        padding: '14px 18px',
+        background: 'rgba(10, 14, 24, 0.7)',
+        border: '1px solid rgba(255, 255, 255, 0.12)',
+        borderRadius: 14,
+        color: '#fff',
+        minWidth: 320,
+      }}
+    >
+      <div style={{ fontSize: 11, letterSpacing: 3, color: '#a8b8d4', fontWeight: 800 }}>
+        НАГРАДА
+      </div>
+      <RewardLine label="БАЗОВЫЙ XP" value={`+${reward.baseXp}`} />
+      {reward.winBonus > 0 && (
+        <RewardLine label="БОНУС ЗА ПОБЕДУ" value={`+${reward.winBonus}`} accent="#7be38e" />
+      )}
+      {reward.dailyBonus > 0 && (
+        <RewardLine label="ЕЖЕДНЕВНЫЙ ВХОД" value={`+${reward.dailyBonus}`} accent="#ffd17a" />
+      )}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          paddingTop: 6,
+          borderTop: '1px solid rgba(255,255,255,0.1)',
+          fontWeight: 900,
+          fontSize: 14,
+        }}
+      >
+        <span style={{ letterSpacing: 1.5 }}>ИТОГО</span>
+        <span style={{ color: '#ffd17a' }}>+{reward.totalXp} XP</span>
+      </div>
+      <RewardLine
+        label="РЕЙТИНГ"
+        value={`${reward.mmrDelta >= 0 ? '+' : ''}${reward.mmrDelta} → ${mmr} (${tier.name})`}
+        accent={reward.mmrDelta >= 0 ? '#7be38e' : '#ff8a8a'}
+      />
+      <ProgressBar
+        label={`УРОВЕНЬ АККАУНТА — LV ${accountLevel}`}
+        value={accountXp}
+        max={acctNext}
+        color="#9fd8ff"
+      />
+      <ProgressBar
+        label={`${HERO_NAMES[reward.hero]} — LV ${heroStats.level}`}
+        value={heroStats.xp}
+        max={heroNext}
+        color="#ffce5c"
+      />
+    </div>
+  );
+}
+
+function RewardLine({ label, value, accent = '#fff' }: { label: string; value: string; accent?: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+      <span style={{ color: '#a8b8d4', letterSpacing: 1.2, fontWeight: 700 }}>{label}</span>
+      <span style={{ color: accent, fontWeight: 800 }}>{value}</span>
+    </div>
+  );
+}
+
+function ProgressBar({
+  label,
+  value,
+  max,
+  color,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  color: string;
+}) {
+  const pct = Math.max(0, Math.min(100, (value / Math.max(1, max)) * 100));
+  return (
+    <div style={{ display: 'grid', gap: 4 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+        <span style={{ color: '#a8b8d4', letterSpacing: 1, fontWeight: 700 }}>{label}</span>
+        <span style={{ color: '#dfe4ee', fontWeight: 700 }}>{value} / {max} XP</span>
+      </div>
+      <div
+        style={{
+          height: 8,
+          borderRadius: 999,
+          background: 'rgba(255,255,255,0.08)',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            width: `${pct}%`,
+            height: '100%',
+            background: color,
+            transition: 'width 600ms ease-out',
+          }}
+        />
       </div>
     </div>
   );

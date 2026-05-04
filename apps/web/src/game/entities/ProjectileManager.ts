@@ -145,6 +145,9 @@ export class ProjectileManager {
   /** Fires whenever a projectile flagged `fromPlayer` connects. */
   onPlayerHit?: () => void;
   onDamage?: (target: Unit, amount: number, owner?: Unit) => void;
+  /** Fires when an alive enemy dies and the killer is a hero. Used by
+   *  Game to count player kills for end-of-match progression rewards. */
+  onHeroKill?: (killer: Unit, target: Unit) => void;
 
   private projectiles: Projectile[] = [];
   private readonly variants: Record<ProjectileKind, Variant>;
@@ -435,6 +438,7 @@ export class ProjectileManager {
     const granted = new Set<Unit>();
     if (killer && killer.kind === 'hero' && killer.alive && killer.team !== dead.team) {
       killer.grantXp?.(dead.xpReward);
+      this.onHeroKill?.(killer, dead);
       granted.add(killer);
     }
     for (const u of registry.allUnits()) {
