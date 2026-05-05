@@ -49,8 +49,12 @@ export function App() {
   if (!user.nickname) return <Stage><NicknameForm /></Stage>;
 
   if (screen.kind === 'menu') {
+    // Menu uses the fullscreen stage so the cyber background reaches
+    // edge-to-edge — no 16:9 letterbox bars. The MainMenu itself adds
+    // a left safe-area inset so the Telegram WebApp close/back buttons
+    // (top-left) don't sit on top of our content.
     return (
-      <Stage>
+      <Stage fullscreen>
         <MainMenu
           onPlay={(mode, heroKind) => setScreen({ kind: 'playing', mode, heroKind })}
         />
@@ -67,8 +71,8 @@ export function App() {
   );
 }
 
-function Stage({ children }: { children: React.ReactNode }) {
-  return <LandscapeStage>{children}</LandscapeStage>;
+function Stage({ children, fullscreen }: { children: React.ReactNode; fullscreen?: boolean }) {
+  return <LandscapeStage fullscreen={fullscreen}>{children}</LandscapeStage>;
 }
 
 function Centered({ children }: { children: React.ReactNode }) {

@@ -639,6 +639,16 @@ function BottomNav({ active, onChange }: { active: MenuTab; onChange: (t: MenuTa
  * Styles
  * ----------------------------------------------------------------------- */
 
+/**
+ * Left inset to keep menu content clear of the Telegram WebApp
+ * back/close/menu buttons stuck to the top-left corner. Roughly 64px
+ * is enough on iOS Telegram (where the close X is the leftmost icon)
+ * and accommodates Android too. We bake it into every top-level layout
+ * style so the gradient background still fills edge-to-edge but no
+ * interactive UI sits under those native buttons.
+ */
+const TG_LEFT_INSET = 64;
+
 const shellStyle: React.CSSProperties = {
   position: 'absolute',
   inset: 0,
@@ -655,7 +665,8 @@ const topBarStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  padding: '14px 22px 10px',
+  // Bigger left padding clears the Telegram close/back/menu buttons.
+  padding: `14px 22px 10px ${TG_LEFT_INSET}px`,
   borderBottom: '1px solid rgba(157,108,255,0.18)',
   background:
     'linear-gradient(180deg, rgba(157,108,255,0.12) 0%, rgba(157,108,255,0.0) 100%)',
@@ -717,7 +728,8 @@ const contentStyle: React.CSSProperties = {
   position: 'relative',
   display: 'grid',
   placeItems: 'center',
-  padding: '20px 18px',
+  // Extra left padding so cards/CTAs sit clear of Telegram's left nav.
+  padding: `20px 18px 20px ${TG_LEFT_INSET}px`,
   zIndex: 1,
   overflow: 'auto',
 };
@@ -790,6 +802,8 @@ const heroGridStyle: React.CSSProperties = {
   display: 'flex',
   gap: 12,
   overflowX: 'auto',
+  // The HeroBrowser sits inside contentStyle which already has the
+  // Telegram inset, so just a small inner gutter is enough here.
   padding: '4px 16px 12px',
   width: '100%',
   scrollSnapType: 'x mandatory',
@@ -930,7 +944,7 @@ const pickHeaderStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  padding: '14px 22px',
+  padding: `14px 22px 14px ${TG_LEFT_INSET}px`,
   borderBottom: '1px solid rgba(157,108,255,0.18)',
   position: 'relative',
   zIndex: 2,
@@ -943,7 +957,7 @@ const pickGridStyle: React.CSSProperties = {
   alignItems: 'stretch',
   overflowX: 'auto',
   overflowY: 'hidden',
-  padding: '20px 18px',
+  padding: `20px 18px 20px ${TG_LEFT_INSET}px`,
   width: '100%',
   scrollSnapType: 'x mandatory',
   zIndex: 1,
@@ -962,7 +976,8 @@ const pickHintStyle: React.CSSProperties = {
 const navStyle: React.CSSProperties = {
   display: 'flex',
   gap: 0,
-  padding: '0 14px 12px',
+  // Same inset on the bottom nav so the leftmost tab isn't obscured.
+  padding: `0 14px 12px ${TG_LEFT_INSET}px`,
   borderTop: '1px solid rgba(157,108,255,0.18)',
   background:
     'linear-gradient(0deg, rgba(157,108,255,0.10) 0%, rgba(157,108,255,0) 100%)',
