@@ -207,6 +207,14 @@ export class PlayerObject implements Unit {
   private bowGroup?: THREE.Object3D;
   private bodyRoot?: THREE.Object3D;
   private deathStartedAt = 0;
+  // Sprite-based body (used by Lunara). When set, the procedural-rig
+  // animation paths (legs/arms swinging) become no-ops and the sprite
+  // gets its own scale-pulse / sway treatment in animateGait().
+  private spriteMesh?: THREE.Mesh;
+  private spriteMat?: THREE.MeshBasicMaterial;
+  /** ±1 — flips the sprite horizontally so Lunara faces her movement
+   *  direction in screen space. Updated each frame from billboardSprite. */
+  private spriteFacingX = 1;
 
   // Counter-aggro stacks: every tower hit on the player adds one stack, up
   // to the cap. The bonus decays back to zero {@link PLAYER_TOWER_FOCUS_DECAY_MS}
@@ -265,6 +273,12 @@ export class PlayerObject implements Unit {
       : { cloak: 0x701f3a, cloakLight: 0xc8456a };
     this.cloakMat.color.setHex(palette.cloak);
     this.cloakLightMat.color.setHex(palette.cloakLight);
+    // Sprite hero (Lunara) tints the texture itself so the team read is
+    // unmistakable: blue side keeps the natural moonlight palette, red
+    // side gets a warm magenta wash.
+    if (this.spriteMat) {
+      this.spriteMat.color.setHex(team === 'blue' ? 0xffffff : 0xffb8c2);
+    }
   }
 
   billboardHealthBar(camera: THREE.Camera): void {
@@ -272,6 +286,32 @@ export class PlayerObject implements Unit {
     // landscape view; local +Y is unaffected by player yaw.
     this.healthBar.group.position.set(0, 3, 0);
     this.healthBar.billboard(camera);
+    if (this.spriteMesh) this.billboardSprite(camera);
+  }
+
+  /** Counter the parent group's yaw so the 2D sprite always faces the
+   *  camera flat-on, then pick a horizontal flip from the player's
+   *  facing-vs-camera-right dot product so Lunara faces her movement
+   *  direction in screen space. */
+  private billboardSprite(camera: THREE.Camera): void {
+    if (!this.spriteMesh) return;
+    const cw = new THREE.Vector3();
+    camera.getWorldPosition(cw);
+    const sw = new THREE.Vector3();
+    this.spriteMesh.getWorldPosition(sw);
+    const dx = cw.x - sw.x;
+    const dz = cw.z - sw.z;
+    const yawToCam = Math.atan2(dx, dz);
+    this.spriteMesh.rotation.y = yawToCam - this.group.rotation.y;
+    // Camera-right vector in world XZ (column 0 of matrixWorld).
+    const m = camera.matrixWorld.elements;
+    const camRightX = m[0];
+    const camRightZ = m[2];
+    const dot = this.facing.x * camRightX + this.facing.z * camRightZ;
+    // Hysteresis-free flip: flip only when clearly facing the other
+    // side, otherwise keep the last sign so we don't flicker mid-turn.
+    if (dot > 0.15) this.spriteFacingX = 1;
+    else if (dot < -0.15) this.spriteFacingX = -1;
   }
 
   get position(): THREE.Vector3 {
@@ -726,6 +766,15 @@ export class PlayerObject implements Unit {
     } else if (this.bodyRoot) {
       this.bodyRoot.position.y = lerp(this.bodyRoot.position.y, 0);
     }
+
+    // Sprite hero (Lunara) — single billboard plane gets its own
+    // scale-pulse / sway / colour-flash treatment, and we early-return
+    // since there are no leg/arm rigs to swing.
+    if (this.spriteMesh && this.spriteMat) {
+      this.animateSprite(speed, deltaSec, now, drawing);
+      return;
+    }
+
     if (drawing) {
       // Time within the 220ms windup, normalised 0..1.
       const t = 1 - (this.attackLockUntil - now) / 220;
@@ -755,6 +804,50 @@ export class PlayerObject implements Unit {
       if (this.leftArm) this.leftArm.rotation.x = lerp(this.leftArm.rotation.x, 0);
       if (this.rightArm) this.rightArm.rotation.x = lerp(this.rightArm.rotation.x, 0);
     }
+  }
+
+  /** Sprite-rig animations for Lunara. Run = bob + sway + flip toward
+   *  movement direction. Attack = brief uniform scale-pulse and a
+   *  moonlight colour flash on the sprite material. Idle = breathing
+   *  bob (handled at the bodyRoot level above). */
+  private animateSprite(speed: number, deltaSec: number, now: number, drawing: boolean): void {
+    if (!this.spriteMesh || !this.spriteMat) return;
+    const k = Math.min(1, deltaSec * 14);
+    const lerp = (a: number, b: number) => a + (b - a) * k;
+
+    // Attack pulse — strongest at the midpoint of the 220ms windup.
+    let pulse = 0;
+    if (drawing) {
+      const t = 1 - (this.attackLockUntil - now) / 220;
+      pulse = Math.sin(Math.max(0, Math.min(1, t)) * Math.PI);
+    }
+
+    // Run sway — small sinusoidal z-tilt drives a "stride lean" feel.
+    if (speed > 0.3 && !drawing) {
+      this.gaitPhase += deltaSec * (5 + speed * 0.4);
+    }
+    const sway = (speed > 0.3 && !drawing)
+      ? Math.sin(this.gaitPhase * 1.6) * 0.08
+      : lerp(this.spriteMesh.rotation.z, 0);
+    this.spriteMesh.rotation.z = sway;
+
+    // Final scale: horizontal flip × pulse-grow (uniform-ish).
+    const flipX = this.spriteFacingX;
+    const sx = flipX * (1 + pulse * 0.09);
+    const sy = 1 + pulse * 0.05;
+    this.spriteMesh.scale.set(sx, sy, 1);
+
+    // Moonlight flash — push toward bright lavender on the windup peak,
+    // then ease back to the team-tinted base colour.
+    const baseR = this.team === 'blue' ? 1.0 : 1.0;
+    const baseG = this.team === 'blue' ? 1.0 : 0.72;
+    const baseB = this.team === 'blue' ? 1.0 : 0.76;
+    const flash = pulse;
+    this.spriteMat.color.setRGB(
+      Math.min(1.5, baseR + flash * 0.25),
+      Math.min(1.5, baseG + flash * 0.10),
+      Math.min(1.5, baseB + flash * 0.40),
+    );
   }
 
   faceTarget(target: THREE.Vector3): void {
@@ -899,193 +992,59 @@ export class PlayerObject implements Unit {
   }
 
   /**
-   * Lunara — Moonlight Archer. Slim ranger silhouette, long platinum
-   * ponytail, deep-purple corset / sash with gold trim, black thigh
-   * plate, glowing magenta crystal bow. The build keeps the same
-   * skeleton as the original Mia rig so the existing idle/draw/run
-   * animations continue to work.
+   * Lunara — Moonlight Archer. Sprite-based body using the concept-art
+   * portrait (apps/web/public/lunara/portrait_transparent.png) on a
+   * camera-facing billboard plane. The procedural-rig animation paths
+   * (legs/arms/bow draw) become no-ops; instead animateSprite() drives
+   * a uniform scale-pulse on attack, a sinusoidal lean during run, and
+   * the idle bob already running on bodyRoot.
    *
-   * Materials live in field properties (cloakMat / cloakLightMat) so
-   * setTeam() can swap the outfit colours for the red side.
+   * setTeam() retints the sprite material directly (white for blue
+   * side, magenta wash for red) so the team read still works.
    */
   private buildMia(): void {
-    // Palette — Lunara's moonlight reference: ivory skin, platinum
-    // hair, deep-violet corset with magenta-violet highlights, gold
-    // trim, black-violet stockings, magenta-emissive crystal bow.
-    const skin = new THREE.MeshLambertMaterial({ color: 0xfde0c4 });
-    const cloak = new THREE.MeshLambertMaterial({ color: 0x3a1f70 });
-    const cloakLight = new THREE.MeshLambertMaterial({ color: 0x6a45c8 });
-    this.cloakMat = cloak;
-    this.cloakLightMat = cloakLight;
-    const tights = new THREE.MeshLambertMaterial({ color: 0x0c0612 });
-    const trim = new THREE.MeshLambertMaterial({
-      color: 0xf3c25a,
-      emissive: 0x6a4810,
-      emissiveIntensity: 0.3,
-    });
-    const hair = new THREE.MeshLambertMaterial({ color: 0xf0eaea });
-    const hairAccent = new THREE.MeshLambertMaterial({ color: 0xd6c8e0 });
-    const bootMat = new THREE.MeshLambertMaterial({ color: 0x1a0c20 });
-    // Lunara's bow is a crystalline magenta-violet — gold-trimmed shaft,
-    // glowing emissive core. Read as "moonlight magic", not a wooden bow.
-    const bowMat = new THREE.MeshLambertMaterial({
-      color: 0xa470ff,
-      emissive: 0x6c2fc8,
-      emissiveIntensity: 1.2,
-    });
-    const bowAccent = new THREE.MeshLambertMaterial({
-      color: 0xf3c25a,
-      emissive: 0x8a5a18,
-      emissiveIntensity: 0.6,
-    });
-    const stringMat = new THREE.MeshLambertMaterial({
-      color: 0xead7ff,
-      emissive: 0x9b6cff,
-      emissiveIntensity: 0.4,
-    });
-
-    // Body root — the parent of everything except the healthbar. Death animation
-    // tilts the WHOLE Player group, so building under a body root keeps the
-    // pivot for the camera and FX consistent.
+    // Lunara — sprite-based body. We swap the procedural rig for a single
+    // billboard plane that uses the concept-art portrait. The plane is
+    // counter-rotated each frame in billboardSprite() so it always faces
+    // the camera flat-on, and gets a horizontal flip that mirrors the
+    // hero toward her movement direction in screen space. Animations
+    // (run sway, attack pulse, idle bob) live in animateSprite().
     const body = new THREE.Group();
     this.group.add(body);
     this.bodyRoot = body;
 
-    // Slim legs (tights), hip pivots so the gait swing reads.
-    const thighGeom = new THREE.CylinderGeometry(0.13, 0.12, 0.65, 10);
-    thighGeom.translate(0, -0.32, 0);
-    const calfGeom = new THREE.CylinderGeometry(0.11, 0.09, 0.55, 10);
-    calfGeom.translate(0, -0.28, 0);
-    for (const side of [-1, 1] as const) {
-      const hip = new THREE.Group();
-      hip.position.set(0.16 * side, 0.95, 0);
-      const thigh = new THREE.Mesh(thighGeom, tights);
-      thigh.castShadow = false;
-      hip.add(thigh);
-      const calf = new THREE.Mesh(calfGeom, tights);
-      calf.position.y = -0.62;
-      calf.castShadow = false;
-      hip.add(calf);
-      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.34), bootMat);
-      boot.position.set(0, -1.12, 0.05);
-      boot.castShadow = false;
-      hip.add(boot);
-      body.add(hip);
-      if (side < 0) this.leftLeg = hip;
-      else this.rightLeg = hip;
-    }
+    const tex = new THREE.TextureLoader().load('/lunara/portrait_transparent.png');
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.anisotropy = 4;
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      alphaTest: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
 
-    // Skirt — short tiered piece sitting on the hips.
-    const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.46, 0.34, 18), cloak);
-    skirt.position.y = 1.05;
-    skirt.castShadow = false;
-    body.add(skirt);
-    const skirtTrim = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.025, 8, 24), trim);
-    skirtTrim.rotation.x = Math.PI / 2;
-    skirtTrim.position.y = 0.92;
-    body.add(skirtTrim);
+    // Plane sized to the procedural-rig footprint (~2.4u tall, character
+    // sits with feet at y=0 and head near y=2.4). The portrait aspect is
+    // 480/870 = 0.55; 1.55 wide × 2.8 tall fits with a little bleed at
+    // the edges so transparent halo doesn't crop the cape.
+    const w = 1.55;
+    const h = 2.8;
+    const sprite = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    sprite.position.y = h / 2 - 0.05;
+    sprite.castShadow = false;
+    sprite.receiveShadow = false;
+    body.add(sprite);
+    this.spriteMesh = sprite;
+    this.spriteMat = mat;
 
-    // Belt — gold ring at waist.
-    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.05, 8, 22), trim);
-    belt.rotation.x = Math.PI / 2;
-    belt.position.y = 1.28;
-    body.add(belt);
-
-    // Slim torso (narrow at waist, slightly wider at chest).
-    const torso = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.32, 0.42, 6, 12),
-      cloakLight,
-    );
-    torso.position.y = 1.58;
-    torso.castShadow = false;
-    body.add(torso);
-
-    // Decorative chest strap (cross-belt) — narrow gold band.
-    const strap = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.025, 6, 18), trim);
-    strap.rotation.set(Math.PI / 2, 0, Math.PI / 5);
-    strap.position.set(0, 1.7, 0.02);
-    body.add(strap);
-
-    // Arms — slim, pivot at shoulder. Right hand will hold the bow.
-    const upperArmGeom = new THREE.CylinderGeometry(0.085, 0.075, 0.45, 10);
-    upperArmGeom.translate(0, -0.22, 0);
-    const forearmGeom = new THREE.CylinderGeometry(0.075, 0.065, 0.42, 10);
-    forearmGeom.translate(0, -0.21, 0);
-    for (const side of [-1, 1] as const) {
-      const shoulder = new THREE.Group();
-      shoulder.position.set(0.36 * side, 1.78, 0);
-      const upper = new THREE.Mesh(upperArmGeom, skin);
-      upper.castShadow = false;
-      shoulder.add(upper);
-      const forearm = new THREE.Mesh(forearmGeom, skin);
-      forearm.position.y = -0.42;
-      forearm.castShadow = false;
-      shoulder.add(forearm);
-      const glove = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), tights);
-      glove.position.y = -0.78;
-      shoulder.add(glove);
-      body.add(shoulder);
-      if (side < 0) this.leftArm = shoulder;
-      else this.rightArm = shoulder;
-    }
-
-    // Head + face hint.
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 16), skin);
-    head.position.y = 2.12;
-    head.castShadow = false;
-    body.add(head);
-    // Simple eye dots — a tiny touch but reads as a face from far away.
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x202434 });
-    for (const ex of [-0.08, 0.08]) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.024, 6, 6), eyeMat);
-      eye.position.set(ex, 2.13, 0.24);
-      body.add(eye);
-    }
-
-    // Hood/skull cap on top of head.
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.29, 16, 16), hair);
-    cap.position.y = 2.16;
-    cap.scale.set(1, 0.9, 1);
-    cap.castShadow = false;
-    body.add(cap);
-
-    // Side bangs — two small wedges in front of the ears.
-    const bangGeom = new THREE.ConeGeometry(0.09, 0.32, 6);
-    for (const side of [-1, 1]) {
-      const bang = new THREE.Mesh(bangGeom, hair);
-      bang.position.set(0.18 * side, 2.0, 0.12);
-      bang.rotation.z = side * 0.3;
-      body.add(bang);
-    }
-
-    // Long flowing ponytail behind the head — chain of cones from cap to waist.
-    const tailRoot = new THREE.Group();
-    tailRoot.position.set(0, 2.05, -0.18);
-    tailRoot.rotation.x = 0.35;
-    const tailLayers = [
-      { y: 0, r: 0.16, h: 0.42, mat: hair },
-      { y: -0.32, r: 0.13, h: 0.45, mat: hair },
-      { y: -0.66, r: 0.10, h: 0.45, mat: hair },
-      { y: -0.95, r: 0.07, h: 0.4, mat: hairAccent },
-    ];
-    for (const layer of tailLayers) {
-      const seg = new THREE.Mesh(
-        new THREE.ConeGeometry(layer.r, layer.h, 8),
-        layer.mat,
-      );
-      seg.position.y = layer.y;
-      seg.rotation.x = Math.PI;
-      seg.castShadow = false;
-      tailRoot.add(seg);
-    }
-    body.add(tailRoot);
-
-    // Bow — bigger and more recurve than the previous one.
-    const bow = buildRecurveBow(bowMat, bowAccent, stringMat);
-    bow.position.set(0.5, 1.5, 0.34);
-    bow.rotation.z = -Math.PI / 14;
-    body.add(bow);
-    this.bowGroup = bow;
+    // Stub team-recolour materials so setTeam() can still use the
+    // generic cloakMat path. These never reach the scene — the sprite
+    // material's color is what actually retints on team swap.
+    this.cloakMat = new THREE.MeshLambertMaterial({ color: 0x3a1f70 });
+    this.cloakLightMat = new THREE.MeshLambertMaterial({ color: 0x6a45c8 });
   }
 
   /**
@@ -1588,72 +1547,3 @@ export class PlayerObject implements Unit {
   }
 }
 
-/**
- * Recurve bow — two opposed arcs (split torus halves) form the elegant
- * Mia-style silhouette, with a gold grip in the middle and a notched arrow
- * already on the string.
- */
-function buildRecurveBow(
-  bowMat: THREE.Material,
-  arrowMat: THREE.Material,
-  stringMat: THREE.Material,
-): THREE.Group {
-  const bow = new THREE.Group();
-
-  // Upper limb — half-torus that arcs up.
-  const upperLimb = new THREE.Mesh(
-    new THREE.TorusGeometry(0.4, 0.04, 6, 18, Math.PI),
-    bowMat,
-  );
-  upperLimb.rotation.z = Math.PI / 2;
-  upperLimb.position.y = 0.1;
-  upperLimb.scale.set(0.8, 1, 1);
-  upperLimb.castShadow = false;
-  bow.add(upperLimb);
-  // Lower limb — mirror.
-  const lowerLimb = new THREE.Mesh(
-    new THREE.TorusGeometry(0.4, 0.04, 6, 18, Math.PI),
-    bowMat,
-  );
-  lowerLimb.rotation.z = -Math.PI / 2;
-  lowerLimb.position.y = -0.1;
-  lowerLimb.scale.set(0.8, 1, 1);
-  lowerLimb.castShadow = false;
-  bow.add(lowerLimb);
-
-  // Centre grip — gold.
-  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.22, 8), arrowMat);
-  bow.add(grip);
-
-  // Bowstring — taut between the limb tips.
-  const string = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.012, 0.012, 1.0, 6),
-    stringMat,
-  );
-  string.position.z = -0.08;
-  bow.add(string);
-
-  // Arrow — already nocked, pointing forward.
-  const shaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.022, 0.022, 0.9, 6),
-    arrowMat,
-  );
-  shaft.rotation.x = Math.PI / 2;
-  shaft.position.z = 0.32;
-  bow.add(shaft);
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.18, 8), arrowMat);
-  tip.rotation.x = Math.PI / 2;
-  tip.position.z = 0.85;
-  bow.add(tip);
-  // Fletching — three small wedges at the back of the shaft.
-  const fletchMat = new THREE.MeshLambertMaterial({ color: 0xc44a4a });
-  for (let i = 0; i < 3; i++) {
-    const fl = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.18), fletchMat);
-    const a = (i / 3) * Math.PI * 2;
-    fl.position.set(Math.cos(a) * 0.045, Math.sin(a) * 0.045, -0.08);
-    fl.rotation.z = a;
-    bow.add(fl);
-  }
-
-  return bow;
-}

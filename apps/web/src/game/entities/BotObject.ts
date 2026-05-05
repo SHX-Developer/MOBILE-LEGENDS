@@ -168,6 +168,11 @@ export class BotObject implements Unit {
   private lastProgress = 0;
   private armorMat!: THREE.MeshLambertMaterial;
   private armorDarkMat!: THREE.MeshLambertMaterial;
+  // Sprite-based body (ranger only). When set, billboardHealthBar() also
+  // counter-rotates the plane so it always faces the camera, and the
+  // material colour is what setTeam() retints for the team read.
+  private spriteMesh?: THREE.Mesh;
+  private spriteMat?: THREE.MeshBasicMaterial;
 
   constructor(
     spawn: THREE.Vector3,
@@ -327,6 +332,15 @@ export class BotObject implements Unit {
     // rotated-phone landscape view.
     this.healthBar.group.position.set(0, 3, 0);
     this.healthBar.billboard(camera);
+    if (this.spriteMesh) {
+      // Counter the bot group's yaw so the 2D plane faces the camera flat-on.
+      const cw = new THREE.Vector3();
+      camera.getWorldPosition(cw);
+      const sw = new THREE.Vector3();
+      this.spriteMesh.getWorldPosition(sw);
+      const yawToCam = Math.atan2(cw.x - sw.x, cw.z - sw.z);
+      this.spriteMesh.rotation.y = yawToCam - this.group.rotation.y;
+    }
   }
 
   /** Recolor the bot's armor for its server-assigned team. */
@@ -337,6 +351,11 @@ export class BotObject implements Unit {
       : { armor: 0x2a4f8a, armorDark: 0x172846 };
     this.armorMat.color.setHex(palette.armor);
     this.armorDarkMat.color.setHex(palette.armorDark);
+    // Sprite-bodied bot (Lunara archer) tints its texture instead of the
+    // armour materials. Red side gets a warm magenta wash.
+    if (this.spriteMat) {
+      this.spriteMat.color.setHex(team === 'blue' ? 0xffffff : 0xffb8c2);
+    }
   }
 
   update(
@@ -929,66 +948,39 @@ export class BotObject implements Unit {
   }
 
   private buildArcherVisual(): void {
-    const skin = new THREE.MeshLambertMaterial({ color: 0xe6c5a0 });
-    // Team-coloured "armor" for the AI archer. Blue ally bots get a navy
-    // palette so the player can read the team at a glance.
-    const isBlue = this.team === 'blue';
-    const armor = new THREE.MeshLambertMaterial({ color: isBlue ? 0x2a4f8a : 0xc73c3c });
-    const armorDark = new THREE.MeshLambertMaterial({ color: isBlue ? 0x172846 : 0x6a1717 });
-    this.armorMat = armor;
-    this.armorDarkMat = armorDark;
-    const accent = new THREE.MeshLambertMaterial({
-      color: 0xf2c14e,
+    // Lunara — sprite-based bot body. Mirrors PlayerObject.buildMia():
+    // a single billboard plane that uses the concept-art portrait, with
+    // billboardHealthBar() counter-rotating it to always face the camera.
+    // Bots don't have run/attack animation hooks so the sprite stays
+    // visually still other than the team-tint applied in setTeam().
+    const tex = new THREE.TextureLoader().load('/lunara/portrait_transparent.png');
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.anisotropy = 4;
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      alphaTest: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      // Red-team bots get a warm magenta wash baked into the material
+      // colour so the team read works even before setTeam() runs.
+      color: this.team === 'blue' ? 0xffffff : 0xffb8c2,
     });
-    const bowDark = new THREE.MeshLambertMaterial({
-      color: 0x331414,
-    });
-    const stringMat = new THREE.MeshLambertMaterial({ color: 0xf1dac2 });
+    const w = 1.55;
+    const h = 2.8;
+    const sprite = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    sprite.position.y = h / 2 - 0.05;
+    sprite.castShadow = false;
+    this.group.add(sprite);
+    this.spriteMesh = sprite;
+    this.spriteMat = mat;
 
-    const legGeom = new THREE.CylinderGeometry(0.2, 0.2, 0.9, 12);
-    for (const x of [-0.22, 0.22]) {
-      const leg = new THREE.Mesh(legGeom, armorDark);
-      leg.position.set(x, 0.45, 0);
-      leg.castShadow = false;
-      this.group.add(leg);
-    }
-
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 0.6, 6, 12), armor);
-    torso.position.y = 1.55;
-    torso.castShadow = false;
-    this.group.add(torso);
-
-    const beltAccent = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.07, 8, 24), accent);
-    beltAccent.rotation.x = Math.PI / 2;
-    beltAccent.position.y = 1.3;
-    this.group.add(beltAccent);
-
-    const armGeom = new THREE.CylinderGeometry(0.13, 0.13, 0.7, 10);
-    for (const x of [-0.55, 0.55]) {
-      const arm = new THREE.Mesh(armGeom, armor);
-      arm.position.set(x, 1.55, 0);
-      arm.castShadow = false;
-      this.group.add(arm);
-    }
-
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 14), skin);
-    head.position.y = 2.18;
-    head.castShadow = false;
-    this.group.add(head);
-
-    const helm = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.5, 16), armor);
-    helm.position.y = 2.5;
-    helm.castShadow = false;
-    this.group.add(helm);
-
-    const helmTip = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), accent);
-    helmTip.position.y = 2.78;
-    this.group.add(helmTip);
-
-    const bow = buildBow(bowDark, accent, stringMat);
-    bow.position.set(0.58, 1.42, 0.38);
-    bow.rotation.z = -Math.PI / 18;
-    this.group.add(bow);
+    // Stub team-recolour materials so setTeam() can still touch armorMat
+    // without crashing — the sprite is the actual visible body.
+    this.armorMat = new THREE.MeshLambertMaterial({ color: 0x2a4f8a });
+    this.armorDarkMat = new THREE.MeshLambertMaterial({ color: 0x172846 });
   }
 
   /**
@@ -1347,29 +1339,3 @@ function botAttackRangeFor(kind: HeroKind): number {
   }
 }
 
-function buildBow(
-  bowMat: THREE.Material,
-  arrowMat: THREE.Material,
-  stringMat: THREE.Material,
-): THREE.Group {
-  const bow = new THREE.Group();
-  const arc = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.035, 8, 28), bowMat);
-  arc.scale.set(0.55, 1.25, 1);
-  arc.castShadow = false;
-  bow.add(arc);
-
-  const string = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.1, 6), stringMat);
-  string.position.z = -0.08;
-  bow.add(string);
-
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.78, 6), arrowMat);
-  shaft.rotation.x = Math.PI / 2;
-  shaft.position.z = 0.25;
-  bow.add(shaft);
-
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.18, 8), arrowMat);
-  tip.rotation.x = Math.PI / 2;
-  tip.position.z = 0.7;
-  bow.add(tip);
-  return bow;
-}
