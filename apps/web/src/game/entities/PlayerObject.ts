@@ -253,12 +253,16 @@ export class PlayerObject implements Unit {
     this.rangeRing.visible = visible && this.alive;
   }
 
-  /** Swap the hero's team allegiance and recolor the cloak to match. */
+  /** Swap the hero's team allegiance and recolor the cloak to match.
+   *  For the ranger (Lunara) we keep the moonlight palette but tilt
+   *  toward magenta-red on the enemy side so the team read is still
+   *  unmistakable. Other heroes still use their own palettes via the
+   *  cloakMat/cloakLightMat handles. */
   setTeam(team: Team): void {
     this.team = team;
     const palette = team === 'blue'
-      ? { cloak: 0x1f4c8a, cloakLight: 0x3d7bc4 }
-      : { cloak: 0x8a1f1f, cloakLight: 0xc44a4a };
+      ? { cloak: 0x3a1f70, cloakLight: 0x6a45c8 }
+      : { cloak: 0x701f3a, cloakLight: 0xc8456a };
     this.cloakMat.color.setHex(palette.cloak);
     this.cloakLightMat.color.setHex(palette.cloakLight);
   }
@@ -386,14 +390,18 @@ export class PlayerObject implements Unit {
     return this.heroKind === 'mage' ? 'magic' : 'physical';
   }
 
-  /** Auto-attack projectile cosmetic per archetype. */
+  /** Auto-attack projectile cosmetic per archetype. Lunara fires moonlight
+   *  arrows; while Focus Mode (BARRAGE) is active, her autos switch to
+   *  the brighter cyan-violet barrage variant so the buff reads
+   *  visually too. */
   get autoAttackKind(): ProjectileKind {
     switch (this.heroKind) {
       case 'mage': return 'firebolt';
       case 'fighter': return 'blade';
       case 'assassin': return 'dagger';
       case 'tank': return 'hammer';
-      default: return 'basic';
+      default:
+        return performance.now() < this.attackSpeedBuffUntil ? 'barrage' : 'moonarrow';
     }
   }
 
@@ -485,13 +493,13 @@ export class PlayerObject implements Unit {
           },
         };
       default:
-        // Arcshooter — Rapid Fire (single fat 360-damage burst that
-        // represents the 3×120 lore-shot).
+        // Lunara — LUNAR SHOT. Single fat 360-damage burst, fired as a
+        // glowing moonarrow.
         return {
           damage: SKILL_Q_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.6,
           cooldownMs: SKILL_Q_COOLDOWN_MS,
           range: SKILL_Q_RANGE,
-          projectileKind: 'heavy',
+          projectileKind: 'moonarrow',
         };
     }
   }
@@ -544,13 +552,13 @@ export class PlayerObject implements Unit {
           },
         };
       default:
-        // Arcshooter — Piercing Arrow. Long-range arrow that passes
-        // through every enemy on its path.
+        // Lunara — STARFALL ARROW. Heavier moonlight crystal arrow,
+        // pierces every enemy on its path.
         return {
           damage: SKILL_E_DAMAGE + lvl * HERO_DAMAGE_PER_LEVEL * 1.2,
           cooldownMs: SKILL_E_COOLDOWN_MS,
           range: SKILL_E_RANGE,
-          projectileKind: 'heavy',
+          projectileKind: 'starfall',
           pierces: true,
         };
     }
@@ -891,34 +899,50 @@ export class PlayerObject implements Unit {
   }
 
   /**
-   * Mia-inspired archer build. The mesh is a stack of primitives, but the
-   * proportions are deliberate: short narrow torso, slim limbs, fitted top
-   * and short skirt, long ponytail, ornate recurve bow held at the side.
+   * Lunara — Moonlight Archer. Slim ranger silhouette, long platinum
+   * ponytail, deep-purple corset / sash with gold trim, black thigh
+   * plate, glowing magenta crystal bow. The build keeps the same
+   * skeleton as the original Mia rig so the existing idle/draw/run
+   * animations continue to work.
    *
-   * Materials live in field properties (cloakMat / cloakLightMat) so setTeam()
-   * can recolour the outfit at runtime for the red side.
+   * Materials live in field properties (cloakMat / cloakLightMat) so
+   * setTeam() can swap the outfit colours for the red side.
    */
   private buildMia(): void {
-    // Palette — soft pale skin + dark navy outfit + silver-blonde hair.
-    const skin = new THREE.MeshLambertMaterial({ color: 0xfadcc1 });
-    const cloak = new THREE.MeshLambertMaterial({ color: 0x1f4c8a });
-    const cloakLight = new THREE.MeshLambertMaterial({ color: 0x3d7bc4 });
+    // Palette — Lunara's moonlight reference: ivory skin, platinum
+    // hair, deep-violet corset with magenta-violet highlights, gold
+    // trim, black-violet stockings, magenta-emissive crystal bow.
+    const skin = new THREE.MeshLambertMaterial({ color: 0xfde0c4 });
+    const cloak = new THREE.MeshLambertMaterial({ color: 0x3a1f70 });
+    const cloakLight = new THREE.MeshLambertMaterial({ color: 0x6a45c8 });
     this.cloakMat = cloak;
     this.cloakLightMat = cloakLight;
-    const tights = new THREE.MeshLambertMaterial({ color: 0x141927 });
+    const tights = new THREE.MeshLambertMaterial({ color: 0x0c0612 });
     const trim = new THREE.MeshLambertMaterial({
-      color: 0xf2cf5a,
+      color: 0xf3c25a,
+      emissive: 0x6a4810,
+      emissiveIntensity: 0.3,
     });
-    const hair = new THREE.MeshLambertMaterial({ color: 0xeef2f7 });
-    const hairAccent = new THREE.MeshLambertMaterial({ color: 0xc7d4e6 });
-    const bootMat = new THREE.MeshLambertMaterial({ color: 0x281b14 });
+    const hair = new THREE.MeshLambertMaterial({ color: 0xf0eaea });
+    const hairAccent = new THREE.MeshLambertMaterial({ color: 0xd6c8e0 });
+    const bootMat = new THREE.MeshLambertMaterial({ color: 0x1a0c20 });
+    // Lunara's bow is a crystalline magenta-violet — gold-trimmed shaft,
+    // glowing emissive core. Read as "moonlight magic", not a wooden bow.
     const bowMat = new THREE.MeshLambertMaterial({
-      color: 0x2a2a36,
+      color: 0xa470ff,
+      emissive: 0x6c2fc8,
+      emissiveIntensity: 1.2,
     });
     const bowAccent = new THREE.MeshLambertMaterial({
-      color: 0xe6b450,
+      color: 0xf3c25a,
+      emissive: 0x8a5a18,
+      emissiveIntensity: 0.6,
     });
-    const stringMat = new THREE.MeshLambertMaterial({ color: 0xf4ead5 });
+    const stringMat = new THREE.MeshLambertMaterial({
+      color: 0xead7ff,
+      emissive: 0x9b6cff,
+      emissiveIntensity: 0.4,
+    });
 
     // Body root — the parent of everything except the healthbar. Death animation
     // tilts the WHOLE Player group, so building under a body root keeps the

@@ -271,7 +271,7 @@ export class BotObject implements Unit {
       case 'fighter': return 'blade';
       case 'assassin': return 'dagger';
       case 'tank': return 'hammer';
-      default: return 'basic';
+      default: return 'moonarrow';
     }
   }
 
@@ -684,7 +684,7 @@ export class BotObject implements Unit {
       projectiles.spawn(this.position, enemy.position, now, {
         team: this.team,
         damage,
-        kind: 'heavy',
+        kind: 'moonarrow',
         owner: this,
         maxDistance: SKILL_Q_RANGE,
         target: enemy as never,

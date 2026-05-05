@@ -230,9 +230,9 @@ const ROLE_ACCENT: Record<HeroKind, string> = {
 
 const HERO_BLURBS: Record<HeroKind, { name: string; tag: string; desc: string; stats: string[] }> = {
   ranger: {
-    name: 'АРКШУТЕР',
-    tag: 'Marksman · Sustained DPS',
-    desc: 'Rapid Fire, Piercing Arrow, Focus Mode (+40% AS).',
+    name: 'ЛУНАРА',
+    tag: 'Moonlight Archer · Marksman',
+    desc: 'Lunar Shot, Moonlit Dash, Starfall Arrow — лунный лучник с мобильностью и burst-DPS.',
     stats: ['HP 2200', 'DMG 180', 'PHYS'],
   },
   mage: {

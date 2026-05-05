@@ -32,7 +32,13 @@ export type ProjectileKind =
   /** Heavy mace bolt. Tank Q. */
   | 'hammer'
   /** Ground shockwave AoE FX. Tank C self-cast. */
-  | 'quake';
+  | 'quake'
+  /** Moonlight crystal arrow. Lunara's auto-attack and Lunar Shot Q. */
+  | 'moonarrow'
+  /** Heavy moonlight arrow with extra glow. Lunara's Starfall E (pierce). */
+  | 'starfall'
+  /** Ult barrage arrow — wider trail. Lunara's Focus Mode C visual. */
+  | 'barrage';
 
 export interface ProjectileSpec {
   team: Team;
@@ -212,6 +218,21 @@ export class ProjectileManager {
       quake: {
         // QUAKE — ground shockwave at the tank's feet.
         create: createQuakeProjectile,
+      },
+      moonarrow: {
+        // Lunara's signature — slim glowing crystal arrow, magenta core.
+        create: () => createMoonArrow(0xa470ff, 0xff4dd2, 1.0),
+      },
+      starfall: {
+        // Heavier, brighter version for Starfall (pierce shot).
+        create: () => createMoonArrow(0xc89bff, 0xff6cff, 1.35),
+      },
+      barrage: {
+        // Even bigger, the "ult barrage" cosmetic. Same arrow shape but
+        // a saturated cyan-violet read so the player knows the BARRAGE
+        // self-buff is firing. Used as the autoAttackKind while the
+        // attack-speed buff is active (see PlayerObject.autoAttackKind).
+        create: () => createMoonArrow(0x9bd9ff, 0xa470ff, 1.15),
       },
     };
   }
@@ -1076,6 +1097,82 @@ const QUAKE_DUST_MAT = new THREE.MeshLambertMaterial({
   transparent: true,
   opacity: 0.6,
 });
+
+// --- Lunara projectiles ---------------------------------------------------
+// Crystalline glowing arrow — replaces the wooden Mia arrow. Reads as
+// "moonlight magic" rather than a fletched stick.
+const MOON_ARROW_SHAFT_GEOM = new THREE.CylinderGeometry(0.05, 0.05, 1.3, 6);
+const MOON_ARROW_TIP_GEOM = new THREE.OctahedronGeometry(0.16, 0);
+const MOON_ARROW_FLETCH_GEOM = new THREE.PlaneGeometry(0.32, 0.18);
+const MOON_ARROW_HALO_GEOM = new THREE.SphereGeometry(0.42, 12, 12);
+const MOON_ARROW_MAT_CACHE = new Map<string, {
+  shaft: THREE.MeshLambertMaterial;
+  tip: THREE.MeshLambertMaterial;
+  fletch: THREE.MeshBasicMaterial;
+  halo: THREE.MeshBasicMaterial;
+}>();
+
+function getMoonArrowMats(shaftColor: number, tipEmissive: number) {
+  const key = `${shaftColor.toString(16)}-${tipEmissive.toString(16)}`;
+  let mats = MOON_ARROW_MAT_CACHE.get(key);
+  if (!mats) {
+    mats = {
+      shaft: new THREE.MeshLambertMaterial({
+        color: shaftColor,
+        emissive: shaftColor,
+        emissiveIntensity: 1.4,
+      }),
+      tip: new THREE.MeshLambertMaterial({
+        color: 0xffffff,
+        emissive: tipEmissive,
+        emissiveIntensity: 2.6,
+      }),
+      fletch: new THREE.MeshBasicMaterial({
+        color: shaftColor,
+        transparent: true,
+        opacity: 0.65,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+      halo: new THREE.MeshBasicMaterial({
+        color: tipEmissive,
+        transparent: true,
+        opacity: 0.45,
+        depthWrite: false,
+      }),
+    };
+    MOON_ARROW_MAT_CACHE.set(key, mats);
+  }
+  return mats;
+}
+
+function createMoonArrow(shaftColor: number, tipEmissive: number, scale = 1): THREE.Object3D {
+  const mats = getMoonArrowMats(shaftColor, tipEmissive);
+  const arrow = new THREE.Group();
+  // Halo orb behind the head — sells the "magic light" read.
+  const halo = new THREE.Mesh(MOON_ARROW_HALO_GEOM, mats.halo);
+  halo.position.z = 0.35;
+  arrow.add(halo);
+  // Crystal tip — octahedron with bright emissive core.
+  const tip = new THREE.Mesh(MOON_ARROW_TIP_GEOM, mats.tip);
+  tip.position.z = 0.78;
+  tip.rotation.y = Math.PI / 4;
+  arrow.add(tip);
+  // Shaft.
+  const shaft = new THREE.Mesh(MOON_ARROW_SHAFT_GEOM, mats.shaft);
+  shaft.rotation.x = Math.PI / 2;
+  arrow.add(shaft);
+  // Twin fletching — two crossed translucent planes at the back.
+  const fletch1 = new THREE.Mesh(MOON_ARROW_FLETCH_GEOM, mats.fletch);
+  fletch1.position.z = -0.62;
+  arrow.add(fletch1);
+  const fletch2 = new THREE.Mesh(MOON_ARROW_FLETCH_GEOM, mats.fletch);
+  fletch2.position.z = -0.62;
+  fletch2.rotation.z = Math.PI / 2;
+  arrow.add(fletch2);
+  arrow.scale.setScalar(scale);
+  return arrow;
+}
 
 /** Ground shockwave at the tank's feet — tank C self-cast. */
 function createQuakeProjectile(): THREE.Object3D {

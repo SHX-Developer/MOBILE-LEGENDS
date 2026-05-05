@@ -164,7 +164,7 @@ export function rankTierFor(mmr: number): RankTier {
 /** Display labels for HeroKind ids. UI uses these everywhere instead of
  *  the internal slugs. */
 export const HERO_NAMES: Record<HeroKind, string> = {
-  ranger: 'АРКШУТЕР',
+  ranger: 'ЛУНАРА',
   mage: 'АРКАНИСТ',
   fighter: 'ВАРЛОРД',
   assassin: 'ТЕНЕКЛИНОК',

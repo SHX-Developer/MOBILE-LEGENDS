@@ -44,11 +44,13 @@ interface SkillProfile {
  * constants — the ring is purely cosmetic and won't gate the actual cast.
  */
 const SKILL_PROFILES: Record<HeroKind, Record<SkillId, SkillProfile>> = {
-  // Arcshooter (ranger): Rapid Fire / Piercing Arrow / Focus Mode.
+  // Lunara · Moonlight Archer — kit re-themed around moonlight magic.
+  // Mechanically still Rapid Fire / Piercing Arrow / Focus Mode, but
+  // the player-facing labels and accents follow the Lunara concept art.
   ranger: {
-    q: { subtitle: 'RAPID', accent: '#ff7a3d', totalMs: 7000 },
-    e: { subtitle: 'PIERCE', accent: '#4ec9ff', totalMs: 8000 },
-    c: { subtitle: 'FOCUS', accent: '#ffd852', totalMs: 18000 },
+    q: { subtitle: 'LUNAR', accent: '#a470ff', totalMs: 7000 },
+    e: { subtitle: 'STARFALL', accent: '#ff4dd2', totalMs: 8000 },
+    c: { subtitle: 'BARRAGE', accent: '#9bd9ff', totalMs: 18000 },
   },
   // Arcanist (mage): Arcane Burst / Magic Trap / Meteor Call.
   mage: {
