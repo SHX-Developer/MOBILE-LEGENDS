@@ -1,5 +1,23 @@
 # ML MOBA
 
+## Локальный запуск
+
+Проект использует pnpm workspaces.
+
+```powershell
+pnpm install
+pnpm dev
+```
+
+Можно запускать части отдельно:
+
+```powershell
+pnpm dev:web
+pnpm dev:server
+```
+
+Перед запуском backend проверь переменные окружения для PostgreSQL и других сервисов.
+
 Browser MOBA (Mobile Legends-like) for Telegram Web App.
 
 ## Stack
